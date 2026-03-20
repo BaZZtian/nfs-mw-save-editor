@@ -138,6 +138,84 @@ Examples:
 
 The forum car list was used as the initial source, then checked against real save data.
 
+## Step 6: confirmed parts block behind `parts_slot`
+
+The earlier `0x55E4 + parts_slot * 0x0C` candidate turned out to be a false lead for
+installed parts. Controlled A/B saves with a stock Fiat Punto and one-part-only
+upgrades disproved it.
+
+The confirmed save-level build structure is:
+
+- block base: `0x9CCD`
+- block stride: `0x198`
+- addressing rule: `block_abs_off = 0x9CCD + (parts_slot - 31) * 0x198`
+- end marker at `+0x194..+0x197`: `<parts_slot> CD CD CD`
+
+This formula validates on `fixture-a`, `fixture-b`, `fixture-c`, and `fixture-d`.
+
+### Confirmed decoded fields
+
+Inside each parts block, the currently confirmed offsets are:
+
+- `+0x118` -> Tires level
+- `+0x11C` -> Brakes level
+- `+0x120` -> Suspension level
+- `+0x124` -> Transmission level
+- `+0x128` -> Engine level
+- `+0x12C` -> Turbo/Supercharger level
+- `+0x130` -> NOS level
+- `+0x134` -> Junkman / unique-parts bitmask
+
+These fields behave as little-endian `u32`, even when only the low byte changes in
+practice.
+
+### Confirmed Fiat experiments
+
+Using `fixture-a(stock fiat)` as the baseline for `parts_slot 55`:
+
+- `only race engine` -> `+0x128 = 01`
+- `only pro engine` -> `+0x128 = 02`
+- `only super pro engine` -> `+0x128 = 03`
+- `only ultimate engine` -> `+0x128 = 04`
+
+This confirms the engine ladder `00 / 01 / 02 / 03 / 04` for that category.
+
+Single-upgrade Ultimate saves confirmed the per-category offsets:
+
+- `ultimate tires` -> `+0x118 = 03`
+- `ultimate brakes` -> `+0x11C = 04`
+- `ultimate suspension` -> `+0x120 = 03`
+- `ultimate transmission` -> `+0x124 = 04`
+- `ultimate turbo` -> `+0x12C = 03`
+- `ultimate nos` -> `+0x130 = 03`
+
+The different maximum values strongly suggest category-specific level caps, even
+though the storage format is shared.
+
+### Confirmed Junkman mask
+
+The Junkman field at `+0x134` is now fully confirmed as a bitmask:
+
+- `0x01` -> Tires
+- `0x02` -> Brakes
+- `0x04` -> Suspension
+- `0x08` -> Transmission
+- `0x10` -> Engine
+- `0x20` -> Turbo
+- `0x40` -> NOS
+- `0x7F` -> full set
+
+This was validated with single-part Junkman saves and the required gated tests:
+
+- `ultimate turbo + junkman turbo` -> adds only `0x20`
+- `ultimate nos + junkman nos` -> adds only `0x40`
+
+### What is still not claimed
+
+- exact human-facing shop labels for every numeric level on every category
+- whether all cars share the same max tier count per category
+- the meaning of the rest of the `0x198` block outside the confirmed decoded window
+
 ## Resulting implementation model
 
 The editor now treats Profile data as two joined layers:
@@ -163,13 +241,20 @@ The editor now treats Profile data as two joined layers:
 Write policy:
 - bounty edits write only into the pursuit block
 - car identity data is read-only in the current implementation
+- parts editing writes only to the confirmed per-car parts block fields:
+  - regular levels at `+0x118 .. +0x130`
+  - Junkman mask at `+0x134`
+- writes must validate the parts-block marker `<parts_slot> CD CD CD` before touching data
+- `Junkman Turbo` requires regular `Turbo > 0`
+- `Junkman NOS` requires regular `NOS > 0`
+- regular performance levels are clamped by the confirmed model caps from `core/tuning_limits.py`
 
 ## Known limitations
 
 Still not fully resolved:
 - exact meaning of flags at `+0x0C`
 - exact meaning of field at `+0x0E`
-- whether `parts_slot` has a useful UI meaning yet
+- the meaning of the rest of the per-car parts block outside `+0x118..+0x137`
 - how current car / active career car is marked in these structures
 
 Current fallback policy:
@@ -179,12 +264,15 @@ Current fallback policy:
 ## Practical validation summary
 
 Validated against real saves:
-- `Save1`
-- `Save2`
+- `fixture-a`
+- `fixture-b`
 - `fixture-c`
+- `fixture-d`
 
 Confirmed in code:
 - Profile vehicle labels can be resolved from signatures
 - pursuit totals remain correct
 - bounty editing still targets the pursuit block only
 - filler records in the car block are ignored
+- Parts Viewer v2 can decode confirmed performance levels and Junkman categories
+- Parts Editor v1 can stage and write only the confirmed parts fields, with Turbo/NOS Junkman prerequisites enforced
