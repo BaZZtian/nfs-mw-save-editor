@@ -39,7 +39,7 @@ CAR_SIGNATURES: Dict[bytes, str] = {
     _sig("11 7A EE A6 11 7A EE A6"): "Fiat Punto",
     _sig("AF 2D C3 C1 F5 7E 66 70"): "Cop",
     _sig("20 65 18 DF 20 65 18 DF"): "Cadillac CTS",
-    _sig("A1 E1 D3 D8 A1 E3 D3 D8"): "Vauxhall Monaro VXR",
+    _sig("A1 E1 D3 D8 A1 E1 D3 D8"): "Vauxhall Monaro VXR",
     _sig("A1 F9 47 71 A1 F9 47 71"): "Mercedes SL65 AMG",
     _sig("6F F4 3E 9B 6F F4 3E 9B"): "Porsche 911 GT2",
     _sig("0B C4 2C 7B 0B C4 2C 7B"): "Lamborghini Gallardo",

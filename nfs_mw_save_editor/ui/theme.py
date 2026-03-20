@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 ACCENT = "#4A6B94"
 ACCENT_BRIGHT = "#6F93C4"
@@ -366,8 +366,119 @@ QFrame#garageCard[changed="true"] {{
     border: 1px solid #4A678E;
     background: rgba(74, 107, 148, 0.12);
 }}
+QFrame#garageCard[pinkslip="true"] {{
+    border-left: 3px solid #D4A853;
+}}
+QFrame#garageCard[pinkslip="true"][changed="true"] {{
+    border: 1px solid #4A678E;
+    border-left: 3px solid #D4A853;
+    background: rgba(74, 107, 148, 0.12);
+}}
 QFrame#garageCard[occupied="false"] {{
     opacity: 0.6;
+}}
+QFrame#partsCard {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: 12px;
+}}
+QFrame#partsCard[changed="true"] {{
+    border: 1px solid #4A678E;
+    background: rgba(74, 107, 148, 0.10);
+}}
+/* Parts level bar rows */
+QWidget#partsLevelRow {{
+    background: transparent;
+}}
+QLabel#partsLevelLabel {{
+    background: transparent;
+    color: {MUTED};
+    font-size: 10.5px;
+    font-weight: 600;
+    min-width: 80px;
+}}
+QLabel#partsLevelNum {{
+    background: transparent;
+    color: {TEXT};
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 18px;
+}}
+QSpinBox#partsLevelSpin {{
+    background: #0F1524;
+    border: 1px solid {BORDER};
+    border-radius: 7px;
+    padding: 3px 6px;
+    min-width: 52px;
+    color: {TEXT};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QSpinBox#partsLevelSpin:disabled {{
+    color: {MUTED};
+    background: #111827;
+}}
+QFrame#partsLevelSeg {{
+    background: #0F1524;
+    border: 1px solid #1A2536;
+    border-radius: 2px;
+    min-width: 18px;
+    min-height: 8px;
+    max-height: 8px;
+}}
+QFrame#partsLevelSeg[filled="1"] {{
+    background: #3A5A82;
+    border-color: #3A5A82;
+}}
+QFrame#partsLevelSeg[filled="2"] {{
+    background: {ACCENT};
+    border-color: {ACCENT};
+}}
+QFrame#partsLevelSeg[filled="3"] {{
+    background: #5E80AF;
+    border-color: #5E80AF;
+}}
+QFrame#partsLevelSeg[filled="4"] {{
+    background: {ACCENT_BRIGHT};
+    border-color: {ACCENT_BRIGHT};
+}}
+/* Junkman accent badges */
+QLabel#partsJunkmanActive {{
+    background: rgba(42, 138, 138, 0.15);
+    border: 1px solid #2A7A7A;
+    border-radius: 8px;
+    padding: 3px 8px;
+    color: #5ECECE;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#partsJunkmanNone {{
+    background: #0F1524;
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 3px 8px;
+    color: {MUTED};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#partsJunkmanToggle {{
+    background: #0F1524;
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 3px 8px;
+    color: {MUTED};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#partsJunkmanToggle[active="true"] {{
+    background: rgba(42, 138, 138, 0.15);
+    border: 1px solid #2A7A7A;
+    color: #5ECECE;
+}}
+QPushButton#partsJunkmanToggle:disabled {{
+    background: #111827;
+    border-color: {BORDER};
+    color: #6D7F98;
 }}
 QLabel#garageCardSlot {{
     background: #0F1524;
@@ -410,6 +521,21 @@ QLabel#garageCardCurrent {{
     color: {MUTED};
     font-size: 10.5px;
 }}
+QLabel#partsCardRaw {{
+    background: #0F1524;
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 7px 10px;
+    color: {TEXT};
+    font-family: 'Cascadia Mono', 'Consolas', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+}}
+QLabel#partsCardNote {{
+    background: transparent;
+    color: {MUTED};
+    font-size: 10.5px;
+}}
 QLabel#garageCardStatBadge {{
     background: #0F1524;
     border: 1px solid {BORDER};
@@ -418,6 +544,20 @@ QLabel#garageCardStatBadge {{
     color: {MUTED};
     font-size: 11px;
     font-weight: 600;
+}}
+QFrame#pinkSlipBadge {{
+    background: rgba(180, 140, 60, 0.12);
+    border: 1px solid #8B7340;
+    border-radius: 8px;
+}}
+QLabel#pinkSlipBadgeIcon {{
+    background: transparent;
+}}
+QLabel#pinkSlipBadgeText {{
+    background: transparent;
+    color: #D4A853;
+    font-size: 11.5px;
+    font-weight: 700;
 }}
 
 /* About Page */

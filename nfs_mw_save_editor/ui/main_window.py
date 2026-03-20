@@ -44,10 +44,11 @@ from PySide6.QtWidgets import (
 )
 
 from core.junkman import JunkmanInventory
-from core.savefile import ResolvedGarageEntry, SaveFile
+from core.savefile import ResolvedGarageEntry, ResolvedPartsEntry, SaveFile
+from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits, get_tuning_limit
 from resources import resource_path
 from ui.icon_map import cat_icon_path, nav_icon_path
-from ui.widgets import TokenCard, ToastNotification
+from ui.widgets import ShimmerFrame, TokenCard, ToastNotification, WantSpinBox
 
 
     # -- Constants -------------------------------------------------------
@@ -63,6 +64,8 @@ MAX_CARDS_PER_ROW = 4
 U32_MAX = 0xFFFFFFFF
 GARAGE_TILE_MIN_WIDTH = 230
 GARAGE_TILE_MAX_COLUMNS = 3
+PARTS_TILE_MIN_WIDTH = 340
+PARTS_TILE_MAX_COLUMNS = 2
 
 
     # -- Helpers ---------------------------------------------------------
@@ -124,19 +127,34 @@ class MainWindow(QMainWindow):
         self.have_money = 0
         self.want_money: Optional[int] = None
         self.garage_slots: List[ResolvedGarageEntry] = []
+        self.parts_entries: List[ResolvedPartsEntry] = []
+        self.have_parts_levels: Dict[int, Dict[str, int]] = {}
+        self.want_parts_levels: Optional[Dict[int, Dict[str, int]]] = None
+        self.have_parts_masks: Dict[int, int] = {}
+        self.want_parts_masks: Optional[Dict[int, int]] = None
         self.have_slot_bounties: Dict[int, int] = {}
         self.want_slot_bounties: Optional[Dict[int, int]] = None
+        self.have_slot_flags: Dict[int, int] = {}
+        self.want_slot_flags: Optional[Dict[int, int]] = None
         self.garage_detection_error: Optional[str] = None
+        self.parts_detection_error: Optional[str] = None
         self.show_all_garage_slots = False
         self.show_integrity_panel = False
+        self.show_unlinked_pursuits = False
+        self.show_parts_diagnostics = False
         self.tokens: List[TokenEntry] = []
         self.safe_mode = True
         self.practical_cap10 = True
         self.preserve_unknown = True
         self.clear_unknown_next = False
         self.show_only_changed = False
+        self.garage_filter = "All"
+        self.parts_filter = "All"
         self._profile_refreshing = False
+        self._parts_refreshing = False
         self._garage_slot_columns = 0
+        self._parts_slot_columns = 0
+        self._pink_slip_badge_pixmap: Optional[QPixmap] = None
 
         self.catalog_path = _ensure_user_catalog_path()
         self.load_catalog()
@@ -271,11 +289,13 @@ class MainWindow(QMainWindow):
 
         self.page_junk = self._build_junk_page()
         self.page_profile = self._build_profile_page()
+        self.page_garage = self._build_garage_page()
+        self.page_parts = self._build_parts_page()
         self.page_presets = self._build_presets_page()
         self.page_settings = self._build_settings_page()
         self.page_about = self._build_about_page()
 
-        for p in [self.page_junk, self.page_profile, self.page_presets,
+        for p in [self.page_junk, self.page_profile, self.page_garage, self.page_parts, self.page_presets,
                    self.page_settings, self.page_about]:
             self.stack.addWidget(p)
 
@@ -369,7 +389,7 @@ class MainWindow(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
 
-        for name in ["Junkman", "Profile", "Presets", "Settings", "About"]:
+        for name in ["Junkman", "Profile", "Garage", "Parts", "Presets", "Settings", "About"]:
             btn = QPushButton(name)
             btn.setObjectName("navButton")
             btn.setCheckable(True)
@@ -430,6 +450,8 @@ class MainWindow(QMainWindow):
         mapping = {
             "Junkman": self.page_junk,
             "Profile": self.page_profile,
+            "Garage": self.page_garage,
+            "Parts": self.page_parts,
             "Presets": self.page_presets,
             "Settings": self.page_settings,
             "About": self.page_about,
@@ -438,8 +460,10 @@ class MainWindow(QMainWindow):
         if name == "Junkman" and hasattr(self, "cards_container") and hasattr(self, "lbl_free"):
             self._sync_cards_per_row(force=True)
             self.refresh_cards()
-        elif name == "Profile":
+        elif name == "Garage":
             self._maybe_reflow_garage_rows(force=True)
+        elif name == "Parts":
+            self._maybe_reflow_parts_rows(force=True)
 
     # ================================================================
     #  JUNKMAN PAGE  (grid of TokenCards)
@@ -633,6 +657,13 @@ class MainWindow(QMainWindow):
         )
 
         layout.addLayout(stat_strip)
+        hint = QLabel(
+            "Money is edited here. Per-car bounty is managed on the Garage page. Build diagnostics live on Parts."
+        )
+        hint.setObjectName("mutedLabel")
+        hint.setWordWrap(True)
+        hint.setAlignment(Qt.AlignCenter)
+        layout.addWidget(hint)
 
         # ── Garage section header ───────────────────────────────
         garage_header = QHBoxLayout()
@@ -673,7 +704,134 @@ class MainWindow(QMainWindow):
         self.garage_slot_current_labels: Dict[int, QLabel] = {}
         self._garage_card_widgets: Dict[int, QFrame] = {}
         self._rebuild_garage_slot_rows()
+        self.garage_section_title.setVisible(False)
+        self.garage_rows_scroll.setVisible(False)
         self._sync_integrity_visibility()
+        return w
+
+    def _build_garage_page(self):
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(10, 6, 10, 8)
+        layout.setSpacing(10)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.garage_search = QLineEdit()
+        self.garage_search.setPlaceholderText("Search garage by model name...")
+        self.garage_search.textChanged.connect(self.on_garage_search_changed)
+        controls.addWidget(self.garage_search, 1)
+        layout.addLayout(controls)
+
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(6)
+        self.garage_filter_buttons: Dict[str, QPushButton] = {}
+        self.garage_filter_group = QButtonGroup(self)
+        self.garage_filter_group.setExclusive(True)
+        for label in ["All", "Career", "Pink Slip", "Unknown"]:
+            btn = QPushButton(label)
+            btn.setObjectName("catButton")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _, source=label: self._select_garage_filter(source))
+            self.garage_filter_group.addButton(btn)
+            self.garage_filter_buttons[label] = btn
+            filter_row.addWidget(btn)
+        self.garage_filter_buttons["All"].setChecked(True)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
+        self.garage_cards = QWidget()
+        self.garage_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.garage_cards_layout = QGridLayout(self.garage_cards)
+        self.garage_cards_layout.setContentsMargins(12, 12, 12, 12)
+        self.garage_cards_layout.setHorizontalSpacing(14)
+        self.garage_cards_layout.setVerticalSpacing(14)
+        self.garage_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+
+        self.garage_cards_scroll = QScrollArea()
+        self.garage_cards_scroll.setObjectName("cardScroll")
+        self.garage_cards_scroll.setWidgetResizable(True)
+        self.garage_cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.garage_cards_scroll.setWidget(self.garage_cards)
+        layout.addWidget(self.garage_cards_scroll, 1)
+
+        self.garage_diag_label = self._section_label("Unlinked Pursuit Diagnostics")
+        layout.addWidget(self.garage_diag_label)
+        self.garage_diag_text = QTextEdit()
+        self.garage_diag_text.setReadOnly(True)
+        self.garage_diag_text.setMinimumHeight(92)
+        self.garage_diag_text.setMaximumHeight(140)
+        self.garage_diag_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(self.garage_diag_text)
+
+        self.garage_card_edits: Dict[int, QLineEdit] = {}
+        self.garage_card_current_labels: Dict[int, QLabel] = {}
+        self.garage_card_pink_toggles: Dict[int, QCheckBox] = {}
+        self._garage_card_widgets_page: Dict[int, QFrame] = {}
+        self._rebuild_garage_cards()
+        self._sync_garage_diagnostics_visibility()
+        return w
+
+    def _build_parts_page(self):
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(10, 6, 10, 8)
+        layout.setSpacing(10)
+
+        hint = QLabel(
+            "Read-only parts viewer. Vehicle builds are resolved from parts_slot into the confirmed 0x198-byte "
+            "per-car parts block. Regular performance levels and Junkman categories shown here are save-backed."
+        )
+        hint.setObjectName("mutedLabel")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        self.parts_search = QLineEdit()
+        self.parts_search.setPlaceholderText("Search parts by model name...")
+        self.parts_search.textChanged.connect(self.on_parts_search_changed)
+        controls.addWidget(self.parts_search, 1)
+        self.chk_show_parts_diagnostics = QCheckBox("Show parts diagnostics")
+        self.chk_show_parts_diagnostics.setChecked(False)
+        self.chk_show_parts_diagnostics.stateChanged.connect(self.on_toggle_parts_diagnostics)
+        controls.addWidget(self.chk_show_parts_diagnostics, 0)
+        layout.addLayout(controls)
+
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(6)
+        self.parts_filter_buttons: Dict[str, QPushButton] = {}
+        self.parts_filter_group = QButtonGroup(self)
+        self.parts_filter_group.setExclusive(True)
+        for label in ["All", "Career", "Pink Slip", "Unknown"]:
+            btn = QPushButton(label)
+            btn.setObjectName("catButton")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda _, source=label: self._select_parts_filter(source))
+            self.parts_filter_group.addButton(btn)
+            self.parts_filter_buttons[label] = btn
+            filter_row.addWidget(btn)
+        self.parts_filter_buttons["All"].setChecked(True)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
+        self.parts_cards = QWidget()
+        self.parts_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.parts_cards_layout = QGridLayout(self.parts_cards)
+        self.parts_cards_layout.setContentsMargins(12, 12, 12, 12)
+        self.parts_cards_layout.setHorizontalSpacing(14)
+        self.parts_cards_layout.setVerticalSpacing(14)
+        self.parts_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+
+        self.parts_cards_scroll = QScrollArea()
+        self.parts_cards_scroll.setObjectName("cardScroll")
+        self.parts_cards_scroll.setWidgetResizable(True)
+        self.parts_cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.parts_cards_scroll.setWidget(self.parts_cards)
+        layout.addWidget(self.parts_cards_scroll, 1)
+
+        self._parts_card_widgets: Dict[int, QFrame] = {}
+        self._rebuild_parts_cards()
         return w
 
     def _build_presets_page(self):
@@ -714,13 +872,13 @@ class MainWindow(QMainWindow):
         self.chk_practical_cap10.setChecked(False)
         self.chk_practical_cap10.stateChanged.connect(self.on_practical_cap_toggle)
 
-        self.chk_show_all_garage_slots = QCheckBox("Show empty valid garage slots")
-        self.chk_show_all_garage_slots.setChecked(False)
-        self.chk_show_all_garage_slots.stateChanged.connect(self.on_toggle_show_all_garage_slots)
-
         self.chk_show_integrity = QCheckBox("Show Integrity panel on Profile")
         self.chk_show_integrity.setChecked(False)
         self.chk_show_integrity.stateChanged.connect(self.on_toggle_show_integrity)
+
+        self.chk_show_unlinked_pursuits = QCheckBox("Show unlinked pursuit diagnostics")
+        self.chk_show_unlinked_pursuits.setChecked(False)
+        self.chk_show_unlinked_pursuits.stateChanged.connect(self.on_toggle_unlinked_pursuits)
 
         self.btn_clear_unknown = QPushButton("Clear Unknown (danger)")
         self.btn_clear_unknown.clicked.connect(self.on_clear_unknown_confirm)
@@ -747,8 +905,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.chk_safe)
         layout.addWidget(self.chk_adv)
         layout.addWidget(self.chk_practical_cap10)
-        layout.addWidget(self.chk_show_all_garage_slots)
         layout.addWidget(self.chk_show_integrity)
+        layout.addWidget(self.chk_show_unlinked_pursuits)
         layout.addWidget(self.btn_clear_unknown)
         layout.addWidget(self.lbl_limits)
         layout.addWidget(self.lbl_type_safety)
@@ -1180,6 +1338,845 @@ class MainWindow(QMainWindow):
         self._refresh_garage_totals(True)
         self._update_action_states()
 
+    def _garage_card_entries(self) -> List[ResolvedGarageEntry]:
+        current_flags = self._current_slot_flags()
+        entries = [
+            slot for slot in self.garage_slots
+            if slot.occupied and (slot.car_abs_off is not None or slot.match_count > 1)
+        ]
+        term = self.garage_search.text().strip().lower() if hasattr(self, "garage_search") else ""
+        source = self.garage_filter
+        filtered: List[ResolvedGarageEntry] = []
+        for slot in entries:
+            if term and term not in slot.display_name.lower():
+                continue
+            if source != "All":
+                source_kind = self._flags_to_source_kind(current_flags.get(slot.career_slot, slot.flags))
+                if source == "Unknown":
+                    if not source_kind.startswith("Unknown"):
+                        continue
+                elif source_kind != source:
+                    continue
+            filtered.append(slot)
+        return filtered
+
+    def _garage_unlinked_entries(self) -> List[ResolvedGarageEntry]:
+        return [
+            slot for slot in self.garage_slots
+            if slot.car_abs_off is None and slot.match_count == 0
+        ]
+
+    def _detect_garage_slot_columns(self) -> int:
+        if not hasattr(self, "garage_cards_scroll"):
+            return 1
+        viewport = self.garage_cards_scroll.viewport()
+        if viewport is None:
+            return 1
+        available = max(300, viewport.width() - 56)
+        if available >= 1420:
+            return 3
+        if available >= 860:
+            return 2
+        return 1
+
+    def _maybe_reflow_garage_rows(self, force: bool = False) -> None:
+        if not hasattr(self, "garage_cards_scroll"):
+            return
+        cols = self._detect_garage_slot_columns()
+        if force or cols != self._garage_slot_columns:
+            self._garage_slot_columns = cols
+            self._rebuild_garage_cards()
+            if self.savefile is not None:
+                self._refresh_garage_page()
+
+    def _sync_garage_diagnostics_visibility(self) -> None:
+        visible = bool(self.show_unlinked_pursuits and self.savefile is not None)
+        if hasattr(self, "garage_diag_label"):
+            self.garage_diag_label.setVisible(visible)
+        if hasattr(self, "garage_diag_text"):
+            self.garage_diag_text.setVisible(visible)
+
+    def _current_slot_bounties(self) -> Dict[int, int]:
+        want_map = self.want_slot_bounties or {}
+        return {
+            slot.career_slot: want_map.get(slot.career_slot, self.have_slot_bounties.get(slot.career_slot, 0))
+            for slot in self.garage_slots
+        }
+
+    def _current_slot_flags(self) -> Dict[int, int]:
+        return {
+            slot.career_slot: self.have_slot_flags.get(slot.career_slot, slot.flags or 0)
+            for slot in self.garage_slots if slot.flags is not None
+        }
+
+    @staticmethod
+    def _supports_pink_slip_toggle(flags: Optional[int]) -> bool:
+        return flags in (SaveFile.CAREER_FLAG, SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG)
+
+    @staticmethod
+    def _flags_to_source_kind(flags: Optional[int]) -> str:
+        return SaveFile.derive_source_kind(flags)
+
+    def _pink_slip_badge_icon(self, size: int = 14) -> QPixmap:
+        if self._pink_slip_badge_pixmap is not None:
+            return self._pink_slip_badge_pixmap
+        icon_path = resource_path("assets", "icons", "pol", "pink_slip.png")
+        pix = QPixmap(str(icon_path))
+        if pix.isNull():
+            self._pink_slip_badge_pixmap = QPixmap()
+            return self._pink_slip_badge_pixmap
+        self._pink_slip_badge_pixmap = pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        return self._pink_slip_badge_pixmap
+
+    def _make_garage_source_badge(self, source_kind: str) -> QWidget:
+        if source_kind == "Pink Slip":
+            pix = self._pink_slip_badge_icon()
+            if not pix.isNull():
+                badge = ShimmerFrame()
+                badge.setObjectName("pinkSlipBadge")
+                badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                badge.setToolTip(source_kind)
+
+                row = QHBoxLayout(badge)
+                row.setContentsMargins(8, 5, 10, 5)
+                row.setSpacing(6)
+
+                icon_label = QLabel()
+                icon_label.setObjectName("pinkSlipBadgeIcon")
+                icon_label.setPixmap(pix)
+                icon_label.setAlignment(Qt.AlignCenter)
+                icon_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+                row.addWidget(icon_label, 0, Qt.AlignVCenter)
+
+                text_label = QLabel("Pink Slip")
+                text_label.setObjectName("pinkSlipBadgeText")
+                text_label.setAlignment(Qt.AlignCenter)
+                text_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                row.addWidget(text_label, 0, Qt.AlignVCenter)
+                return badge
+
+        label = QLabel()
+        label.setObjectName("garageCardStatBadge")
+        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        label.setAlignment(Qt.AlignCenter)
+        label.setToolTip(source_kind)
+
+        label.setText(source_kind)
+        return label
+
+    def _garage_card_changed(self, slot_index: int) -> bool:
+        have_bounty = self.have_slot_bounties.get(slot_index, 0)
+        want_bounty = self._current_slot_bounties().get(slot_index, have_bounty)
+        return want_bounty != have_bounty
+
+    def _rebuild_garage_cards(self) -> None:
+        if not hasattr(self, "garage_cards_layout"):
+            return
+        self._clear_layout(self.garage_cards_layout)
+        self.garage_card_edits = {}
+        self.garage_card_current_labels = {}
+        self._garage_card_widgets_page = {}
+        columns = max(1, self._detect_garage_slot_columns())
+        self._garage_slot_columns = columns
+
+        if not self.savefile:
+            label = QLabel("Open a save to inspect real garage vehicles.")
+            label.setObjectName("mutedLabel")
+            self.garage_cards_layout.addWidget(label, 0, 0, 1, columns)
+            return
+
+        if self.garage_detection_error:
+            label = QLabel(f"Garage manager disabled: {self.garage_detection_error}")
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            self.garage_cards_layout.addWidget(label, 0, 0, 1, columns)
+            return
+
+        visible_slots = self._garage_card_entries()
+        if not visible_slots:
+            label = QLabel("No garage cars match the current search/filter.")
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            self.garage_cards_layout.addWidget(label, 0, 0, 1, columns)
+            return
+
+        current_flags = self._current_slot_flags()
+        for idx, slot in enumerate(visible_slots):
+            card = QFrame()
+            card.setObjectName("garageCard")
+            card.setProperty("changed", False)
+            card.setProperty("occupied", slot.occupied)
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            card.setMinimumWidth(240)
+
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(6)
+
+            header_row = QHBoxLayout()
+            header_row.setSpacing(8)
+            slot_label = QLabel(f"Slot {slot.career_slot + 1}")
+            slot_label.setObjectName("garageCardSlot")
+            slot_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            slot_label.setAlignment(Qt.AlignCenter)
+            source_flags = current_flags.get(slot.career_slot, slot.flags)
+            source_kind = self._flags_to_source_kind(source_flags)
+            source_label = self._make_garage_source_badge(source_kind)
+            card.setProperty("pinkslip", source_kind == "Pink Slip")
+            header_row.addWidget(slot_label, 0, Qt.AlignLeft)
+            header_row.addStretch(1)
+            header_row.addWidget(source_label, 0, Qt.AlignRight)
+            card_layout.addLayout(header_row)
+
+            name_label = QLabel(slot.display_name)
+            name_label.setObjectName("garageCardMeta")
+            name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            name_label.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(name_label, 0, Qt.AlignLeft)
+
+            meta_row = QHBoxLayout()
+            meta_row.setSpacing(8)
+            parts_text = f"Parts Slot {slot.parts_slot}" if slot.parts_slot is not None else "Parts Slot ?"
+            parts_label = QLabel(parts_text)
+            parts_label.setObjectName("garageCardStatBadge")
+            parts_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            parts_label.setAlignment(Qt.AlignCenter)
+            meta_row.addWidget(parts_label, 0, Qt.AlignLeft)
+            if source_flags is not None and not self._supports_pink_slip_toggle(source_flags):
+                raw_flags = QLabel(f"Flags 0x{source_flags:02X}")
+                raw_flags.setObjectName("garageCardStatBadge")
+                raw_flags.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                raw_flags.setAlignment(Qt.AlignCenter)
+                meta_row.addWidget(raw_flags, 0, Qt.AlignLeft)
+            meta_row.addStretch(1)
+            card_layout.addLayout(meta_row)
+
+            sep = QFrame()
+            sep.setFrameShape(QFrame.HLine)
+            sep.setObjectName("garageCardSep")
+            card_layout.addWidget(sep)
+
+            bounty_label = QLabel("Bounty")
+            bounty_label.setObjectName("garageCardFieldLabel")
+            bounty_label.setAlignment(Qt.AlignCenter)
+
+            edit = QLineEdit()
+            edit.setPlaceholderText("0")
+            edit.setValidator(self._profile_number_validator)
+            edit.setAlignment(Qt.AlignCenter)
+            edit.setObjectName("garageCardEdit")
+            edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            edit.editingFinished.connect(lambda idx=slot.career_slot: self.on_garage_slot_edit_finished(idx))
+
+            current = QLabel("Current: -")
+            current.setObjectName("garageCardCurrent")
+            current.setAlignment(Qt.AlignCenter)
+
+            self.garage_card_edits[slot.career_slot] = edit
+            self.garage_card_current_labels[slot.career_slot] = current
+            self._garage_card_widgets_page[slot.career_slot] = card
+
+            card_layout.addWidget(bounty_label)
+            card_layout.addWidget(edit)
+            card_layout.addWidget(current)
+
+            stats_row = QHBoxLayout()
+            stats_row.setSpacing(8)
+            stats_row.setContentsMargins(0, 4, 0, 0)
+
+            esc_lbl = QLabel(f"Escaped  {slot.escaped}")
+            esc_lbl.setObjectName("garageCardStatBadge")
+            esc_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            esc_lbl.setAlignment(Qt.AlignCenter)
+            bust_lbl = QLabel(f"Busted  {slot.busted}")
+            bust_lbl.setObjectName("garageCardStatBadge")
+            bust_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            bust_lbl.setAlignment(Qt.AlignCenter)
+            stats_row.addWidget(esc_lbl, 0, Qt.AlignLeft)
+            stats_row.addStretch(1)
+            stats_row.addWidget(bust_lbl, 0, Qt.AlignRight)
+            card_layout.addLayout(stats_row)
+
+            row = idx // columns
+            col = idx % columns
+            self.garage_cards_layout.addWidget(card, row, col)
+
+        for col in range(columns):
+            self.garage_cards_layout.setColumnStretch(col, 1)
+
+    def _refresh_garage_page(self) -> None:
+        loaded = self.savefile is not None
+        if hasattr(self, "chk_show_unlinked_pursuits"):
+            self.chk_show_unlinked_pursuits.blockSignals(True)
+            self.chk_show_unlinked_pursuits.setChecked(self.show_unlinked_pursuits)
+            self.chk_show_unlinked_pursuits.setEnabled(loaded)
+            self.chk_show_unlinked_pursuits.blockSignals(False)
+
+        self._sync_garage_diagnostics_visibility()
+        self._rebuild_garage_cards()
+
+        if not loaded:
+            if hasattr(self, "garage_diag_text"):
+                self.garage_diag_text.setText("")
+            return
+
+        current_bounties = self._current_slot_bounties()
+        current_flags = self._current_slot_flags()
+        for slot in self._garage_card_entries():
+            edit = self.garage_card_edits.get(slot.career_slot)
+            current_label = self.garage_card_current_labels.get(slot.career_slot)
+            if edit is not None:
+                self._set_profile_line_edit(edit, current_bounties.get(slot.career_slot, slot.bounty), True)
+            if current_label is not None:
+                current_label.setText(self._format_current_value(self.have_slot_bounties.get(slot.career_slot, 0)))
+            card_w = self._garage_card_widgets_page.get(slot.career_slot)
+            if card_w is not None:
+                changed = self._garage_card_changed(slot.career_slot)
+                card_w.setProperty("changed", changed)
+                card_w.style().unpolish(card_w)
+                card_w.style().polish(card_w)
+
+        if hasattr(self, "garage_diag_text"):
+            entries = self._garage_unlinked_entries()
+            if not entries:
+                self.garage_diag_text.setText("No unlinked pursuit-only records detected.")
+            else:
+                lines = []
+                for slot in entries:
+                    lines.append(
+                        f"Slot {slot.career_slot + 1}: bounty={slot.bounty}, escaped={slot.escaped}, busted={slot.busted}"
+                    )
+                self.garage_diag_text.setText("\n".join(lines))
+
+    def _parts_card_entries(self) -> List[ResolvedPartsEntry]:
+        entries = list(self.parts_entries)
+        term = self.parts_search.text().strip().lower() if hasattr(self, "parts_search") else ""
+        source = self.parts_filter
+        filtered: List[ResolvedPartsEntry] = []
+        for entry in entries:
+            if term and term not in entry.display_name.lower():
+                continue
+            if source != "All":
+                if source == "Unknown":
+                    if not entry.source_kind.startswith("Unknown"):
+                        continue
+                elif entry.source_kind != source:
+                    continue
+            filtered.append(entry)
+        return filtered
+
+    def _detect_parts_card_columns(self) -> int:
+        if not hasattr(self, "parts_cards_scroll"):
+            return 1
+        viewport = self.parts_cards_scroll.viewport()
+        if viewport is None:
+            return 1
+        available = max(340, viewport.width() - 56)
+        if available >= 1100:
+            return 2
+        return 1
+
+    def _maybe_reflow_parts_rows(self, force: bool = False) -> None:
+        if not hasattr(self, "parts_cards_scroll"):
+            return
+        cols = self._detect_parts_card_columns()
+        if force or cols != self._parts_slot_columns:
+            self._parts_slot_columns = cols
+            self._rebuild_parts_cards()
+
+    @staticmethod
+    def _format_parts_raw(raw: bytes) -> str:
+        return raw.hex(" ").upper()
+
+    @staticmethod
+    def _make_parts_badge(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("garageCardStatBadge")
+        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        label.setAlignment(Qt.AlignCenter)
+        return label
+
+    def _parts_level_dict_from_entry(self, entry: ResolvedPartsEntry) -> Dict[str, int]:
+        return {
+            "Tires": entry.tires,
+            "Brakes": entry.brakes,
+            "Suspension": entry.suspension,
+            "Transmission": entry.transmission,
+            "Engine": entry.engine,
+            "Turbo": entry.turbo,
+            "NOS": entry.nos,
+        }
+
+    def _current_parts_levels(self) -> Dict[int, Dict[str, int]]:
+        want_map = self.want_parts_levels or {}
+        return {
+            entry.career_slot: dict(
+                want_map.get(
+                    entry.career_slot,
+                    self.have_parts_levels.get(entry.career_slot, self._parts_level_dict_from_entry(entry)),
+                )
+            )
+            for entry in self.parts_entries
+        }
+
+    def _current_parts_masks(self) -> Dict[int, int]:
+        want_map = self.want_parts_masks or {}
+        return {
+            entry.career_slot: int(
+                want_map.get(entry.career_slot, self.have_parts_masks.get(entry.career_slot, entry.junkman_mask))
+            )
+            for entry in self.parts_entries
+        }
+
+    @staticmethod
+    def _parts_limits(entry: ResolvedPartsEntry) -> Optional[Dict[str, int]]:
+        return get_model_tuning_limits(entry.display_name)
+
+    def _parts_card_changed(self, career_slot: int) -> bool:
+        current_levels = self._current_parts_levels().get(career_slot, {})
+        have_levels = self.have_parts_levels.get(career_slot, {})
+        if any(int(current_levels.get(name, 0)) != int(have_levels.get(name, 0)) for name in PERF_PART_NAMES):
+            return True
+        current_mask = self._current_parts_masks().get(career_slot, self.have_parts_masks.get(career_slot, 0))
+        return int(current_mask) != int(self.have_parts_masks.get(career_slot, 0))
+
+    def _has_parts_pending_changes(self) -> bool:
+        if self.savefile is None or self.parts_detection_error:
+            return False
+        return any(self._parts_card_changed(entry.career_slot) for entry in self.parts_entries)
+
+    def _parts_junkman_reason(self, levels: Dict[str, int], category: str) -> Optional[str]:
+        if category == "Turbo" and int(levels.get("Turbo", 0)) <= 0:
+            return "Requires regular Turbo > 0"
+        if category == "NOS" and int(levels.get("NOS", 0)) <= 0:
+            return "Requires regular NOS > 0"
+        return None
+
+    def on_parts_level_changed(self, career_slot: int, part_name: str, value: int) -> None:
+        if self._parts_refreshing or not self.savefile or self.parts_detection_error:
+            return
+        entry = next((item for item in self.parts_entries if item.career_slot == career_slot), None)
+        if entry is None:
+            return
+        limits = self._parts_limits(entry)
+        if limits is None:
+            return
+        cap = int(limits.get(part_name, 0))
+        wanted = max(0, min(int(value), cap))
+        if self.want_parts_levels is None:
+            self.want_parts_levels = {slot: dict(levels) for slot, levels in self.have_parts_levels.items()}
+        if self.want_parts_masks is None:
+            self.want_parts_masks = dict(self.have_parts_masks)
+        self.want_parts_levels.setdefault(career_slot, dict(self.have_parts_levels.get(career_slot, {})))[part_name] = wanted
+
+        current_levels = self._current_parts_levels().get(career_slot, {})
+        current_mask = self._current_parts_masks().get(career_slot, self.have_parts_masks.get(career_slot, 0))
+        turbo_bit = next((bit for bit, name in SaveFile.JUNKMAN_MASK_BITS if name == "Turbo"), 0)
+        nos_bit = next((bit for bit, name in SaveFile.JUNKMAN_MASK_BITS if name == "NOS"), 0)
+        if turbo_bit and int(current_levels.get("Turbo", 0)) <= 0:
+            current_mask &= ~turbo_bit
+        if nos_bit and int(current_levels.get("NOS", 0)) <= 0:
+            current_mask &= ~nos_bit
+        self.want_parts_masks[career_slot] = current_mask
+
+        self._update_action_states()
+        self._refresh_parts_page()
+
+    def on_parts_junkman_toggled(self, career_slot: int, category: str, checked: bool) -> None:
+        if self._parts_refreshing or not self.savefile or self.parts_detection_error:
+            return
+        bit = next((bit for bit, name in SaveFile.JUNKMAN_MASK_BITS if name == category), None)
+        if bit is None:
+            return
+        levels = self._current_parts_levels().get(career_slot, self.have_parts_levels.get(career_slot, {}))
+        if self._parts_junkman_reason(levels, category):
+            return
+        if self.want_parts_masks is None:
+            self.want_parts_masks = dict(self.have_parts_masks)
+        current = self._current_parts_masks().get(career_slot, self.have_parts_masks.get(career_slot, 0))
+        self.want_parts_masks[career_slot] = current | bit if checked else current & ~bit
+        self._update_action_states()
+        self._refresh_parts_page()
+
+    def _add_parts_perf_grid(self, parent: QVBoxLayout, entry) -> None:
+        """Build a 2-column grid of staged level rows for performance parts."""
+        current_levels = self._current_parts_levels().get(entry.career_slot, self._parts_level_dict_from_entry(entry))
+        limits = self._parts_limits(entry)
+        editable = limits is not None
+        perf_items = [(name, int(current_levels.get(name, 0))) for name in PERF_PART_NAMES]
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(6)
+        for idx, (name, level) in enumerate(perf_items):
+            max_level = max(int(level), int((limits or {}).get(name, get_tuning_limit(entry.display_name, name, default=4))))
+            row_w = QWidget()
+            row_w.setObjectName("partsLevelRow")
+            row_layout = QHBoxLayout(row_w)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
+
+            lbl = QLabel(name)
+            lbl.setObjectName("partsLevelLabel")
+            lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            row_layout.addWidget(lbl)
+
+            for seg_idx in range(1, max_level + 1):
+                seg = QFrame()
+                seg.setObjectName("partsLevelSeg")
+                if level >= seg_idx:
+                    seg.setProperty("filled", str(seg_idx))
+                else:
+                    seg.setProperty("filled", "0")
+                seg.setFixedSize(20, 8)
+                row_layout.addWidget(seg)
+
+            num = QLabel(f"{level}/{max_level}")
+            num.setObjectName("partsLevelNum")
+            num.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            row_layout.addWidget(num)
+
+            if editable:
+                spin = WantSpinBox()
+                spin.setObjectName("partsLevelSpin")
+                spin.setRange(0, max_level)
+                spin.setValue(level)
+                spin.setAlignment(Qt.AlignCenter)
+                spin.setButtonSymbols(WantSpinBox.PlusMinus)
+                spin.valueChanged.connect(
+                    lambda val, slot=entry.career_slot, part=name: self.on_parts_level_changed(slot, part, val)
+                )
+                row_layout.addWidget(spin)
+            else:
+                row_layout.addWidget(self._make_parts_badge("Read-only"))
+
+            gr = idx // 2
+            gc = idx % 2
+            grid.addWidget(row_w, gr, gc)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        parent.addLayout(grid)
+
+    def _add_parts_junkman_section(self, parent: QVBoxLayout, entry) -> None:
+        """Build Junkman category pills — teal accent for active, muted for none."""
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        if entry.junkman_categories:
+            for cat in entry.junkman_categories:
+                pill = QLabel(cat)
+                pill.setObjectName("partsJunkmanActive")
+                pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                pill.setAlignment(Qt.AlignCenter)
+                row.addWidget(pill, 0, Qt.AlignLeft)
+        else:
+            pill = QLabel("None")
+            pill.setObjectName("partsJunkmanNone")
+            pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            pill.setAlignment(Qt.AlignCenter)
+            row.addWidget(pill, 0, Qt.AlignLeft)
+        row.addStretch(1)
+        parent.addLayout(row)
+
+    def _add_parts_junkman_section(self, parent: QVBoxLayout, entry) -> None:
+        current_levels = self._current_parts_levels().get(entry.career_slot, self._parts_level_dict_from_entry(entry))
+        current_mask = self._current_parts_masks().get(
+            entry.career_slot,
+            self.have_parts_masks.get(entry.career_slot, entry.junkman_mask),
+        )
+        editable = self._parts_limits(entry) is not None
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        blocked: List[str] = []
+        active_any = False
+        for bit, cat in SaveFile.JUNKMAN_MASK_BITS:
+            enabled = bool(current_mask & bit)
+            active_any = active_any or enabled
+            reason = self._parts_junkman_reason(current_levels, cat)
+            if editable:
+                btn = QPushButton(cat)
+                btn.setCheckable(True)
+                btn.setChecked(enabled)
+                btn.setEnabled(reason is None)
+                btn.setObjectName("partsJunkmanToggle")
+                btn.setProperty("active", enabled)
+                if reason:
+                    btn.setToolTip(reason)
+                    blocked.append(f"{cat}: {reason}")
+                btn.clicked.connect(
+                    lambda checked, slot=entry.career_slot, category=cat: self.on_parts_junkman_toggled(slot, category, checked)
+                )
+                btn.style().unpolish(btn)
+                btn.style().polish(btn)
+                row.addWidget(btn, 0, Qt.AlignLeft)
+            elif enabled:
+                pill = QLabel(cat)
+                pill.setObjectName("partsJunkmanActive")
+                pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                pill.setAlignment(Qt.AlignCenter)
+                row.addWidget(pill, 0, Qt.AlignLeft)
+        if not active_any and not editable:
+            pill = QLabel("None")
+            pill.setObjectName("partsJunkmanNone")
+            pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            pill.setAlignment(Qt.AlignCenter)
+            row.addWidget(pill, 0, Qt.AlignLeft)
+        row.addStretch(1)
+        parent.addLayout(row)
+        if blocked:
+            note = QLabel(" / ".join(blocked))
+            note.setObjectName("partsCardNote")
+            note.setWordWrap(True)
+            parent.addWidget(note)
+
+    def _rebuild_parts_cards(self) -> None:
+        if not hasattr(self, "parts_cards_layout"):
+            return
+        self._clear_layout(self.parts_cards_layout)
+        self._parts_card_widgets = {}
+        columns = max(1, self._detect_parts_card_columns())
+        self._parts_slot_columns = columns
+
+        if not self.savefile:
+            label = QLabel("Open a save to inspect resolved parts records.")
+            label.setObjectName("mutedLabel")
+            self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
+            return
+
+        if self.parts_detection_error:
+            label = QLabel(f"Parts viewer disabled: {self.parts_detection_error}")
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
+            return
+
+        visible_entries = self._parts_card_entries()
+        if not visible_entries:
+            label = QLabel("No parts entries match the current search/filter.")
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
+            return
+
+        for idx, entry in enumerate(visible_entries):
+            card = QFrame()
+            card.setObjectName("partsCard")
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            card.setMinimumWidth(320)
+            card.setProperty("changed", self._parts_card_changed(entry.career_slot))
+
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(6)
+
+            # ── Header: slot + source badge ─────────────────
+            header_row = QHBoxLayout()
+            header_row.setSpacing(8)
+            slot_label = QLabel(f"Slot {entry.career_slot + 1}")
+            slot_label.setObjectName("garageCardSlot")
+            slot_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            slot_label.setAlignment(Qt.AlignCenter)
+            source_label = self._make_garage_source_badge(entry.source_kind)
+            header_row.addWidget(slot_label, 0, Qt.AlignLeft)
+            header_row.addStretch(1)
+            header_row.addWidget(source_label, 0, Qt.AlignRight)
+            card_layout.addLayout(header_row)
+
+            # ── Car name ────────────────────────────────────
+            name_label = QLabel(entry.display_name)
+            name_label.setObjectName("garageCardMeta")
+            name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            name_label.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(name_label, 0, Qt.AlignLeft)
+
+            # ── Meta badges ─────────────────────────────────
+            meta_row = QHBoxLayout()
+            meta_row.setSpacing(8)
+            parts_label = QLabel(f"Parts Slot {entry.parts_slot}")
+            parts_label.setObjectName("garageCardStatBadge")
+            parts_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            parts_label.setAlignment(Qt.AlignCenter)
+            meta_row.addWidget(parts_label, 0, Qt.AlignLeft)
+
+            offset_label = QLabel(f"Block 0x{entry.block_abs_off:05X}")
+            offset_label.setObjectName("garageCardStatBadge")
+            offset_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            offset_label.setAlignment(Qt.AlignCenter)
+            meta_row.addWidget(offset_label, 0, Qt.AlignLeft)
+            meta_row.addStretch(1)
+            card_layout.addLayout(meta_row)
+
+            limits = self._parts_limits(entry)
+            if limits is None:
+                ro_label = QLabel("Read-only: no confirmed tuning cap mapping for this model.")
+                ro_label.setObjectName("partsCardNote")
+                ro_label.setWordWrap(True)
+                card_layout.addWidget(ro_label)
+
+            # ── Separator ───────────────────────────────────
+            sep = QFrame()
+            sep.setFrameShape(QFrame.HLine)
+            sep.setObjectName("garageCardSep")
+            card_layout.addWidget(sep)
+
+            # ── Performance (level bars) ────────────────────
+            perf_label = QLabel("Performance")
+            perf_label.setObjectName("garageCardFieldLabel")
+            perf_label.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(perf_label)
+
+            self._add_parts_perf_grid(card_layout, entry)
+
+            # ── Junkman (accent pills) ──────────────────────
+            junkman_label = QLabel("Junkman")
+            junkman_label.setObjectName("garageCardFieldLabel")
+            junkman_label.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(junkman_label)
+
+            self._add_parts_junkman_section(card_layout, entry)
+
+            # ── Diagnostics (toggle-gated) ──────────────────
+            if self.show_parts_diagnostics:
+                diag_sep = QFrame()
+                diag_sep.setFrameShape(QFrame.HLine)
+                diag_sep.setObjectName("garageCardSep")
+                card_layout.addWidget(diag_sep)
+
+                diag_label = QLabel("Diagnostics")
+                diag_label.setObjectName("garageCardFieldLabel")
+                diag_label.setAlignment(Qt.AlignCenter)
+                card_layout.addWidget(diag_label)
+
+                marker_label = self._make_parts_badge(f"Marker {self._format_parts_raw(entry.marker)}")
+                card_layout.addWidget(marker_label, 0, Qt.AlignLeft)
+
+                mask_label = self._make_parts_badge(
+                    f"Mask 0x{self._current_parts_masks().get(entry.career_slot, entry.junkman_mask):02X}"
+                )
+                card_layout.addWidget(mask_label, 0, Qt.AlignLeft)
+
+                raw_label = QLabel("Confirmed Slice (+0x118..+0x137)")
+                raw_label.setObjectName("partsCardNote")
+                raw_label.setAlignment(Qt.AlignCenter)
+                card_layout.addWidget(raw_label)
+
+                raw_value = QLabel(self._format_parts_raw(entry.confirmed_raw))
+                raw_value.setObjectName("partsCardRaw")
+                raw_value.setAlignment(Qt.AlignCenter)
+                raw_value.setWordWrap(True)
+                raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                card_layout.addWidget(raw_value)
+
+            row = idx // columns
+            col = idx % columns
+            self.parts_cards_layout.addWidget(card, row, col)
+            self._parts_card_widgets[entry.career_slot] = card
+
+        for col in range(columns):
+            self.parts_cards_layout.setColumnStretch(col, 1)
+
+    def _refresh_parts_page(self) -> None:
+        loaded = self.savefile is not None
+        if hasattr(self, "chk_show_parts_diagnostics"):
+            self.chk_show_parts_diagnostics.blockSignals(True)
+            self.chk_show_parts_diagnostics.setChecked(self.show_parts_diagnostics)
+            self.chk_show_parts_diagnostics.setEnabled(loaded)
+            self.chk_show_parts_diagnostics.blockSignals(False)
+        self._rebuild_parts_cards()
+
+    def _refresh_profile_inputs(self) -> None:
+        loaded = self.savefile is not None
+        self.chk_show_integrity.blockSignals(True)
+        self.chk_show_integrity.setChecked(self.show_integrity_panel)
+        self.chk_show_integrity.blockSignals(False)
+        self._sync_integrity_visibility()
+
+        self._profile_refreshing = True
+        try:
+            money_value = self.want_money if self.want_money is not None else self.have_money
+            self._set_profile_line_edit(self.money_edit, money_value, loaded)
+            self.money_current_label.setText(
+                self._format_current_value(self.have_money) if loaded else "Current: -"
+            )
+            self._refresh_garage_totals(loaded)
+            self._refresh_garage_page()
+        finally:
+            self._profile_refreshing = False
+
+    def _has_profile_pending_changes(self) -> bool:
+        if self.savefile is None:
+            return False
+        current_money = self.want_money if self.want_money is not None else self.have_money
+        if current_money != self.have_money:
+            return True
+        if self.garage_detection_error:
+            return False
+        for slot in self.garage_slots:
+            if self._garage_card_changed(slot.career_slot):
+                return True
+        return False
+
+    def on_garage_search_changed(self) -> None:
+        self._refresh_garage_page()
+
+    def _select_garage_filter(self, source: str) -> None:
+        self.garage_filter = source
+        for label, button in self.garage_filter_buttons.items():
+            button.setChecked(label == source)
+        self._refresh_garage_page()
+
+    def on_parts_search_changed(self) -> None:
+        self._refresh_parts_page()
+
+    def _select_parts_filter(self, source: str) -> None:
+        self.parts_filter = source
+        for label, button in self.parts_filter_buttons.items():
+            button.setChecked(label == source)
+        self._refresh_parts_page()
+
+    def on_toggle_parts_diagnostics(self) -> None:
+        self.show_parts_diagnostics = self.chk_show_parts_diagnostics.isChecked()
+        self._refresh_parts_page()
+
+    def on_toggle_unlinked_pursuits(self) -> None:
+        self.show_unlinked_pursuits = self.chk_show_unlinked_pursuits.isChecked()
+        self._sync_garage_diagnostics_visibility()
+
+    def on_garage_slot_edit_finished(self, slot_index: int) -> None:
+        if self._profile_refreshing or not self.savefile or self.garage_detection_error:
+            return
+        edit = self.garage_card_edits.get(slot_index)
+        if edit is None:
+            return
+        current_want = self._current_slot_bounties()
+        fallback = current_want.get(slot_index, self.have_slot_bounties.get(slot_index, 0))
+        value = self._commit_profile_edit(edit, fallback)
+        if value is None:
+            return
+        if self.want_slot_bounties is None:
+            self.want_slot_bounties = dict(self.have_slot_bounties)
+        self.want_slot_bounties[slot_index] = value
+        self._refresh_garage_totals(True)
+        self._refresh_garage_page()
+        self._update_action_states()
+
+    def on_garage_pink_slip_toggled(self, slot_index: int) -> None:
+        if self._profile_refreshing or not self.savefile or self.garage_detection_error:
+            return
+        toggle = self.garage_card_pink_toggles.get(slot_index)
+        if toggle is None:
+            return
+        have_flags = self.have_slot_flags.get(slot_index)
+        if not self._supports_pink_slip_toggle(have_flags):
+            return
+        new_flags = have_flags | SaveFile.PINK_SLIP_FLAG if toggle.isChecked() else have_flags & ~SaveFile.PINK_SLIP_FLAG
+        if self.want_slot_flags is None:
+            self.want_slot_flags = dict(self.have_slot_flags)
+        self.want_slot_flags[slot_index] = new_flags
+        self._update_action_states()
+        self._refresh_garage_page()
+
     def _select_category(self, cat: str):
         for c, b in self.cat_buttons.items():
             b.setChecked(c == cat)
@@ -1277,15 +2274,51 @@ class MainWindow(QMainWindow):
             self.have_counts = self.savefile.get_junkman_counts()
             self.have_money = self.savefile.get_money()
             self.garage_detection_error = None
+            self.parts_detection_error = None
             try:
                 self.garage_slots = self.savefile.get_garage_slots()
                 self.have_slot_bounties = {
                     slot.career_slot: slot.bounty for slot in self.garage_slots
                 }
+                self.have_slot_flags = {
+                    slot.career_slot: slot.flags for slot in self.garage_slots if slot.flags is not None
+                }
             except Exception as exc:
                 self.garage_detection_error = str(exc)
                 self.garage_slots = []
                 self.have_slot_bounties = {}
+                self.have_slot_flags = {}
+            if self.garage_detection_error:
+                self.parts_entries = []
+                self.parts_detection_error = self.garage_detection_error
+            else:
+                try:
+                    self.parts_entries = self.savefile.get_resolved_parts_entries()
+                except Exception as exc:
+                    self.parts_entries = []
+                    self.parts_detection_error = str(exc)
+            if self.parts_detection_error:
+                self.have_parts_levels = {}
+                self.have_parts_masks = {}
+                self.want_parts_levels = None
+                self.want_parts_masks = None
+            else:
+                self.have_parts_levels = {
+                    entry.career_slot: {
+                        "Tires": entry.tires,
+                        "Brakes": entry.brakes,
+                        "Suspension": entry.suspension,
+                        "Transmission": entry.transmission,
+                        "Engine": entry.engine,
+                        "Turbo": entry.turbo,
+                        "NOS": entry.nos,
+                    }
+                    for entry in self.parts_entries
+                }
+                self.have_parts_masks = {
+                    entry.career_slot: entry.junkman_mask
+                    for entry in self.parts_entries
+                }
             for tid in self.have_counts:
                 self.ensure_token_entry(tid)
             if not self.want_counts:
@@ -1294,12 +2327,38 @@ class MainWindow(QMainWindow):
                 self.want_money = self.have_money
             if self.garage_detection_error:
                 self.want_slot_bounties = None
+                self.want_slot_flags = None
             elif self.want_slot_bounties is None:
                 self.want_slot_bounties = dict(self.have_slot_bounties)
+                self.want_slot_flags = dict(self.have_slot_flags)
             else:
                 self.want_slot_bounties = {
                     slot.career_slot: self.want_slot_bounties.get(slot.career_slot, slot.bounty)
                     for slot in self.garage_slots
+                }
+                self.want_slot_flags = {
+                    slot.career_slot: self.want_slot_flags.get(slot.career_slot, slot.flags)
+                    for slot in self.garage_slots if slot.flags is not None and self.want_slot_flags is not None
+                }
+            if self.parts_detection_error:
+                self.want_parts_levels = None
+                self.want_parts_masks = None
+            elif self.want_parts_levels is None:
+                self.want_parts_levels = {
+                    slot_index: dict(levels) for slot_index, levels in self.have_parts_levels.items()
+                }
+                self.want_parts_masks = dict(self.have_parts_masks)
+            else:
+                self.want_parts_levels = {
+                    entry.career_slot: dict(self.want_parts_levels.get(entry.career_slot, self.have_parts_levels.get(entry.career_slot, {})))
+                    for entry in self.parts_entries
+                }
+                self.want_parts_masks = {
+                    entry.career_slot: (self.want_parts_masks or {}).get(
+                        entry.career_slot,
+                        self.have_parts_masks.get(entry.career_slot, 0),
+                    )
+                    for entry in self.parts_entries
                 }
         else:
             self.lbl_file.setText("File: (not opened)")
@@ -1311,14 +2370,23 @@ class MainWindow(QMainWindow):
             self.want_money = None
             self.garage_slots = []
             self.have_slot_bounties = {}
+            self.have_slot_flags = {}
             self.want_slot_bounties = None
+            self.want_slot_flags = None
             self.garage_detection_error = None
+            self.parts_entries = []
+            self.have_parts_levels = {}
+            self.want_parts_levels = None
+            self.have_parts_masks = {}
+            self.want_parts_masks = None
+            self.parts_detection_error = None
             self.show_all_garage_slots = False
 
         self.lbl_limits.setText(
             f"Limits: Safe {min(63, self._slot_capacity())}, Advanced {min(255, self._slot_capacity())}"
         )
         self._refresh_profile_inputs()
+        self._refresh_parts_page()
         self.refresh_cards()
 
     # -- Card grid rendering ---------------------------------------------
@@ -1440,7 +2508,7 @@ class MainWindow(QMainWindow):
             want = self.want_counts.get(tid, have)
             if want != have:
                 return True
-        return self.clear_unknown_next or self._has_profile_pending_changes()
+        return self.clear_unknown_next or self._has_profile_pending_changes() or self._has_parts_pending_changes()
 
     def _update_action_states(self):
         pending = self._has_pending_changes()
@@ -1468,6 +2536,7 @@ class MainWindow(QMainWindow):
             else:
                 self.cards_container.setFixedWidth(self._card_area_width(prev))
         self._maybe_reflow_garage_rows()
+        self._maybe_reflow_parts_rows()
 
     # -- Drag & drop ------------------------------------------------
 
@@ -1572,7 +2641,13 @@ class MainWindow(QMainWindow):
         self.want_counts = dict(self.have_counts)
         self.want_money = self.have_money
         self.want_slot_bounties = None if self.garage_detection_error else dict(self.have_slot_bounties)
+        self.want_slot_flags = None if self.garage_detection_error else dict(self.have_slot_flags)
+        self.want_parts_levels = None if self.parts_detection_error else {
+            slot: dict(levels) for slot, levels in self.have_parts_levels.items()
+        }
+        self.want_parts_masks = None if self.parts_detection_error else dict(self.have_parts_masks)
         self._refresh_profile_inputs()
+        self._refresh_parts_page()
         self.refresh_cards()
 
     def on_clear_all_want(self):
@@ -1612,6 +2687,27 @@ class MainWindow(QMainWindow):
                     slot_changes.append(f"Slot {slot.career_slot + 1} - {slot.display_name}: {have} -> {want}")
         have_total_bounty = sum(self.have_slot_bounties.values())
         want_total_bounty = sum(self._current_slot_bounties().values()) if not self.garage_detection_error else None
+        parts_changes: List[str] = []
+        if not self.parts_detection_error:
+            current_levels = self._current_parts_levels()
+            current_masks = self._current_parts_masks()
+            for entry in self.parts_entries:
+                deltas: List[str] = []
+                have_levels = self.have_parts_levels.get(entry.career_slot, {})
+                want_levels = current_levels.get(entry.career_slot, have_levels)
+                for name in PERF_PART_NAMES:
+                    have = int(have_levels.get(name, 0))
+                    want = int(want_levels.get(name, have))
+                    if want != have:
+                        deltas.append(f"{name} {have}->{want}")
+                have_mask = int(self.have_parts_masks.get(entry.career_slot, 0))
+                want_mask = int(current_masks.get(entry.career_slot, have_mask))
+                if want_mask != have_mask:
+                    deltas.append(f"Junkman 0x{have_mask:02X}->0x{want_mask:02X}")
+                if deltas:
+                    parts_changes.append(
+                        f"Slot {entry.career_slot + 1} - {entry.display_name}: " + ", ".join(deltas)
+                    )
         summary = (
             f"Total slots: {total}\n"
             f"Used (have): {used}\n"
@@ -1622,11 +2718,15 @@ class MainWindow(QMainWindow):
         )
         summary += f"\n\nProfile changes:\nMoney: {self.have_money} -> {self.want_money if self.want_money is not None else self.have_money}"
         if self.garage_detection_error:
-            summary += f"\nGarage Bounty: unavailable ({self.garage_detection_error})"
+            summary += f"\nGarage: unavailable ({self.garage_detection_error})"
         else:
             summary += f"\nTotal Bounty / Rating: {have_total_bounty} -> {want_total_bounty}"
             if slot_changes:
                 summary += "\n" + "\n".join(slot_changes)
+        if self.parts_detection_error:
+            summary += f"\n\nParts: unavailable ({self.parts_detection_error})"
+        elif parts_changes:
+            summary += "\n\nParts changes:\n" + "\n".join(parts_changes)
         return summary
 
     def on_apply_changes(self):
@@ -1670,9 +2770,23 @@ class MainWindow(QMainWindow):
             if not self.garage_detection_error:
                 for slot_index, value in self._current_slot_bounties().items():
                     self.savefile.set_slot_bounty(slot_index, value)
+            if not self.parts_detection_error:
+                current_levels = self._current_parts_levels()
+                current_masks = self._current_parts_masks()
+                for entry in self.parts_entries:
+                    levels = current_levels.get(entry.career_slot, self.have_parts_levels.get(entry.career_slot, {}))
+                    for name in PERF_PART_NAMES:
+                        self.savefile.set_part_level(entry.career_slot, name, int(levels.get(name, 0)))
+                for entry in self.parts_entries:
+                    self.savefile.set_junkman_mask(
+                        entry.career_slot,
+                        int(current_masks.get(entry.career_slot, self.have_parts_masks.get(entry.career_slot, 0))),
+                    )
             self.want_counts = {}
             self.want_money = None
             self.want_slot_bounties = None
+            self.want_parts_levels = None
+            self.want_parts_masks = None
             self.clear_unknown_next = False
             self.refresh_state()
             ToastNotification.show_toast(self, "Changes applied in memory")
@@ -1763,6 +2877,9 @@ class MainWindow(QMainWindow):
             self.want_counts = {}
             self.want_money = None
             self.want_slot_bounties = None
+            self.want_slot_flags = None
+            self.want_parts_levels = None
+            self.want_parts_masks = None
             self.garage_detection_error = None
             self.refresh_state()
             ToastNotification.show_toast(self, "Save loaded")

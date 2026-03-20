@@ -10,6 +10,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 from core.cars import resolve_car_name
 from core.checksums import ea_crc32
 from core.junkman import JunkmanInventory
+from core.tuning_limits import get_model_tuning_limits
 
 HashScheme = Optional[Literal["md5_saved_data", "md5_all_minus_tail"]]
 
@@ -65,17 +66,95 @@ class CareerVehicleRecord:
 
 
 @dataclass(frozen=True)
+class OwnedCarRecord:
+    car_number: int
+    signature: bytes
+    location_bits: int
+    misc_bits: int
+    parts_slot: int
+    career_slot: int
+    abs_off: int
+
+
+@dataclass(frozen=True)
 class ResolvedGarageEntry:
     career_slot: int
     car_number: Optional[int]
     signature: Optional[bytes]
     display_name: str
+    source_kind: str
     occupied: bool
     bounty: int
     escaped: int
     busted: int
+    flags: Optional[int]
+    flags2: Optional[int]
+    parts_slot: Optional[int]
+    match_count: int
     pursuit_abs_off: int
     car_abs_off: Optional[int]
+
+
+@dataclass(frozen=True)
+class PartsRecord:
+    parts_slot: int
+    block_abs_off: int
+    confirmed_raw: bytes
+    marker: bytes
+    tires: int
+    brakes: int
+    suspension: int
+    transmission: int
+    engine: int
+    turbo: int
+    nos: int
+    junkman_mask: int
+    junkman_categories: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResolvedPartsEntry:
+    career_slot: int
+    display_name: str
+    source_kind: str
+    parts_slot: int
+    block_abs_off: int
+    marker: bytes
+    confirmed_raw: bytes
+    tires: int
+    brakes: int
+    suspension: int
+    transmission: int
+    engine: int
+    turbo: int
+    nos: int
+    junkman_mask: int
+    junkman_categories: Tuple[str, ...]
+    flags: Optional[int]
+    flags2: Optional[int]
+    car_abs_off: Optional[int]
+
+
+@dataclass(frozen=True)
+class ResolvedMyCarsEntry:
+    car_number: int
+    signature: bytes
+    resolved_model_name: str
+    location_bits: int
+    misc_bits: int
+    parts_slot: int
+    career_slot: int
+    block_abs_off: int
+    tires: int
+    brakes: int
+    suspension: int
+    transmission: int
+    engine: int
+    turbo: int
+    nos: int
+    junkman_mask: int
+    junkman_categories: Tuple[str, ...]
+    car_abs_off: int
 
 
 class SaveFile:
@@ -105,6 +184,42 @@ class SaveFile:
     CAREER_VEHICLE_SENTINEL = b"\xCD\xCD"
     EMPTY_CAR_NUMBER = 0xFFFFFFFF
     EMPTY_CAREER_SLOT = 0xFF
+    CAREER_FLAG = 0x02
+    MY_CARS_FLAG = 0x04
+    PINK_SLIP_FLAG = 0x40
+    PARTS_BLOCK_BASE_OFFSET = 0x9CCD
+    PARTS_BLOCK_SLOT_BASE = 31
+    PARTS_BLOCK_SIZE = 0x198
+    PARTS_MARKER_OFFSET = 0x194
+    PARTS_LEVELS_BASE_OFFSET = 0x118
+    PARTS_LEVEL_FIELD_SIZE = 0x04
+    PARTS_TIRES_OFFSET = 0x118
+    PARTS_BRAKES_OFFSET = 0x11C
+    PARTS_SUSPENSION_OFFSET = 0x120
+    PARTS_TRANSMISSION_OFFSET = 0x124
+    PARTS_ENGINE_OFFSET = 0x128
+    PARTS_TURBO_OFFSET = 0x12C
+    PARTS_NOS_OFFSET = 0x130
+    PARTS_JUNKMAN_MASK_OFFSET = 0x134
+    PARTS_CONFIRMED_SLICE_END = 0x138
+    JUNKMAN_MASK_BITS: Tuple[Tuple[int, str], ...] = (
+        (0x01, "Tires"),
+        (0x02, "Brakes"),
+        (0x04, "Suspension"),
+        (0x08, "Transmission"),
+        (0x10, "Engine"),
+        (0x20, "Turbo"),
+        (0x40, "NOS"),
+    )
+    PART_LEVEL_OFFSETS: Dict[str, int] = {
+        "Tires": PARTS_TIRES_OFFSET,
+        "Brakes": PARTS_BRAKES_OFFSET,
+        "Suspension": PARTS_SUSPENSION_OFFSET,
+        "Transmission": PARTS_TRANSMISSION_OFFSET,
+        "Engine": PARTS_ENGINE_OFFSET,
+        "Turbo": PARTS_TURBO_OFFSET,
+        "NOS": PARTS_NOS_OFFSET,
+    }
 
     def __init__(self, path: Path, data: bytearray, layout: SaveLayout | None = None, hash_scheme: HashScheme = None):
         self.path = path
@@ -133,6 +248,9 @@ class SaveFile:
 
     def _read_u8(self, offset: int) -> int:
         return self.data[offset]
+
+    def _write_u16(self, offset: int, value: int) -> None:
+        struct.pack_into("<H", self.data, offset, int(value) & 0xFFFF)
 
     def _write_u32(self, offset: int, value: int) -> None:
         struct.pack_into("<I", self.data, offset, int(value) & 0xFFFFFFFF)
@@ -268,8 +386,8 @@ class SaveFile:
             raise ValueError("Failed to detect garage block")
         return slots
 
-    def get_career_vehicle_records(self) -> List[CareerVehicleRecord]:
-        records: List[CareerVehicleRecord] = []
+    def get_owned_car_records(self) -> List[OwnedCarRecord]:
+        records: List[OwnedCarRecord] = []
         base_off = self.CAREER_VEHICLE_BASE_OFFSET
 
         while base_off + self.CAREER_VEHICLE_SIZE <= len(self.data):
@@ -288,14 +406,13 @@ class SaveFile:
             if (
                 car_number != self.EMPTY_CAR_NUMBER
                 and signature != (b"\x00" * self.CAREER_VEHICLE_SIGNATURE_SIZE)
-                and career_slot != self.EMPTY_CAREER_SLOT
             ):
                 records.append(
-                    CareerVehicleRecord(
+                    OwnedCarRecord(
                         car_number=car_number,
                         signature=signature,
-                        flags=self._read_u16(base_off + self.CAREER_VEHICLE_FLAGS_OFFSET),
-                        flags2=self._read_u16(base_off + self.CAREER_VEHICLE_FLAGS2_OFFSET),
+                        location_bits=self._read_u16(base_off + self.CAREER_VEHICLE_FLAGS_OFFSET),
+                        misc_bits=self._read_u16(base_off + self.CAREER_VEHICLE_FLAGS2_OFFSET),
                         parts_slot=self._read_u8(base_off + self.CAREER_VEHICLE_PARTS_SLOT_OFFSET),
                         career_slot=career_slot,
                         abs_off=base_off,
@@ -305,6 +422,38 @@ class SaveFile:
             base_off += self.CAREER_VEHICLE_SIZE
 
         return records
+
+    def get_career_vehicle_records(self) -> List[CareerVehicleRecord]:
+        return [
+            CareerVehicleRecord(
+                car_number=record.car_number,
+                signature=record.signature,
+                flags=record.location_bits,
+                flags2=record.misc_bits,
+                parts_slot=record.parts_slot,
+                career_slot=record.career_slot,
+                abs_off=record.abs_off,
+            )
+            for record in self.get_owned_car_records()
+            if record.career_slot != self.EMPTY_CAREER_SLOT
+        ]
+
+    def get_my_cars_records(self) -> List[OwnedCarRecord]:
+        return [
+            record
+            for record in self.get_owned_car_records()
+            if record.location_bits == self.MY_CARS_FLAG
+        ]
+
+    @classmethod
+    def derive_source_kind(cls, flags: Optional[int]) -> str:
+        if flags is None:
+            return "Unknown"
+        if flags == cls.CAREER_FLAG:
+            return "Career"
+        if flags == (cls.CAREER_FLAG | cls.PINK_SLIP_FLAG):
+            return "Pink Slip"
+        return f"Unknown (0x{flags:02X})"
 
     def get_garage_slots(self) -> List[ResolvedGarageEntry]:
         pursuits = self.get_pursuit_records()
@@ -322,17 +471,26 @@ class SaveFile:
                 display_name = resolve_car_name(match.signature) or f"Sig {match.signature.hex().upper()}"
                 car_number = match.car_number
                 signature = match.signature
+                flags = match.flags
+                flags2 = match.flags2
+                parts_slot = match.parts_slot
                 car_abs_off = match.abs_off
             elif len(matches) > 1:
                 display_name = f"Ambiguous vehicle ({len(matches)})"
                 car_number = None
                 signature = None
+                flags = None
+                flags2 = None
+                parts_slot = None
                 car_abs_off = None
                 occupied = True
             else:
                 display_name = "Empty" if not occupied else "Unlinked vehicle"
                 car_number = None
                 signature = None
+                flags = None
+                flags2 = None
+                parts_slot = None
                 car_abs_off = None
 
             resolved.append(
@@ -341,16 +499,165 @@ class SaveFile:
                     car_number=car_number,
                     signature=signature,
                     display_name=display_name,
+                    source_kind=self.derive_source_kind(flags),
                     occupied=occupied,
                     bounty=pursuit.bounty,
                     escaped=pursuit.escaped,
                     busted=pursuit.busted,
+                    flags=flags,
+                    flags2=flags2,
+                    parts_slot=parts_slot,
+                    match_count=len(matches),
                     pursuit_abs_off=pursuit.abs_off,
                     car_abs_off=car_abs_off,
                 )
             )
 
         return sorted(resolved, key=lambda item: item.career_slot)
+
+    def get_parts_record(self, parts_slot: int) -> PartsRecord:
+        slot = int(parts_slot)
+        if slot < self.PARTS_BLOCK_SLOT_BASE:
+            raise ValueError(f"parts_slot must be >= {self.PARTS_BLOCK_SLOT_BASE}")
+        abs_off = self.PARTS_BLOCK_BASE_OFFSET + (slot - self.PARTS_BLOCK_SLOT_BASE) * self.PARTS_BLOCK_SIZE
+        end = abs_off + self.PARTS_BLOCK_SIZE
+        if end > len(self.data):
+            raise ValueError(f"Parts slot {slot} points outside the file")
+        marker_off = abs_off + self.PARTS_MARKER_OFFSET
+        marker = bytes(self.data[marker_off:marker_off + 4])
+        expected_marker = bytes((slot & 0xFF, 0xCD, 0xCD, 0xCD))
+        if marker != expected_marker:
+            raise ValueError(
+                f"Parts slot {slot} has unexpected marker {marker.hex(' ').upper()} at 0x{marker_off:05X}"
+            )
+        confirmed_raw = bytes(
+            self.data[
+                abs_off + self.PARTS_LEVELS_BASE_OFFSET:
+                abs_off + self.PARTS_CONFIRMED_SLICE_END
+            ]
+        )
+        junkman_mask = self._read_u32(abs_off + self.PARTS_JUNKMAN_MASK_OFFSET)
+        return PartsRecord(
+            parts_slot=slot,
+            block_abs_off=abs_off,
+            confirmed_raw=confirmed_raw,
+            marker=marker,
+            tires=self._read_u32(abs_off + self.PARTS_TIRES_OFFSET),
+            brakes=self._read_u32(abs_off + self.PARTS_BRAKES_OFFSET),
+            suspension=self._read_u32(abs_off + self.PARTS_SUSPENSION_OFFSET),
+            transmission=self._read_u32(abs_off + self.PARTS_TRANSMISSION_OFFSET),
+            engine=self._read_u32(abs_off + self.PARTS_ENGINE_OFFSET),
+            turbo=self._read_u32(abs_off + self.PARTS_TURBO_OFFSET),
+            nos=self._read_u32(abs_off + self.PARTS_NOS_OFFSET),
+            junkman_mask=junkman_mask,
+            junkman_categories=tuple(
+                name for bit, name in self.JUNKMAN_MASK_BITS if junkman_mask & bit
+            ),
+        )
+
+    def get_resolved_parts_entries(self) -> List[ResolvedPartsEntry]:
+        entries: List[ResolvedPartsEntry] = []
+        for slot in self.get_garage_slots():
+            if slot.parts_slot is None or slot.car_abs_off is None:
+                continue
+            record = self.get_parts_record(slot.parts_slot)
+            entries.append(
+                ResolvedPartsEntry(
+                    career_slot=slot.career_slot,
+                    display_name=slot.display_name,
+                    source_kind=slot.source_kind,
+                    parts_slot=slot.parts_slot,
+                    block_abs_off=record.block_abs_off,
+                    marker=record.marker,
+                    confirmed_raw=record.confirmed_raw,
+                    tires=record.tires,
+                    brakes=record.brakes,
+                    suspension=record.suspension,
+                    transmission=record.transmission,
+                    engine=record.engine,
+                    turbo=record.turbo,
+                    nos=record.nos,
+                    junkman_mask=record.junkman_mask,
+                    junkman_categories=record.junkman_categories,
+                    flags=slot.flags,
+                    flags2=slot.flags2,
+                    car_abs_off=slot.car_abs_off,
+                )
+            )
+        return sorted(entries, key=lambda item: item.career_slot)
+
+    def _parts_entry_for_career_slot(self, career_slot: int) -> ResolvedPartsEntry:
+        wanted = int(career_slot)
+        for entry in self.get_resolved_parts_entries():
+            if entry.career_slot == wanted:
+                return entry
+        raise ValueError(f"Career slot {wanted} does not map to a resolved parts entry")
+
+    def set_part_level(self, career_slot: int, part_name: str, level: int) -> None:
+        entry = self._parts_entry_for_career_slot(career_slot)
+        offset = self.PART_LEVEL_OFFSETS.get(str(part_name))
+        if offset is None:
+            raise ValueError(f"Unsupported part name: {part_name}")
+
+        limits = get_model_tuning_limits(entry.display_name)
+        if limits is None:
+            raise ValueError(f"No confirmed tuning caps for {entry.display_name}")
+
+        cap = int(limits.get(str(part_name), 0))
+        wanted = max(0, min(int(level), cap))
+        self._write_u32(entry.block_abs_off + offset, wanted)
+
+    def set_junkman_mask(self, career_slot: int, mask: int) -> None:
+        entry = self._parts_entry_for_career_slot(career_slot)
+        wanted = int(mask)
+        if not (0 <= wanted <= 0x7F):
+            raise ValueError("junkman mask must be in range 0x00..0x7F")
+
+        turbo_bit = next((bit for bit, name in self.JUNKMAN_MASK_BITS if name == "Turbo"), 0)
+        nos_bit = next((bit for bit, name in self.JUNKMAN_MASK_BITS if name == "NOS"), 0)
+        current = self.get_parts_record(entry.parts_slot)
+        if turbo_bit and (wanted & turbo_bit) and current.turbo <= 0:
+            raise ValueError("Junkman Turbo requires regular Turbo > 0")
+        if nos_bit and (wanted & nos_bit) and current.nos <= 0:
+            raise ValueError("Junkman NOS requires regular NOS > 0")
+
+        self._write_u32(entry.block_abs_off + self.PARTS_JUNKMAN_MASK_OFFSET, wanted)
+
+    def set_junkman_enabled(self, career_slot: int, category: str, enabled: bool) -> None:
+        entry = self._parts_entry_for_career_slot(career_slot)
+        bit = next((bit for bit, name in self.JUNKMAN_MASK_BITS if name == str(category)), None)
+        if bit is None:
+            raise ValueError(f"Unsupported Junkman category: {category}")
+        new_mask = entry.junkman_mask | bit if enabled else entry.junkman_mask & ~bit
+        self.set_junkman_mask(career_slot, new_mask)
+
+    def get_my_cars_parts_entries(self) -> List[ResolvedMyCarsEntry]:
+        entries: List[ResolvedMyCarsEntry] = []
+        for record in self.get_my_cars_records():
+            parts = self.get_parts_record(record.parts_slot)
+            entries.append(
+                ResolvedMyCarsEntry(
+                    car_number=record.car_number,
+                    signature=record.signature,
+                    resolved_model_name=resolve_car_name(record.signature) or f"Sig {record.signature.hex().upper()}",
+                    location_bits=record.location_bits,
+                    misc_bits=record.misc_bits,
+                    parts_slot=record.parts_slot,
+                    career_slot=record.career_slot,
+                    block_abs_off=parts.block_abs_off,
+                    tires=parts.tires,
+                    brakes=parts.brakes,
+                    suspension=parts.suspension,
+                    transmission=parts.transmission,
+                    engine=parts.engine,
+                    turbo=parts.turbo,
+                    nos=parts.nos,
+                    junkman_mask=parts.junkman_mask,
+                    junkman_categories=parts.junkman_categories,
+                    car_abs_off=record.abs_off,
+                )
+            )
+        return sorted(entries, key=lambda item: item.car_number)
 
     def set_slot_bounty(self, slot_index: int, value: int) -> None:
         wanted = int(slot_index)
@@ -360,6 +667,19 @@ class SaveFile:
                 self._write_u32(slot.abs_off + self.GARAGE_BOUNTY_OFFSET, bounty)
                 return
         raise ValueError(f"Garage slot {wanted} was not detected")
+
+    def set_slot_pink_slip(self, slot_index: int, enabled: bool) -> None:
+        wanted = int(slot_index)
+        matches = [record for record in self.get_career_vehicle_records() if record.career_slot == wanted]
+        if len(matches) != 1:
+            raise ValueError(f"Garage slot {wanted} does not map to a unique career vehicle")
+
+        record = matches[0]
+        if record.flags not in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG):
+            raise ValueError(f"Garage slot {wanted} has unsupported flags 0x{record.flags:02X}")
+
+        new_flags = (record.flags | self.PINK_SLIP_FLAG) if enabled else (record.flags & ~self.PINK_SLIP_FLAG)
+        self._write_u16(record.abs_off + self.CAREER_VEHICLE_FLAGS_OFFSET, new_flags)
 
     def get_total_bounty(self) -> int:
         return sum(slot.bounty for slot in self.get_garage_slots())

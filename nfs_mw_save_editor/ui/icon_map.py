@@ -40,6 +40,8 @@ TOKEN_ICONS: Dict[int, str] = {
 NAV_ICONS: Dict[str, str] = {
     "Junkman":  "nav/nav_car.png",
     "Profile":  "nav/nav_profile.png",
+    "Garage":   "nav/nav_garage.png",
+    "Parts":    "cat/cat_performance.png",
     "Presets":  "nav/nav_save.png",
     "Settings": "nav/nav_settings.png",
     "About":    "nav/nav_info.png",
@@ -84,4 +86,3 @@ def cat_icon_path(category: str) -> Optional[Path]:
         return None
     p = _ICONS_ROOT / rel
     return p if p.exists() else None
-
