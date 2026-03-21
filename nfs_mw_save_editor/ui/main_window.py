@@ -4105,19 +4105,23 @@ class MainWindow(QMainWindow):
                 for entry in self.my_cars_entries:
                     target_entries.setdefault(entry.parts_slot, entry)
                 for parts_slot, entry in target_entries.items():
+                    have_levels = self.have_parts_levels.get(parts_slot, {})
                     levels = current_levels.get(parts_slot, self.have_parts_levels.get(parts_slot, {}))
-                    for name in PERF_PART_NAMES:
-                        self.savefile.set_part_level_for_parts_slot(
+                    if any(int(levels.get(name, 0)) != int(have_levels.get(name, 0)) for name in PERF_PART_NAMES):
+                        for name in PERF_PART_NAMES:
+                            self.savefile.set_part_level_for_parts_slot(
+                                parts_slot,
+                                name,
+                                int(levels.get(name, 0)),
+                                model_name=self._entry_model_name(entry),
+                            )
+                    current_mask = int(current_masks.get(parts_slot, self.have_parts_masks.get(parts_slot, 0)))
+                    have_mask = int(self.have_parts_masks.get(parts_slot, 0))
+                    if current_mask != have_mask:
+                        self.savefile.set_junkman_mask_for_parts_slot(
                             parts_slot,
-                            name,
-                            int(levels.get(name, 0)),
-                            model_name=self._entry_model_name(entry),
+                            current_mask,
                         )
-                for parts_slot in target_entries:
-                    self.savefile.set_junkman_mask_for_parts_slot(
-                        parts_slot,
-                        int(current_masks.get(parts_slot, self.have_parts_masks.get(parts_slot, 0))),
-                    )
             self.want_counts = {}
             self.want_money = None
             self.want_slot_bounties = None

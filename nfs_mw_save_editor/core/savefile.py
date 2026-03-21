@@ -1175,6 +1175,21 @@ class SaveFile:
         payload[0x12:0x14] = self.CAREER_VEHICLE_SENTINEL
         self.data[abs_off:abs_off + self.CAREER_VEHICLE_SIZE] = payload
 
+    def _allocate_injected_car_number(self) -> int:
+        used = {
+            int(record.car_number)
+            for record in self.get_owned_car_records()
+            if int(record.car_number) != self.EMPTY_CAR_NUMBER
+        }
+        if not used:
+            return 1
+        candidate = max(used) + 1
+        while candidate in used:
+            candidate += 1
+        if candidate >= self.EMPTY_CAR_NUMBER:
+            raise ValueError("No safe car_number values remain for snapshot injection")
+        return candidate
+
     def _write_parts_block_for_slot(self, parts_slot: int, normalized_block: bytes) -> None:
         slot = int(parts_slot)
         if len(normalized_block) != self.PARTS_BLOCK_SIZE:
@@ -1278,9 +1293,10 @@ class SaveFile:
                 raise ValueError("Career injection requires an allocated career slot")
             self.clear_pursuit_slot(plan.target_career_slot)
         self._write_parts_block_for_slot(plan.target_parts_slot, snapshot.normalized_primary_build_block)
+        injected_car_number = self._allocate_injected_car_number()
         self._write_owned_car_record(
             plan.target_owned_abs_off,
-            car_number=snapshot.primary_owned_record_template.car_number,
+            car_number=injected_car_number,
             signature=snapshot.primary_owned_record_template.signature,
             location_bits=plan.target_location_bits,
             misc_bits=plan.target_misc_bits,
