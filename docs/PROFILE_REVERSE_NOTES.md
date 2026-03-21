@@ -216,6 +216,93 @@ This was validated with single-part Junkman saves and the required gated tests:
 - whether all cars share the same max tier count per category
 - the meaning of the rest of the `0x198` block outside the confirmed decoded window
 
+## Step 7: confirmed visual build layer
+
+Visual-only save diffs on `fixture-a(visual_base)` confirmed that visual tuning does not
+live in the pursuit block and does not depend on `career_slot`.
+
+The primary visual layer lives inside the same `parts_slot`-keyed `0x198` build block
+already used for performance.
+
+### Confirmed primary visual offsets
+
+For the tested `Lexus IS300` My Cars build (`parts_slot 45`), the following offsets
+inside the primary build block were isolated by single-change visual saves:
+
+- `+0x02E` -> body kit
+- `+0x058..+0x059` -> spoiler
+- `+0x07C` -> roof
+- `+0x07E` -> hood
+- `+0x084..+0x085` -> rims
+- `+0x098` -> paint selector family
+- `+0x09A..+0x09B` -> body vinyl
+- `+0x09C..+0x09D` -> advanced visual / sidecar pointer candidate
+- `+0x0A6..+0x0A7` -> windshield decal
+- `+0x0B6..+0x0B7` -> rear-window decal
+- `+0x0D0..+0x0D1` -> left-door decal slot
+- `+0x0D2..+0x0D5` -> number visual half A
+- `+0x0E0..+0x0E1` -> right-door decal slot
+- `+0x0E2..+0x0E5` -> number visual half B
+- `+0x0E6..+0x0E7` -> left-quarter decal
+- `+0x0F6..+0x0F7` -> right-quarter decal
+- `+0x106` -> window tint
+- `+0x108`, `+0x10A`, `+0x10C`, `+0x10E` -> custom gauge cluster
+
+Combined saves behave as a set union in this primary block. For example,
+`left-door decal + rear-window decal` changes exactly the union of the two individual
+offset sets.
+
+### Optional advanced-visual sidecar
+
+Advanced visual edits can also claim an adjacent auxiliary pair:
+
+1. the next car-identity record after the primary My Cars car
+2. the next parts block at `parts_slot + 1`
+
+Observed on `fixture-a(visual_base)` and its variants:
+
+- primary car: `Lexus IS300`, `parts_slot 45`
+- adjacent sidecar record at `0x6331`
+- sidecar build block at `0xB4B5` (`parts_slot 46`)
+
+When this sidecar is active:
+
+- the adjacent record keeps:
+  - `car_number = 0xFFFFFFFF`
+  - `location_bits = 0x04`
+  - `career_slot = 0xFF`
+- but its `8-byte signature` flips to the same signature as the primary car
+- the adjacent build block becomes part of the effective visual payload
+
+Important nuance:
+
+- the sidecar block keeps the placeholder marker `FF CD CD CD`
+- it does **not** rewrite the marker to `<parts_slot> CD CD CD`
+
+The current extractor therefore validates the primary block strictly, but allows the
+placeholder marker on the optional sidecar block.
+
+### Unresolved external table near `0x5577`
+
+Many visual saves also flip a 57-entry table near `0x5577`:
+
+- `57` entries
+- stride `0x08`
+- one observed byte per entry
+- values seen so far: `0x00`, `0x01`, `0x02`, `0x03`
+
+Current interpretation:
+
+- it correlates with menu/category context
+- it is not yet proven to be a clean per-car visual payload
+- it is treated as unresolved global/frontend state for now
+
+Current policy:
+
+- snapshot extraction may report that this table also changed
+- injector work must not replay this table until a controlled A/B test proves it is
+  required and car-local
+
 ## Resulting implementation model
 
 The editor now treats Profile data as two joined layers:

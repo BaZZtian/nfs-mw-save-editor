@@ -480,6 +480,24 @@ QPushButton#partsJunkmanToggle:disabled {{
     border-color: {BORDER};
     color: #6D7F98;
 }}
+QPushButton#partsBulkBtn {{
+    background: #152033;
+    border: 1px solid {BORDER};
+    border-radius: 8px;
+    padding: 5px 10px;
+    color: {TEXT};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#partsBulkBtn:hover {{
+    background: #1B2A42;
+    border-color: {ACCENT};
+}}
+QPushButton#partsBulkBtn:disabled {{
+    background: #111827;
+    border-color: {BORDER};
+    color: #6D7F98;
+}}
 QLabel#garageCardSlot {{
     background: #0F1524;
     border: 1px solid {BORDER};
