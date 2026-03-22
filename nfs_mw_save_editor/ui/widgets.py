@@ -31,7 +31,12 @@ class ShimmerFrame(QFrame):
 
     _SHIMMER_COLOR = QColor(212, 168, 83)  # #D4A853
 
-    def __init__(self, parent=None, *, interval_ms: int = 4000, sweep_ms: int = 1200):
+    _DEFAULT_INTERVAL_MS = 4000
+    _DEFAULT_SWEEP_MS = 1200
+    _INITIAL_DELAY_MS = 600
+
+    def __init__(self, parent=None, *, interval_ms: int = _DEFAULT_INTERVAL_MS,
+                 sweep_ms: int = _DEFAULT_SWEEP_MS):
         super().__init__(parent)
         self._shimmer_pos: float = -0.3  # off-screen left
         self._interval_ms = interval_ms
@@ -45,8 +50,8 @@ class ShimmerFrame(QFrame):
         self._anim.setEasingCurve(QEasingCurve.InOutSine)
         self._anim.finished.connect(self._schedule_next)
 
-        # Start first cycle after a short random-ish delay
-        QTimer.singleShot(600, self._start_sweep)
+        # Start first cycle after a short delay
+        QTimer.singleShot(self._INITIAL_DELAY_MS, self._start_sweep)
 
     # ── Qt property for animation ──────────────────────────────
     def _get_shimmer_pos(self) -> float:
@@ -274,6 +279,9 @@ class ToastNotification(QLabel):
     """A brief, self-destroying notification that appears at the top-right."""
 
     _active: list["ToastNotification"] = []   # class-level stack
+    _DISMISS_MS = 2500
+    _STACK_SPACING = 44
+    _BASE_Y_OFFSET = 12
 
     def __init__(self, parent: QWidget, message: str, *, is_error: bool = False):
         super().__init__(message, parent)
@@ -299,7 +307,7 @@ class ToastNotification(QLabel):
         self._slide = QPropertyAnimation(self, b"pos", self)
         self._slide.setDuration(300)
         self._slide.setStartValue(self.pos())
-        offset = 12 + len(ToastNotification._active) * 44
+        offset = self._BASE_Y_OFFSET + len(ToastNotification._active) * self._STACK_SPACING
         from PySide6.QtCore import QPoint
         self._slide.setEndValue(QPoint(px, offset))
         self._slide.setEasingCurve(QEasingCurve.OutCubic)
@@ -308,7 +316,7 @@ class ToastNotification(QLabel):
         ToastNotification._active.append(self)
 
         # auto-dismiss
-        QTimer.singleShot(2500, self._fade_out)
+        QTimer.singleShot(self._DISMISS_MS, self._fade_out)
 
     def _fade_out(self):
         self._fade = QPropertyAnimation(self._opacity, b"opacity", self)
