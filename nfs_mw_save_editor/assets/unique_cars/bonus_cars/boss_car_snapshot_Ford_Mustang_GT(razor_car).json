@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Ford Mustang GT?",
+  "source_kind": "Career",
+  "car_number": 81,
+  "signature_hex": "AF 2D C3 C1 64 5F DC F9",
+  "location_bits": 2,
+  "misc_bits": 15,
+  "parts_slot": 31,
+  "career_slot": 0,
+  "primary_owned_record_template": {
+    "car_number": 81,
+    "signature_hex": "AF 2D C3 C1 64 5F DC F9",
+    "location_bits": 2,
+    "misc_bits": 15,
+    "source_kind": "Career",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 40141,
+    "normalized_hex": "3E 18 3F 18 41 18 43 18 45 18 47 18 49 18 4B 18 4D 18 4F 18 51 18 53 18 55 18 57 18 59 18 5B 18 5D 18 5F 18 61 18 63 18 65 18 67 18 69 18 6F 18 71 18 72 18 73 18 74 18 75 18 76 18 77 18 78 18 79 18 7A 18 7B 18 7C 18 7D 18 7E 18 7F 18 80 18 81 18 82 18 83 18 84 18 74 26 86 18 87 18 8E 18 95 18 9C 18 A3 18 AA 18 B1 18 B2 18 B3 18 B4 18 B5 18 B6 18 B7 18 B8 18 B9 18 BA 18 0C 09 C4 18 FF FF FF FF 9D 23 FF FF FF FF 0A 23 DF 18 E0 18 E1 18 E8 18 EF 18 F6 18 A4 0E 43 12 48 0F E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2D 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "1F CD CD CD",
+    "performance_levels": {
+      "Tires": 0,
+      "Brakes": 0,
+      "Suspension": 0,
+      "Transmission": 0,
+      "Engine": 0,
+      "Turbo": 0,
+      "NOS": 0
+    },
+    "primary_visual_fields": {
+      "Body Kit": "6F",
+      "Spoiler": "74 26",
+      "Roof": "0C",
+      "Hood": "C4",
+      "Rims": "9D 23",
+      "Paint": "A4",
+      "Body Vinyl": "43 12",
+      "Advanced Ptr": "48 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "2D",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

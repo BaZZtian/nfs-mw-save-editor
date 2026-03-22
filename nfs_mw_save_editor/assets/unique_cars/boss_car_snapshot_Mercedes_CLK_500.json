@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Mercedes CLK 500",
+  "source_kind": "Pink Slip",
+  "car_number": 99,
+  "signature_hex": "2F AF 77 82 2F AF 77 82",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 49,
+  "career_slot": 18,
+  "primary_owned_record_template": {
+    "car_number": 99,
+    "signature_hex": "2F AF 77 82 2F AF 77 82",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 47485,
+    "normalized_hex": "7A 1B 7B 1B 7D 1B 7F 1B FF FF 83 1B 85 1B 87 1B 89 1B 8B 1B 8D 1B 8F 1B 91 1B 93 1B 95 1B 97 1B 99 1B 9B 1B 9D 1B 9F 1B A1 1B A3 1B A5 1B AA 1B AD 1B AE 1B AF 1B B0 1B B1 1B B2 1B B3 1B B4 1B B5 1B B6 1B B7 1B B8 1B B9 1B BA 1B BB 1B BC 1B BD 1B BE 1B BF 1B C0 1B 7A 26 C2 1B C6 1B CD 1B D4 1B DB 1B E2 1B E9 1B ED 1B EE 1B EF 1B F0 1B F1 1B F2 1B F3 1B F4 1B F5 1B F6 1B 4C 09 05 1C FF FF FF FF A1 23 FF FF FF FF 0A 23 1B 1C 1C 1C 20 1C 27 1C 2E 1C 35 1C A3 0E 3D 12 35 0F E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2A 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 02 00 00 00 02 00 00 00 01 00 00 00 02 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "31 CD CD CD",
+    "performance_levels": {
+      "Tires": 2,
+      "Brakes": 2,
+      "Suspension": 1,
+      "Transmission": 2,
+      "Engine": 1,
+      "Turbo": 1,
+      "NOS": 1
+    },
+    "primary_visual_fields": {
+      "Body Kit": "AA",
+      "Spoiler": "7A 26",
+      "Roof": "4C",
+      "Hood": "05",
+      "Rims": "A1 23",
+      "Paint": "A3",
+      "Body Vinyl": "3D 12",
+      "Advanced Ptr": "35 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "2A",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

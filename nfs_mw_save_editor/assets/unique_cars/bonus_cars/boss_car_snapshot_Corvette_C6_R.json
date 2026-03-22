@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Corvette C6.R",
+  "source_kind": "Career",
+  "car_number": 87,
+  "signature_hex": "9E 57 65 01 9E 57 65 01",
+  "location_bits": 2,
+  "misc_bits": 15,
+  "parts_slot": 37,
+  "career_slot": 6,
+  "primary_owned_record_template": {
+    "car_number": 87,
+    "signature_hex": "9E 57 65 01 9E 57 65 01",
+    "location_bits": 2,
+    "misc_bits": 15,
+    "source_kind": "Career",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 42589,
+    "normalized_hex": "7F 17 80 17 82 17 84 17 86 17 88 17 8A 17 8C 17 8E 17 90 17 92 17 94 17 96 17 98 17 9A 17 9C 17 9E 17 A0 17 A2 17 A4 17 A6 17 A8 17 AA 17 AC 17 B2 17 B3 17 B4 17 B5 17 B6 17 B7 17 B8 17 B9 17 BA 17 BB 17 BC 17 BD 17 BE 17 BF 17 C0 17 C1 17 C2 17 C3 17 C4 17 C5 17 C6 17 C7 17 C8 17 CF 17 D6 17 DD 17 E4 17 EB 17 F2 17 F3 17 F4 17 F5 17 F6 17 F7 17 F8 17 F9 17 FA 17 FB 17 0B 09 FC 17 FF FF FF FF 1F 18 FF FF FF FF 0A 23 20 18 21 18 22 18 29 18 30 18 37 18 1E 0E FF FF FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 23 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "25 CD CD CD",
+    "performance_levels": {
+      "Tires": 0,
+      "Brakes": 0,
+      "Suspension": 0,
+      "Transmission": 0,
+      "Engine": 0,
+      "Turbo": 0,
+      "NOS": 3
+    },
+    "primary_visual_fields": {
+      "Body Kit": "AC",
+      "Spoiler": "C6 17",
+      "Roof": "0B",
+      "Hood": "FC",
+      "Rims": "1F 18",
+      "Paint": "1E",
+      "Body Vinyl": "FF FF",
+      "Advanced Ptr": "FF FF",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "23",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

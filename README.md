@@ -40,6 +40,7 @@ Built with **Python 3** and **PySide6**. Dark blue UI theme.
 
 ### Presets and Catalog
 - Load / save token presets as JSON files
+- Built-in boss-car snapshot library loaded from `assets/unique_cars`
 - Export current "Have" counts as a preset
 - Editable **token catalog** (`token_catalog.json`) - rename tokens, add categories
 - Catalog stored in `%APPDATA%/NFS_MW_Junkman_Editor/` for persistence across updates
@@ -142,6 +143,8 @@ nfs_mw_save_editor/
 `docs/` (repo root) contains reverse-engineering notes: `JUNKMAN_OFFSETS.md`, `PROFILE_REVERSE_NOTES.md`, `PROFILE_REVERSE_OVERVIEW.md`. Not included in releases.
 
 `dev_assets/` (repo root) contains developer-only files: original DDS textures, icon prep scripts, and archived legacy code. Not included in releases.
+
+`assets/unique_cars/` contains bundled boss-car snapshot presets used by `Presets -> Library`. Included in both PyInstaller `onedir` and `onefile` builds.
 
 ---
 

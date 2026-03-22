@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Lamborghini Gallardo",
+  "source_kind": "Pink Slip",
+  "car_number": 100,
+  "signature_hex": "0B C4 2C 7B 0B C4 2C 7B",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 50,
+  "career_slot": 19,
+  "primary_owned_record_template": {
+    "car_number": 100,
+    "signature_hex": "0B C4 2C 7B 0B C4 2C 7B",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 47893,
+    "normalized_hex": "BB 1A BC 1A BE 1A C0 1A FF FF C4 1A C6 1A C8 1A CA 1A CC 1A CE 1A D0 1A D2 1A D4 1A D6 1A D8 1A DA 1A DC 1A DE 1A E0 1A E2 1A E4 1A E6 1A E8 1A EE 1A EF 1A F0 1A F1 1A F2 1A F3 1A F4 1A F5 1A F6 1A F7 1A F8 1A F9 1A FA 1A FB 1A FC 1A FD 1A FE 1A FF 1A 00 1B 01 1B 6F 26 03 1B 04 1B 0B 1B 12 1B 19 1B 20 1B 27 1B 2E 1B 2F 1B 30 1B 31 1B 32 1B 33 1B 34 1B 35 1B 36 1B 37 1B 0B 09 38 1B FF FF FF FF A5 23 FF FF FF FF 0A 23 5C 1B 5D 1B 5E 1B 65 1B 6C 1B 73 1B A4 0E 3E 12 FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 3D 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 02 00 00 00 02 00 00 00 01 00 00 00 02 00 00 00 02 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 33 00 00 00 00 00 00 00 00 00 00 00 B3 00 00 00 33 00 00 00 33 00 00 00 33 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "32 CD CD CD",
+    "performance_levels": {
+      "Tires": 2,
+      "Brakes": 2,
+      "Suspension": 1,
+      "Transmission": 2,
+      "Engine": 2,
+      "Turbo": 1,
+      "NOS": 1
+    },
+    "primary_visual_fields": {
+      "Body Kit": "E8",
+      "Spoiler": "6F 26",
+      "Roof": "0B",
+      "Hood": "38",
+      "Rims": "A5 23",
+      "Paint": "A4",
+      "Body Vinyl": "3E 12",
+      "Advanced Ptr": "FF FF",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "3D",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

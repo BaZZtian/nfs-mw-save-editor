@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Dodge Viper SRT10",
+  "source_kind": "Pink Slip",
+  "car_number": 102,
+  "signature_hex": "08 D4 BE 6E 08 D4 BE 6E",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 52,
+  "career_slot": 21,
+  "primary_owned_record_template": {
+    "car_number": 102,
+    "signature_hex": "08 D4 BE 6E 08 D4 BE 6E",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 48709,
+    "normalized_hex": "5C 12 5D 12 5F 12 61 12 FF FF 65 12 67 12 69 12 6B 12 6D 12 6F 12 71 12 73 12 75 12 77 12 79 12 7B 12 7D 12 7F 12 81 12 83 12 85 12 87 12 8C 12 8F 12 90 12 91 12 92 12 93 12 94 12 95 12 96 12 97 12 98 12 99 12 9A 12 9B 12 9C 12 9D 12 9E 12 9F 12 A0 12 A1 12 A2 12 94 26 A4 12 A8 12 AF 12 B6 12 BD 12 C4 12 CB 12 CF 12 D0 12 D1 12 D2 12 D3 12 D4 12 D5 12 D6 12 D7 12 D8 12 0B 09 EF 12 FF FF FF FF 51 23 FF FF FF FF 0A 23 FD 12 FE 12 02 13 09 13 10 13 17 13 BF 0E 40 12 36 0F E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2A 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 02 00 00 00 02 00 00 00 01 00 00 00 02 00 00 00 02 00 00 00 01 00 00 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "34 CD CD CD",
+    "performance_levels": {
+      "Tires": 2,
+      "Brakes": 2,
+      "Suspension": 1,
+      "Transmission": 2,
+      "Engine": 2,
+      "Turbo": 1,
+      "NOS": 2
+    },
+    "primary_visual_fields": {
+      "Body Kit": "8C",
+      "Spoiler": "94 26",
+      "Roof": "0B",
+      "Hood": "EF",
+      "Rims": "51 23",
+      "Paint": "BF",
+      "Body Vinyl": "40 12",
+      "Advanced Ptr": "36 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "2A",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

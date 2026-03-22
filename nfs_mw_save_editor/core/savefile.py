@@ -35,6 +35,7 @@ from core.models import (
     VisualSidecarTemplate,
 )
 from core.tuning_limits import get_model_tuning_limits
+from resources import resource_path
 
 logger = logging.getLogger(__name__)
 
@@ -782,11 +783,11 @@ class SaveFile:
             self.set_owned_car_career_slot(plan.source_abs_off, plan.target_career_slot)
         return plan
 
-    _DEFAULT_SNAPSHOT_LIBRARY_DIR = Path.home() / "Desktop" / "unique_cars"
+    _DEFAULT_SNAPSHOT_LIBRARY_DIR = ("assets", "unique_cars")
 
     @classmethod
     def default_snapshot_library_root(cls) -> Path:
-        return cls._DEFAULT_SNAPSHOT_LIBRARY_DIR
+        return resource_path(*cls._DEFAULT_SNAPSHOT_LIBRARY_DIR)
 
     @staticmethod
     def _hex_to_bytes(hex_text: str) -> bytes:

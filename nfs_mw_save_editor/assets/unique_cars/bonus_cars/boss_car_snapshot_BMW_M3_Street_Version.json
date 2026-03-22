@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "BMW M3 Street Version",
+  "source_kind": "Career",
+  "car_number": 84,
+  "signature_hex": "A6 FE C2 81 3F 08 88 CD",
+  "location_bits": 2,
+  "misc_bits": 15,
+  "parts_slot": 34,
+  "career_slot": 3,
+  "primary_owned_record_template": {
+    "car_number": 84,
+    "signature_hex": "A6 FE C2 81 3F 08 88 CD",
+    "location_bits": 2,
+    "misc_bits": 15,
+    "source_kind": "Career",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 41365,
+    "normalized_hex": "8C 21 8D 21 8F 21 91 21 93 21 95 21 97 21 99 21 9B 21 9D 21 9F 21 A1 21 A3 21 A5 21 A7 21 A9 21 AB 21 AD 21 AF 21 B1 21 B3 21 B5 21 B7 21 B9 21 BF 21 C0 21 C1 21 C2 21 C3 21 C4 21 C5 21 C6 21 C7 21 C8 21 C9 21 CA 21 CB 21 CC 21 CD 21 CE 21 CF 21 D0 21 D1 21 D2 21 D3 21 D4 21 D5 21 DC 21 E3 21 EA 21 F1 21 F8 21 FF 21 00 22 01 22 02 22 03 22 04 22 05 22 06 22 07 22 08 22 0B 09 09 22 FF FF FF FF 2C 22 FF FF FF FF 0A 23 2D 22 2E 22 2F 22 36 22 3D 22 44 22 8F 0E C1 11 FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 23 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "22 CD CD CD",
+    "performance_levels": {
+      "Tires": 0,
+      "Brakes": 0,
+      "Suspension": 0,
+      "Transmission": 0,
+      "Engine": 0,
+      "Turbo": 0,
+      "NOS": 0
+    },
+    "primary_visual_fields": {
+      "Body Kit": "B9",
+      "Spoiler": "D3 21",
+      "Roof": "0B",
+      "Hood": "09",
+      "Rims": "2C 22",
+      "Paint": "8F",
+      "Body Vinyl": "C1 11",
+      "Advanced Ptr": "FF FF",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "23",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

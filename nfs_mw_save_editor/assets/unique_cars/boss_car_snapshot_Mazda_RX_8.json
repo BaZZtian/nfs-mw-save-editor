@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Mazda RX-8",
+  "source_kind": "Pink Slip",
+  "car_number": 94,
+  "signature_hex": "37 44 33 D6 37 44 33 D6",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 44,
+  "career_slot": 13,
+  "primary_owned_record_template": {
+    "car_number": 94,
+    "signature_hex": "37 44 33 D6 37 44 33 D6",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 45445,
+    "normalized_hex": "F8 05 F9 05 FB 05 FD 05 FF FF 01 06 03 06 05 06 07 06 09 06 0B 06 0D 06 0F 06 11 06 13 06 15 06 17 06 19 06 1B 06 1D 06 1F 06 21 06 23 06 28 06 2B 06 2C 06 2D 06 2E 06 2F 06 30 06 31 06 32 06 33 06 34 06 35 06 36 06 37 06 38 06 39 06 3A 06 3B 06 3C 06 3D 06 3E 06 7A 26 40 06 44 06 4B 06 52 06 59 06 60 06 67 06 6B 06 6C 06 6D 06 6E 06 6F 06 70 06 71 06 72 06 73 06 74 06 0B 09 7A 06 FF FF FF FF BD 23 FF FF FF FF 0A 23 99 06 9A 06 9E 06 A5 06 AC 06 B3 06 68 0E 38 12 FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 3B 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "2C CD CD CD",
+    "performance_levels": {
+      "Tires": 1,
+      "Brakes": 1,
+      "Suspension": 1,
+      "Transmission": 1,
+      "Engine": 1,
+      "Turbo": 1,
+      "NOS": 1
+    },
+    "primary_visual_fields": {
+      "Body Kit": "28",
+      "Spoiler": "7A 26",
+      "Roof": "0B",
+      "Hood": "7A",
+      "Rims": "BD 23",
+      "Paint": "68",
+      "Body Vinyl": "38 12",
+      "Advanced Ptr": "FF FF",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "3B",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

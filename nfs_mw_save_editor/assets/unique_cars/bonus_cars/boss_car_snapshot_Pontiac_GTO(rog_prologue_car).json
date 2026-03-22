@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Pontiac GTO",
+  "source_kind": "Career",
+  "car_number": 82,
+  "signature_hex": "C6 3D 48 AA C6 3D 48 AA",
+  "location_bits": 2,
+  "misc_bits": 15,
+  "parts_slot": 32,
+  "career_slot": 1,
+  "primary_owned_record_template": {
+    "car_number": 82,
+    "signature_hex": "C6 3D 48 AA C6 3D 48 AA",
+    "location_bits": 2,
+    "misc_bits": 15,
+    "source_kind": "Career",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 40549,
+    "normalized_hex": "7A 04 7B 04 7D 04 7F 04 81 04 83 04 85 04 87 04 89 04 8B 04 8D 04 8F 04 91 04 93 04 95 04 97 04 99 04 9B 04 9D 04 9F 04 A1 04 A3 04 A5 04 A8 04 AD 04 AE 04 AF 04 B0 04 B1 04 B2 04 B3 04 B4 04 B5 04 B6 04 B7 04 B8 04 B9 04 BA 04 BB 04 BC 04 BD 04 BE 04 BF 04 C0 04 5E 26 C2 04 C3 04 CA 04 D1 04 D8 04 DF 04 E6 04 ED 04 EE 04 EF 04 F0 04 F1 04 F2 04 F3 04 F4 04 F5 04 F6 04 0B 09 04 05 FF FF FF FF 35 23 FF FF FF FF 0A 23 1B 05 1C 05 1D 05 24 05 2B 05 32 05 92 0E 2E 12 5F 0F 1E 0F E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 23 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 02 00 00 00 03 00 00 00 02 00 00 00 03 00 00 00 03 00 00 00 02 00 00 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "20 CD CD CD",
+    "performance_levels": {
+      "Tires": 2,
+      "Brakes": 3,
+      "Suspension": 2,
+      "Transmission": 3,
+      "Engine": 3,
+      "Turbo": 2,
+      "NOS": 3
+    },
+    "primary_visual_fields": {
+      "Body Kit": "A8",
+      "Spoiler": "5E 26",
+      "Roof": "0B",
+      "Hood": "04",
+      "Rims": "35 23",
+      "Paint": "92",
+      "Body Vinyl": "2E 12",
+      "Advanced Ptr": "5F 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "23",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

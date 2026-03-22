@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "BMW M3 GTR",
+  "source_kind": "Pink Slip",
+  "car_number": 105,
+  "signature_hex": "4E 4A CC 23 B3 5F 08 4E",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 55,
+  "career_slot": 24,
+  "primary_owned_record_template": {
+    "car_number": 105,
+    "signature_hex": "4E 4A CC 23 B3 5F 08 4E",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 49933,
+    "normalized_hex": "DA 13 DB 13 DD 13 DF 13 FF FF E3 13 E5 13 E7 13 E9 13 EB 13 ED 13 EF 13 F1 13 F3 13 F5 13 F7 13 F9 13 FB 13 FD 13 FF 13 01 14 03 14 05 14 07 14 0D 14 0E 14 0F 14 10 14 11 14 12 14 13 14 14 14 15 14 16 14 17 14 18 14 19 14 1A 14 1B 14 1C 14 1D 14 1E 14 1F 14 20 14 21 14 22 14 23 14 2A 14 31 14 38 14 3F 14 46 14 4D 14 4E 14 4F 14 50 14 51 14 52 14 53 14 54 14 55 14 56 14 0B 09 57 14 FF FF FF FF 7A 14 FF FF FF FF 0A 23 7B 14 7C 14 7D 14 84 14 8B 14 92 14 8F 0E C1 11 FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 23 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "37 CD CD CD",
+    "performance_levels": {
+      "Tires": 0,
+      "Brakes": 0,
+      "Suspension": 0,
+      "Transmission": 0,
+      "Engine": 0,
+      "Turbo": 0,
+      "NOS": 0
+    },
+    "primary_visual_fields": {
+      "Body Kit": "07",
+      "Spoiler": "21 14",
+      "Roof": "0B",
+      "Hood": "57",
+      "Rims": "7A 14",
+      "Paint": "8F",
+      "Body Vinyl": "C1 11",
+      "Advanced Ptr": "FF FF",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "23",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Mitsubishi Lancer EVO VIII",
+  "source_kind": "Pink Slip",
+  "car_number": 97,
+  "signature_hex": "B6 FB EE CC B6 FB EE CC",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 47,
+  "career_slot": 16,
+  "primary_owned_record_template": {
+    "car_number": 97,
+    "signature_hex": "B6 FB EE CC B6 FB EE CC",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 46669,
+    "normalized_hex": "1B 13 1C 13 1E 13 20 13 FF FF 24 13 26 13 28 13 2A 13 2C 13 2E 13 30 13 32 13 34 13 36 13 38 13 3A 13 3C 13 3E 13 40 13 42 13 44 13 46 13 4C 13 4E 13 4F 13 50 13 51 13 52 13 53 13 54 13 55 13 56 13 57 13 58 13 59 13 5A 13 5B 13 5C 13 5D 13 5E 13 5F 13 60 13 61 13 85 26 63 13 68 13 6F 13 76 13 7D 13 84 13 8B 13 8E 13 8F 13 90 13 91 13 92 13 93 13 94 13 95 13 96 13 97 13 4D 09 A3 13 FF FF FF FF 71 23 FF FF FF FF 0A 23 BC 13 BD 13 C2 13 C9 13 D0 13 D7 13 17 0E 3B 12 FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2E 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 9A 99 19 3F CD CC CC 3E CD CC CC 3E CD CC CC BE CD CC CC BE 00 00 80 3F 00 00 80 3F 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "2F CD CD CD",
+    "performance_levels": {
+      "Tires": 1,
+      "Brakes": 1,
+      "Suspension": 1,
+      "Transmission": 1,
+      "Engine": 1,
+      "Turbo": 1,
+      "NOS": 1
+    },
+    "primary_visual_fields": {
+      "Body Kit": "4C",
+      "Spoiler": "85 26",
+      "Roof": "4D",
+      "Hood": "A3",
+      "Rims": "71 23",
+      "Paint": "17",
+      "Body Vinyl": "3B 12",
+      "Advanced Ptr": "FF FF",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "2E",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

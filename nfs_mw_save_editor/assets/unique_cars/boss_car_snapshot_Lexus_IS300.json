@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Lexus IS300",
+  "source_kind": "Pink Slip",
+  "car_number": 92,
+  "signature_hex": "B0 2F FF 5B B0 2F FF 5B",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 42,
+  "career_slot": 11,
+  "primary_owned_record_template": {
+    "car_number": 92,
+    "signature_hex": "B0 2F FF 5B B0 2F FF 5B",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 44629,
+    "normalized_hex": "58 0D 59 0D 5B 0D 5D 0D FF FF 61 0D 63 0D 65 0D 67 0D 69 0D 6B 0D 6D 0D 6F 0D 71 0D 73 0D 75 0D 77 0D 79 0D 7B 0D 7D 0D 7F 0D 81 0D 83 0D 88 0D 8B 0D 8C 0D 8D 0D 8E 0D 8F 0D 90 0D 91 0D 92 0D 93 0D 94 0D 95 0D 96 0D 97 0D 98 0D 99 0D 9A 0D 9B 0D 9C 0D 9D 0D 9E 0D 88 26 A0 0D A4 0D AB 0D B2 0D B9 0D C0 0D C7 0D CB 0D CC 0D CD 0D CE 0D CF 0D D0 0D D1 0D D2 0D D3 0D D4 0D 32 09 E0 0D FF FF FF FF B1 23 FF FF FF FF 0A 23 F9 0D FA 0D FE 0D 05 0E 0C 0E 13 0E 44 0E 36 12 64 0F E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 29 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 00 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "2A CD CD CD",
+    "performance_levels": {
+      "Tires": 0,
+      "Brakes": 1,
+      "Suspension": 0,
+      "Transmission": 1,
+      "Engine": 1,
+      "Turbo": 0,
+      "NOS": 1
+    },
+    "primary_visual_fields": {
+      "Body Kit": "88",
+      "Spoiler": "88 26",
+      "Roof": "32",
+      "Hood": "E0",
+      "Rims": "B1 23",
+      "Paint": "44",
+      "Body Vinyl": "36 12",
+      "Advanced Ptr": "64 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "29",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

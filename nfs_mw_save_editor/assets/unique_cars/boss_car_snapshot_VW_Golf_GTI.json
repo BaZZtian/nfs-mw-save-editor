@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "VW Golf GTI",
+  "source_kind": "Pink Slip",
+  "car_number": 91,
+  "signature_hex": "53 4B 05 79 53 4B 05 79",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 41,
+  "career_slot": 10,
+  "primary_owned_record_template": {
+    "car_number": 91,
+    "signature_hex": "53 4B 05 79 53 4B 05 79",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 44221,
+    "normalized_hex": "BB 03 BC 03 BE 03 C0 03 FF FF C4 03 C6 03 C8 03 CA 03 CC 03 CE 03 D0 03 D2 03 D4 03 D6 03 D8 03 DA 03 DC 03 DE 03 E0 03 E2 03 E4 03 E6 03 E9 03 EE 03 EF 03 F0 03 F1 03 F2 03 F3 03 F4 03 F5 03 F6 03 F7 03 F8 03 F9 03 FA 03 FB 03 FC 03 FD 03 FE 03 FF 03 00 04 01 04 02 04 03 04 05 04 0C 04 13 04 1A 04 21 04 28 04 2E 04 2F 04 30 04 31 04 32 04 33 04 34 04 35 04 36 04 37 04 0E 09 3A 04 FF FF FF FF 59 23 FF FF FF FF 0A 23 5C 04 5D 04 5F 04 66 04 6D 04 74 04 19 0E 35 12 35 0F E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 39 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "29 CD CD CD",
+    "performance_levels": {
+      "Tires": 0,
+      "Brakes": 0,
+      "Suspension": 0,
+      "Transmission": 1,
+      "Engine": 1,
+      "Turbo": 0,
+      "NOS": 0
+    },
+    "primary_visual_fields": {
+      "Body Kit": "E9",
+      "Spoiler": "02 04",
+      "Roof": "0E",
+      "Hood": "3A",
+      "Rims": "59 23",
+      "Paint": "19",
+      "Body Vinyl": "35 12",
+      "Advanced Ptr": "35 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "39",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

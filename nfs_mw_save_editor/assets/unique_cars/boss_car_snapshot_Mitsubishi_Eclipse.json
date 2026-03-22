@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Mitsubishi Eclipse",
+  "source_kind": "Pink Slip",
+  "car_number": 95,
+  "signature_hex": "BD 0B D7 A2 BD 0B D7 A2",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 45,
+  "career_slot": 14,
+  "primary_owned_record_template": {
+    "car_number": 95,
+    "signature_hex": "BD 0B D7 A2 BD 0B D7 A2",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 45853,
+    "normalized_hex": "10 25 11 25 13 25 15 25 FF FF 19 25 1B 25 1D 25 1F 25 21 25 23 25 25 25 27 25 29 25 2B 25 2D 25 2F 25 31 25 33 25 35 25 37 25 39 25 3B 25 42 25 43 25 44 25 45 25 46 25 47 25 48 25 49 25 4A 25 4B 25 4C 25 4D 25 4E 25 4F 25 50 25 51 25 52 25 53 25 54 25 55 25 56 25 81 26 58 25 5E 25 65 25 6C 25 73 25 7A 25 81 25 83 25 84 25 85 25 86 25 87 25 88 25 89 25 8A 25 8B 25 8C 25 0D 09 90 25 FF FF FF FF C5 23 FF FF FF FF 0A 23 B1 25 B2 25 B8 25 BF 25 C6 25 CD 25 A4 0E 39 12 37 0F E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 41 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "2D CD CD CD",
+    "performance_levels": {
+      "Tires": 1,
+      "Brakes": 1,
+      "Suspension": 1,
+      "Transmission": 1,
+      "Engine": 1,
+      "Turbo": 1,
+      "NOS": 1
+    },
+    "primary_visual_fields": {
+      "Body Kit": "42",
+      "Spoiler": "81 26",
+      "Roof": "0D",
+      "Hood": "90",
+      "Rims": "C5 23",
+      "Paint": "A4",
+      "Body Vinyl": "39 12",
+      "Advanced Ptr": "37 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "41",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

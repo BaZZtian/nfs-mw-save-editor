@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Aston Martin DB9",
+  "source_kind": "Pink Slip",
+  "car_number": 103,
+  "signature_hex": "6A 1C B6 A4 6A 1C B6 A4",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 53,
+  "career_slot": 22,
+  "primary_owned_record_template": {
+    "car_number": 103,
+    "signature_hex": "6A 1C B6 A4 6A 1C B6 A4",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 49117,
+    "normalized_hex": "FC 02 FD 02 FF 02 01 03 FF FF 05 03 07 03 09 03 0B 03 0D 03 0F 03 11 03 13 03 15 03 17 03 19 03 1B 03 1D 03 1F 03 21 03 23 03 25 03 27 03 2E 03 2F 03 30 03 31 03 32 03 33 03 34 03 35 03 36 03 37 03 38 03 39 03 3A 03 3B 03 3C 03 3D 03 3E 03 3F 03 40 03 41 03 42 03 94 26 44 03 4A 03 51 03 58 03 5F 03 66 03 6D 03 6F 03 70 03 71 03 72 03 73 03 74 03 75 03 76 03 77 03 78 03 0B 09 81 03 FF FF FF FF A1 23 FF FF FF FF 0A 23 9D 03 9E 03 A4 03 AB 03 B2 03 B9 03 81 0E 41 12 FF FF E1 0E E3 0E FF FF E1 0E FF FF B9 0B FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2C 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 02 00 00 00 03 00 00 00 02 00 00 00 03 00 00 00 02 00 00 00 01 00 00 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "35 CD CD CD",
+    "performance_levels": {
+      "Tires": 2,
+      "Brakes": 3,
+      "Suspension": 2,
+      "Transmission": 3,
+      "Engine": 2,
+      "Turbo": 1,
+      "NOS": 3
+    },
+    "primary_visual_fields": {
+      "Body Kit": "2E",
+      "Spoiler": "94 26",
+      "Roof": "0B",
+      "Hood": "81",
+      "Rims": "A1 23",
+      "Paint": "81",
+      "Body Vinyl": "41 12",
+      "Advanced Ptr": "FF FF",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "2C",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}

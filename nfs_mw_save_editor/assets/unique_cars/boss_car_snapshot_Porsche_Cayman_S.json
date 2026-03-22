@@ -1,0 +1,71 @@
+{
+  "kind": "boss_car_build_snapshot_v2",
+  "source_file": "legacy donor save",
+  "display_name": "Porsche Cayman S",
+  "source_kind": "Pink Slip",
+  "car_number": 96,
+  "signature_hex": "EB 5B 55 41 EB 5B 55 41",
+  "location_bits": 66,
+  "misc_bits": 15,
+  "parts_slot": 46,
+  "career_slot": 15,
+  "primary_owned_record_template": {
+    "car_number": 96,
+    "signature_hex": "EB 5B 55 41 EB 5B 55 41",
+    "location_bits": 66,
+    "misc_bits": 15,
+    "source_kind": "Pink Slip",
+    "parts_slot_placeholder": true,
+    "career_slot_placeholder": true
+  },
+  "primary_build_block": {
+    "abs_off": 46261,
+    "normalized_hex": "76 27 77 27 79 27 7B 27 FF FF 7F 27 81 27 83 27 85 27 87 27 89 27 8B 27 8D 27 8F 27 91 27 93 27 95 27 97 27 99 27 9B 27 9D 27 9F 27 A1 27 A7 27 A9 27 AA 27 AB 27 AC 27 AD 27 AE 27 AF 27 B0 27 B1 27 B2 27 B3 27 B4 27 B5 27 B6 27 B7 27 B8 27 B9 27 BA 27 BB 27 BC 27 50 24 BE 27 C3 27 CA 27 D1 27 D8 27 DF 27 E6 27 E9 27 EA 27 EB 27 EC 27 ED 27 EE 27 EF 27 F0 27 F1 27 F2 27 0C 09 F5 27 FF FF FF FF 59 23 FF FF FF FF 0A 23 17 28 18 28 1D 28 24 28 2B 28 32 28 54 0E 3A 12 35 0F E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2D 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+    "marker_hex": "2E CD CD CD",
+    "performance_levels": {
+      "Tires": 1,
+      "Brakes": 1,
+      "Suspension": 1,
+      "Transmission": 1,
+      "Engine": 1,
+      "Turbo": 1,
+      "NOS": 1
+    },
+    "primary_visual_fields": {
+      "Body Kit": "A7",
+      "Spoiler": "50 24",
+      "Roof": "0C",
+      "Hood": "F5",
+      "Rims": "59 23",
+      "Paint": "54",
+      "Body Vinyl": "3A 12",
+      "Advanced Ptr": "35 0F",
+      "Windshield Decal": "FF FF",
+      "Rear Window Decal": "FF FF",
+      "Left Door Decal": "FF FF",
+      "Number Visual A": "FF FF FF FF",
+      "Right Door Decal": "FF FF",
+      "Number Visual B": "FF FF FF FF",
+      "Left Quarter Decal": "FF FF",
+      "Right Quarter Decal": "FF FF",
+      "Window Tint": "2D",
+      "Gauge A": "54",
+      "Gauge B": "71",
+      "Gauge C": "71",
+      "Gauge D": "6F"
+    }
+  },
+  "optional_visual_sidecar": null,
+  "requires_unresolved_global_visual_state": true,
+  "global_visual_table": {
+    "base_offset": 21879,
+    "entry_count": 57,
+    "stride": 8,
+    "default_value": 1,
+    "uniform_value": 0,
+    "unique_values": [
+      0
+    ],
+    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
+  }
+}
