@@ -161,6 +161,7 @@ class MainWindow(
         self.snapshot_library_root = SaveFile.default_snapshot_library_root()
         self.want_snapshot_injections: Dict[str, str] = {}
         self.snapshot_library_filter = "All"
+        self.presets_view = "Library"
 
         self.catalog_path = _ensure_user_catalog_path()
         self.load_catalog()

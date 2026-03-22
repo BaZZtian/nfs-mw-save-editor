@@ -1,4 +1,4 @@
-"""Presets page: snapshot library cards, snapshot injection workflow."""
+"""Presets page: Junkman preset I/O, boss-car library injector, save snapshot export."""
 from __future__ import annotations
 
 import json
@@ -18,70 +18,73 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from core.models import FullCarBuildSnapshot, SnapshotLibraryEntry
-from core.savefile import SaveFile
+from core.tuning_limits import get_model_tuning_limits
 from ui.pages.constants import *
-from ui.widgets import ToastNotification
+from ui.widgets import ToastNotification, build_perf_level_row
 
 
 class PresetsMixin:
+    # ── Page builder ────────────────────────────────────────────
+
     def _build_presets_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
+        layout.setContentsMargins(10, 6, 10, 8)
         layout.setSpacing(10)
-        section = QLabel("Inventory Presets")
-        section.setObjectName("sectionLabel")
-        layout.addWidget(section)
 
-        hint = QLabel(
-            "Import/export Junkman presets. Boss Car Injector below lets you add boss-car builds to your save."
-        )
-        hint.setObjectName("mutedLabel")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-
+        # ── 1. Junkman Presets compact strip ──────────────────
+        preset_frame = QFrame()
+        preset_frame.setObjectName("settingsGroup")
+        preset_inner = QVBoxLayout(preset_frame)
+        preset_inner.setContentsMargins(12, 8, 12, 8)
+        preset_inner.setSpacing(6)
+        preset_title = QLabel("Junkman Presets")
+        preset_title.setObjectName("settingsGroupTitle")
+        preset_inner.addWidget(preset_title)
         preset_row = QHBoxLayout()
         preset_row.setSpacing(8)
-        self.btn_load_preset = QPushButton("Load preset JSON")
-        self.btn_save_preset = QPushButton("Save preset JSON")
-        self.btn_export_have = QPushButton("Export Have as preset")
+        self.btn_load_preset = QPushButton("Import Preset")
+        self.btn_save_preset = QPushButton("Export Preset")
+        self.btn_export_have = QPushButton("Export Current")
         self.btn_load_preset.clicked.connect(self.on_load_preset)
         self.btn_save_preset.clicked.connect(self.on_save_preset)
         self.btn_export_have.clicked.connect(self.on_export_have)
-        preset_row.addWidget(self.btn_load_preset)
-        preset_row.addWidget(self.btn_save_preset)
-        preset_row.addWidget(self.btn_export_have)
+        for btn in [self.btn_load_preset, self.btn_save_preset, self.btn_export_have]:
+            preset_row.addWidget(btn)
         preset_row.addStretch(1)
-        layout.addLayout(preset_row)
+        preset_inner.addLayout(preset_row)
+        layout.addWidget(preset_frame)
 
-        sep = QFrame()
-        sep.setObjectName("sectionLine")
-        layout.addWidget(sep)
+        # ── 2. Boss Cars header + view toggle ─────────────────
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+        boss_label = QLabel("Boss Cars")
+        boss_label.setObjectName("sectionLabel")
+        header_row.addWidget(boss_label)
+        header_row.addStretch(1)
+        self.presets_view_group = QButtonGroup(self)
+        self.presets_view_group.setExclusive(True)
+        self.presets_view_buttons: Dict[str, QPushButton] = {}
+        for name in ["Library", "My Save"]:
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setObjectName("garageFilterBtn")
+            btn.clicked.connect(lambda _, v=name: self._on_presets_view_changed(v))
+            self.presets_view_group.addButton(btn)
+            self.presets_view_buttons[name] = btn
+            header_row.addWidget(btn)
+        self.presets_view_buttons["Library"].setChecked(True)
+        layout.addLayout(header_row)
 
-        library_label = QLabel("Boss Car Injector Library")
-        library_label.setObjectName("sectionLabel")
-        layout.addWidget(library_label)
-
-        library_hint = QLabel(
-            "Snapshots are loaded from your Desktop `unique_cars` library. Injector v1 copies the confirmed primary "
-            "`0x198` build block into allocator-picked slots. The unresolved `0x5577` global visual table is not "
-            "replayed yet, so injected visuals may be slightly incomplete."
-        )
-        library_hint.setObjectName("mutedLabel")
-        library_hint.setWordWrap(True)
-        layout.addWidget(library_hint)
-
-        library_controls = QHBoxLayout()
-        library_controls.setSpacing(8)
-        self.snapshot_library_search = QLineEdit()
-        self.snapshot_library_search.setPlaceholderText("Search boss-car library by model or file name...")
-        self.snapshot_library_search.textChanged.connect(self.on_snapshot_library_search_changed)
-        library_controls.addWidget(self.snapshot_library_search, 1)
-
+        # ── 3. Library sub-filters + unified search ───────────
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
         self.snapshot_library_filter_group = QButtonGroup(self)
         self.snapshot_library_filter_group.setExclusive(True)
         self.snapshot_library_filter_buttons: Dict[str, QPushButton] = {}
@@ -89,66 +92,51 @@ class PresetsMixin:
             btn = QPushButton(name)
             btn.setCheckable(True)
             btn.setObjectName("garageFilterBtn")
-            btn.clicked.connect(lambda checked=False, value=name: self.on_snapshot_library_filter_changed(value))
+            btn.clicked.connect(lambda _, v=name: self.on_snapshot_library_filter_changed(v))
             self.snapshot_library_filter_group.addButton(btn)
             self.snapshot_library_filter_buttons[name] = btn
-            library_controls.addWidget(btn)
+            controls.addWidget(btn)
         self.snapshot_library_filter_buttons["All"].setChecked(True)
-        library_controls.addStretch(1)
-        layout.addLayout(library_controls)
+        self.presets_search = QLineEdit()
+        self.presets_search.setPlaceholderText("Search boss-car library...")
+        self.presets_search.textChanged.connect(self._on_presets_search_changed)
+        controls.addWidget(self.presets_search, 1)
+        layout.addLayout(controls)
 
+        # ── 4. QStackedWidget: Library / My Save ──────────────
+        self.presets_stack = QStackedWidget()
+
+        # Page 0: Library cards
         self.snapshot_library_cards = QWidget()
+        self.snapshot_library_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.snapshot_library_cards_layout = QGridLayout(self.snapshot_library_cards)
         self.snapshot_library_cards_layout.setContentsMargins(12, 12, 12, 12)
         self.snapshot_library_cards_layout.setHorizontalSpacing(14)
         self.snapshot_library_cards_layout.setVerticalSpacing(14)
         self.snapshot_library_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-
         self.snapshot_library_scroll = QScrollArea()
         self.snapshot_library_scroll.setObjectName("cardScroll")
         self.snapshot_library_scroll.setWidgetResizable(True)
         self.snapshot_library_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.snapshot_library_scroll.setWidget(self.snapshot_library_cards)
-        layout.addWidget(self.snapshot_library_scroll, 1)
+        self.presets_stack.addWidget(self.snapshot_library_scroll)
 
-        sep = QFrame()
-        sep.setObjectName("sectionLine")
-        layout.addWidget(sep)
-
-        snapshot_label = QLabel("Boss Car Snapshot Inspector")
-        snapshot_label.setObjectName("sectionLabel")
-        layout.addWidget(snapshot_label)
-
-        snapshot_hint = QLabel(
-            "Build snapshots are extracted from owned-car records. The inspector reports the primary `0x198` build "
-            "block, optional `parts_slot + 1` visual sidecars, and whether the unresolved `0x5577` visual table also "
-            "changed in this save."
-        )
-        snapshot_hint.setObjectName("mutedLabel")
-        snapshot_hint.setWordWrap(True)
-        layout.addWidget(snapshot_hint)
-
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
-        self.snapshot_search = QLineEdit()
-        self.snapshot_search.setPlaceholderText("Search build snapshots by model name...")
-        self.snapshot_search.textChanged.connect(self.on_snapshot_search_changed)
-        controls.addWidget(self.snapshot_search, 1)
-        layout.addLayout(controls)
-
+        # Page 1: My Save snapshot cards
         self.snapshot_cards = QWidget()
+        self.snapshot_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.snapshot_cards_layout = QGridLayout(self.snapshot_cards)
         self.snapshot_cards_layout.setContentsMargins(12, 12, 12, 12)
         self.snapshot_cards_layout.setHorizontalSpacing(14)
         self.snapshot_cards_layout.setVerticalSpacing(14)
         self.snapshot_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-
         self.snapshot_cards_scroll = QScrollArea()
         self.snapshot_cards_scroll.setObjectName("cardScroll")
         self.snapshot_cards_scroll.setWidgetResizable(True)
         self.snapshot_cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.snapshot_cards_scroll.setWidget(self.snapshot_cards)
-        layout.addWidget(self.snapshot_cards_scroll, 1)
+        self.presets_stack.addWidget(self.snapshot_cards_scroll)
+
+        layout.addWidget(self.presets_stack, 1)
 
         self._snapshot_card_widgets: Dict[int, QFrame] = {}
         self._snapshot_library_card_widgets: Dict[str, QFrame] = {}
@@ -156,7 +144,20 @@ class PresetsMixin:
         self._rebuild_snapshot_cards()
         return w
 
-    def on_snapshot_library_search_changed(self) -> None:
+    # ── View toggle / search ────────────────────────────────────
+
+    def _on_presets_view_changed(self, view: str) -> None:
+        self.presets_view = view
+        is_library = (view == "Library")
+        for btn in self.snapshot_library_filter_buttons.values():
+            btn.setVisible(is_library)
+        self.presets_stack.setCurrentIndex(0 if is_library else 1)
+        self.presets_search.setPlaceholderText(
+            "Search boss-car library..." if is_library else "Search builds in current save...",
+        )
+        self._refresh_presets_page()
+
+    def _on_presets_search_changed(self) -> None:
         self._refresh_presets_page()
 
     def on_snapshot_library_filter_changed(self, value: str) -> None:
@@ -164,6 +165,24 @@ class PresetsMixin:
         for label, button in self.snapshot_library_filter_buttons.items():
             button.setChecked(label == self.snapshot_library_filter)
         self._refresh_presets_page()
+
+    # ── Shared perf grid (read-only) ────────────────────────────
+
+    def _add_presets_perf_grid(self, parent: QVBoxLayout, performance_levels, model_name: str = "") -> None:
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(6)
+        limits = get_model_tuning_limits(model_name)
+        for idx, (name, level) in enumerate(performance_levels):
+            max_level = max(level, int(limits.get(name, 0))) if limits is not None else None
+            row_w, _ = build_perf_level_row(name, level, max_level)
+            grid.addWidget(row_w, idx // 2, idx % 2)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
+        parent.addLayout(grid)
+
+    # ── Library card columns / reflow ───────────────────────────
 
     def _detect_library_card_columns(self) -> int:
         return self._detect_col_count("snapshot_library_scroll", LIBRARY_TILE_MIN_WIDTH, ((1100, 2),))
@@ -174,10 +193,12 @@ class PresetsMixin:
             ((1100, 2),), self._rebuild_snapshot_library_cards, force,
         )
 
+    # ── Library entries filter ──────────────────────────────────
+
     def _snapshot_library_entries(self) -> List[SnapshotLibraryEntry]:
         query = ""
-        if hasattr(self, "snapshot_library_search"):
-            query = self.snapshot_library_search.text().strip().lower()
+        if hasattr(self, "presets_search"):
+            query = self.presets_search.text().strip().lower()
         entries = list(self.snapshot_library)
         if self.snapshot_library_filter != "All":
             entries = [entry for entry in entries if entry.library_bucket == self.snapshot_library_filter]
@@ -188,11 +209,7 @@ class PresetsMixin:
             ]
         return entries
 
-    def _library_entry_subtitle(self, entry: SnapshotLibraryEntry) -> str:
-        label = entry.file_label
-        if label.startswith("boss_car_snapshot_"):
-            label = label[len("boss_car_snapshot_"):]
-        return label.replace("_", " ")
+    # ── Library cards ───────────────────────────────────────────
 
     def _rebuild_snapshot_library_cards(self) -> None:
         if not hasattr(self, "snapshot_library_cards_layout"):
@@ -240,6 +257,7 @@ class PresetsMixin:
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(6)
 
+            # Header: bucket badge + source badge
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
             bucket_badge = QLabel(entry.library_bucket)
@@ -252,105 +270,92 @@ class PresetsMixin:
             header_row.addWidget(source_badge, 0, Qt.AlignRight)
             card_layout.addLayout(header_row)
 
+            # Car name
             name_label = QLabel(entry.display_name)
             name_label.setObjectName("garageCardMeta")
             name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
-            subtitle = QLabel(self._library_entry_subtitle(entry))
-            subtitle.setObjectName("partsCardNote")
-            subtitle.setWordWrap(True)
-            card_layout.addWidget(subtitle)
+            # Warning badge — visible when visuals are incomplete
+            if entry.requires_unresolved_global_visual_state or entry.has_visual_sidecar:
+                warn_badge = QLabel("Visuals incomplete in v1")
+                warn_badge.setObjectName("partsCardNote")
+                warn_badge.setWordWrap(True)
+                card_layout.addWidget(warn_badge)
 
-            status_row = QHBoxLayout()
-            status_row.setSpacing(8)
-            for text in [
-                "Primary only" if not entry.has_visual_sidecar else "Sidecar blocked",
-                "0x5577 ignored in v1" if entry.requires_unresolved_global_visual_state else "No global visual warning",
-            ]:
-                badge = QLabel(text)
-                badge.setObjectName("garageCardStatBadge")
-                badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                badge.setAlignment(Qt.AlignCenter)
-                status_row.addWidget(badge, 0, Qt.AlignLeft)
-            status_row.addStretch(1)
-            card_layout.addLayout(status_row)
+            # Separator
+            sep = QFrame()
+            sep.setFrameShape(QFrame.HLine)
+            sep.setObjectName("garageCardSep")
+            card_layout.addWidget(sep)
 
-            card.setToolTip(" · ".join([
-                "Primary only" if not entry.has_visual_sidecar else "Sidecar blocked",
-                "0x5577 ignored in v1" if entry.requires_unresolved_global_visual_state else "No global visual warning",
-            ]))
-
-            plan_label = QLabel()
-            plan_label.setObjectName("mutedLabel")
-            plan_label.setWordWrap(True)
-            if not self.savefile:
-                plan_label.setText("Open a save to plan injection targets.")
-            elif staged_plan is not None and staged_plan.refusal_reason is None:
-                slot_text = f"owned 0x{staged_plan.target_owned_abs_off:05X}, parts {staged_plan.target_parts_slot}"
-                if staged_plan.target_career_slot is not None:
-                    slot_text += f", career {staged_plan.target_career_slot + 1}"
-                plan_label.setText(f"Staged: {staged_plan.target_mode} -> {slot_text}")
-            elif staged_plan is not None and staged_plan.refusal_reason:
-                plan_label.setText(f"Staged plan blocked: {staged_plan.refusal_reason}")
-            else:
-                ready_targets: List[str] = []
-                if plan_my is not None and plan_my.refusal_reason is None:
-                    ready_targets.append(
-                        f"My Cars: owned 0x{plan_my.target_owned_abs_off:05X}, parts {plan_my.target_parts_slot}"
-                    )
-                if plan_career is not None and plan_career.refusal_reason is None:
-                    ready_targets.append(
-                        f"Career: owned 0x{plan_career.target_owned_abs_off:05X}, parts {plan_career.target_parts_slot}, career {plan_career.target_career_slot + 1}"
-                    )
-                plan_label.setText(" | ".join(ready_targets) if ready_targets else "No validated injector target is currently available.")
-            card_layout.addWidget(plan_label)
-
-            if entry.requires_unresolved_global_visual_state:
-                warn = QLabel("Warning: the unresolved global visual table `0x5577` is not injected in v1.")
-                warn.setObjectName("partsCardNote")
-                warn.setWordWrap(True)
-                card_layout.addWidget(warn)
-
-            action_row = QHBoxLayout()
-            action_row.setSpacing(8)
-            inject_my = QPushButton("Inject to My Cars")
-            inject_my.setObjectName("partsBulkBtn")
-            inject_my.clicked.connect(lambda _, snapshot_id=entry.snapshot_id: self.on_stage_snapshot_injection(snapshot_id, "my_cars"))
-            inject_career = QPushButton("Inject to Career")
-            inject_career.setObjectName("partsBulkBtn")
-            inject_career.clicked.connect(lambda _, snapshot_id=entry.snapshot_id: self.on_stage_snapshot_injection(snapshot_id, "career"))
-            clear_btn = QPushButton("Clear staged")
-            clear_btn.setObjectName("partsBulkBtn")
-            clear_btn.clicked.connect(lambda _, snapshot_id=entry.snapshot_id: self.on_clear_snapshot_injection(snapshot_id))
-
-            inject_my.setEnabled(self.savefile is not None and (plan_my is not None and plan_my.refusal_reason is None))
-            inject_career.setEnabled(self.savefile is not None and (plan_career is not None and plan_career.refusal_reason is None))
-            clear_btn.setEnabled(staged_mode is not None)
-            if staged_mode == "my_cars":
-                inject_my.setText("Staged to My Cars")
-                inject_my.setEnabled(False)
-            elif staged_mode == "career":
-                inject_career.setText("Staged to Career")
-                inject_career.setEnabled(False)
-
-            action_row.addWidget(inject_my, 0, Qt.AlignLeft)
-            action_row.addWidget(inject_career, 0, Qt.AlignLeft)
-            action_row.addWidget(clear_btn, 0, Qt.AlignLeft)
-            action_row.addStretch(1)
-            card_layout.addLayout(action_row)
-
+            # Performance bars (read-only, proper caps)
             perf_label = QLabel("Performance")
             perf_label.setObjectName("garageCardFieldLabel")
             perf_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(perf_label)
+            self._add_presets_perf_grid(card_layout, entry.performance_levels, entry.display_name)
 
-            perf_value = QLabel(" / ".join(f"{name}:{value}" for name, value in entry.performance_levels))
-            perf_value.setObjectName("partsCardRaw")
-            perf_value.setAlignment(Qt.AlignCenter)
-            perf_value.setWordWrap(True)
-            card_layout.addWidget(perf_value)
+            # Action row
+            action_row = QHBoxLayout()
+            action_row.setSpacing(8)
+            inject_my = QPushButton("Add to My Cars")
+            inject_my.setObjectName("partsBulkBtn")
+            inject_my.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "my_cars"))
+            inject_career = QPushButton("Add to Career")
+            inject_career.setObjectName("partsBulkBtn")
+            inject_career.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "career"))
+
+            inject_my.setEnabled(self.savefile is not None and plan_my is not None and plan_my.refusal_reason is None)
+            inject_career.setEnabled(self.savefile is not None and plan_career is not None and plan_career.refusal_reason is None)
+
+            if staged_mode == "my_cars":
+                inject_my.setText("Staged: My Cars")
+                inject_my.setEnabled(False)
+            elif staged_mode == "career":
+                inject_career.setText("Staged: Career")
+                inject_career.setEnabled(False)
+
+            action_row.addWidget(inject_my)
+            action_row.addWidget(inject_career)
+
+            if staged_mode is not None:
+                unstage_btn = QPushButton("Unstage")
+                unstage_btn.setObjectName("partsBulkBtn")
+                unstage_btn.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_clear_snapshot_injection(sid))
+                action_row.addWidget(unstage_btn)
+
+            action_row.addStretch(1)
+            card_layout.addLayout(action_row)
+
+            # Refusal line — visible reason when injection is blocked
+            refusal_texts: List[str] = []
+            if not self.savefile:
+                refusal_texts.append("Open a save to inject")
+            else:
+                if plan_my is not None and plan_my.refusal_reason and staged_mode != "my_cars":
+                    refusal_texts.append(f"My Cars: {plan_my.refusal_reason}")
+                if plan_career is not None and plan_career.refusal_reason and staged_mode != "career":
+                    refusal_texts.append(f"Career: {plan_career.refusal_reason}")
+                if staged_plan is not None and staged_plan.refusal_reason:
+                    refusal_texts.append(f"Staged plan blocked: {staged_plan.refusal_reason}")
+            if refusal_texts:
+                refusal_label = QLabel(" | ".join(refusal_texts))
+                refusal_label.setObjectName("mutedLabel")
+                refusal_label.setWordWrap(True)
+                card_layout.addWidget(refusal_label)
+
+            # Tooltip — technical details for power users
+            tooltip_parts = [
+                f"File: {entry.file_label}",
+                f"Snapshot ID: {entry.snapshot_id[:60]}...",
+            ]
+            if entry.has_visual_sidecar:
+                tooltip_parts.append("Has visual sidecar (not injectable in v1)")
+            if entry.requires_unresolved_global_visual_state:
+                tooltip_parts.append("Requires 0x5577 global visual table (not injected in v1)")
+            card.setToolTip("\n".join(tooltip_parts))
 
             row = idx // columns
             col = idx % columns
@@ -360,8 +365,7 @@ class PresetsMixin:
         for col in range(columns):
             self.snapshot_library_cards_layout.setColumnStretch(col, 1)
 
-    def on_snapshot_search_changed(self) -> None:
-        self._refresh_presets_page()
+    # ── Snapshot card columns / reflow ──────────────────────────
 
     def _detect_snapshot_card_columns(self) -> int:
         return self._detect_col_count("snapshot_cards_scroll", SNAPSHOT_TILE_MIN_WIDTH, ((1100, 2),))
@@ -372,33 +376,18 @@ class PresetsMixin:
             ((1100, 2),), self._rebuild_snapshot_cards, force,
         )
 
+    # ── Snapshot entries filter ─────────────────────────────────
+
     def _snapshot_card_entries(self) -> List[FullCarBuildSnapshot]:
         query = ""
-        if hasattr(self, "snapshot_search"):
-            query = self.snapshot_search.text().strip().lower()
+        if hasattr(self, "presets_search"):
+            query = self.presets_search.text().strip().lower()
         entries = list(self.build_snapshots)
         if query:
             entries = [entry for entry in entries if query in entry.display_name.lower()]
         return entries
 
-    def _snapshot_perf_text(self, snapshot: FullCarBuildSnapshot) -> str:
-        return " / ".join(f"{name}:{value}" for name, value in snapshot.performance_levels)
-
-    def _snapshot_filename_slug(self, text: str) -> str:
-        safe = "".join(ch if ch.isalnum() else "_" for ch in text.strip())
-        while "__" in safe:
-            safe = safe.replace("__", "_")
-        return safe.strip("_") or "snapshot"
-
-    def _snapshot_global_table_text(self, snapshot: FullCarBuildSnapshot) -> str:
-        if not snapshot.global_visual_table_values:
-            return "Visual Table N/A"
-        if snapshot.global_visual_table_uniform_value is not None:
-            if snapshot.global_visual_table_uniform_value == SaveFile.VISUAL_TABLE_DEFAULT_VALUE:
-                return f"Visual Table default (0x{snapshot.global_visual_table_uniform_value:02X})"
-            return f"Visual Table changed (0x{snapshot.global_visual_table_uniform_value:02X})"
-        values = ", ".join(f"0x{value:02X}" for value in sorted(set(snapshot.global_visual_table_values)))
-        return f"Visual Table mixed ({values})"
+    # ── Snapshot cards (My Save view) ───────────────────────────
 
     def _rebuild_snapshot_cards(self) -> None:
         if not hasattr(self, "snapshot_cards_layout"):
@@ -409,7 +398,7 @@ class PresetsMixin:
         self._snapshot_slot_columns = columns
 
         if not self.savefile:
-            label = QLabel("Open a save to inspect boss-car build snapshots.")
+            label = QLabel("Open a save to inspect car build snapshots.")
             label.setObjectName("mutedLabel")
             self.snapshot_cards_layout.addWidget(label, 0, 0, 1, columns)
             return
@@ -439,148 +428,64 @@ class PresetsMixin:
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(6)
 
+            # Header: parts slot badge + source badge
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
-            source_label = self._make_garage_source_badge(snapshot.source_kind)
-            primary_label = QLabel(f"Primary Slot {snapshot.parts_slot}")
-            primary_label.setObjectName("garageCardSlot")
-            primary_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            primary_label.setAlignment(Qt.AlignCenter)
-            header_row.addWidget(primary_label, 0, Qt.AlignLeft)
+            slot_badge = QLabel(f"Parts Slot {snapshot.parts_slot}")
+            slot_badge.setObjectName("garageCardSlot")
+            slot_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            slot_badge.setAlignment(Qt.AlignCenter)
+            source_badge = self._make_garage_source_badge(snapshot.source_kind)
+            header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
             header_row.addStretch(1)
-            header_row.addWidget(source_label, 0, Qt.AlignRight)
+            header_row.addWidget(source_badge, 0, Qt.AlignRight)
             card_layout.addLayout(header_row)
 
+            # Car name
             name_label = QLabel(snapshot.display_name)
             name_label.setObjectName("garageCardMeta")
             name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
-            meta_row = QHBoxLayout()
-            meta_row.setSpacing(8)
-            for text in [
-                f"Car #{snapshot.car_number:02X}",
-                f"Loc 0x{snapshot.location_bits:02X}",
-                f"Misc 0x{snapshot.misc_bits:02X}",
-                f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
-            ]:
-                badge = QLabel(text)
-                badge.setObjectName("garageCardStatBadge")
-                badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                badge.setAlignment(Qt.AlignCenter)
-                meta_row.addWidget(badge, 0, Qt.AlignLeft)
-            meta_row.addStretch(1)
-            card_layout.addLayout(meta_row)
-
-            card.setToolTip(" · ".join([
-                f"Car #{snapshot.car_number:02X}",
-                f"Loc 0x{snapshot.location_bits:02X}",
-                f"Misc 0x{snapshot.misc_bits:02X}",
-                f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
-            ]))
-
-            status_row = QHBoxLayout()
-            status_row.setSpacing(8)
-            sidecar_text = (
-                f"Sidecar +1 (slot {snapshot.optional_visual_sidecar.sidecar_parts_slot})"
-                if snapshot.optional_visual_sidecar
-                else "Primary only"
-            )
-            for text in [sidecar_text, self._snapshot_global_table_text(snapshot)]:
-                status = QLabel(text)
-                status.setObjectName("garageCardStatBadge")
-                status.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                status.setAlignment(Qt.AlignCenter)
-                status_row.addWidget(status, 0, Qt.AlignLeft)
-            status_row.addStretch(1)
-            card_layout.addLayout(status_row)
-
-            action_row = QHBoxLayout()
-            action_row.setSpacing(8)
-            export_btn = QPushButton("Export Snapshot JSON")
-            export_btn.setObjectName("partsBulkBtn")
-            export_btn.clicked.connect(lambda _, abs_off=snapshot.car_abs_off: self.on_export_build_snapshot(abs_off))
-            action_row.addWidget(export_btn, 0, Qt.AlignLeft)
-            action_row.addStretch(1)
-            card_layout.addLayout(action_row)
-
+            # Separator
             sep = QFrame()
             sep.setFrameShape(QFrame.HLine)
             sep.setObjectName("garageCardSep")
             card_layout.addWidget(sep)
 
+            # Performance bars (read-only)
             perf_label = QLabel("Performance")
             perf_label.setObjectName("garageCardFieldLabel")
             perf_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(perf_label)
+            self._add_presets_perf_grid(card_layout, snapshot.performance_levels, snapshot.display_name)
 
-            perf_value = QLabel(self._snapshot_perf_text(snapshot))
-            perf_value.setObjectName("partsCardRaw")
-            perf_value.setAlignment(Qt.AlignCenter)
-            perf_value.setWordWrap(True)
-            card_layout.addWidget(perf_value)
+            # Export button
+            action_row = QHBoxLayout()
+            action_row.setSpacing(8)
+            export_btn = QPushButton("Export Snapshot")
+            export_btn.setObjectName("partsBulkBtn")
+            export_btn.clicked.connect(lambda _, off=snapshot.car_abs_off: self.on_export_build_snapshot(off))
+            action_row.addWidget(export_btn, 0, Qt.AlignLeft)
+            action_row.addStretch(1)
+            card_layout.addLayout(action_row)
 
-            visuals_label = QLabel("Primary Visual Fields")
-            visuals_label.setObjectName("garageCardFieldLabel")
-            visuals_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(visuals_label)
-
-            visual_grid = QGridLayout()
-            visual_grid.setContentsMargins(0, 0, 0, 0)
-            visual_grid.setHorizontalSpacing(12)
-            visual_grid.setVerticalSpacing(6)
-            for field_idx, (label_text, value_text) in enumerate(snapshot.primary_visual_fields):
-                row = field_idx // 2
-                col = (field_idx % 2) * 2
-                name = QLabel(label_text)
-                name.setObjectName("partsCardNote")
-                value = QLabel(value_text)
-                value.setObjectName("garageCardStatBadge")
-                value.setAlignment(Qt.AlignCenter)
-                value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                visual_grid.addWidget(name, row, col)
-                visual_grid.addWidget(value, row, col + 1)
-            visual_grid.setColumnStretch(0, 0)
-            visual_grid.setColumnStretch(1, 1)
-            visual_grid.setColumnStretch(2, 0)
-            visual_grid.setColumnStretch(3, 1)
-            card_layout.addLayout(visual_grid)
-
-            if snapshot.optional_visual_sidecar is not None:
-                sidecar_sep = QFrame()
-                sidecar_sep.setFrameShape(QFrame.HLine)
-                sidecar_sep.setObjectName("garageCardSep")
-                card_layout.addWidget(sidecar_sep)
-
-                sidecar_label = QLabel("Visual Sidecar")
-                sidecar_label.setObjectName("garageCardFieldLabel")
-                sidecar_label.setAlignment(Qt.AlignCenter)
-                card_layout.addWidget(sidecar_label)
-
-                sidecar = snapshot.optional_visual_sidecar
-                sidecar_row = QHBoxLayout()
-                sidecar_row.setSpacing(8)
-                for text in [
-                    f"Owned 0x{sidecar.owned_record_abs_off:05X}",
-                    f"Parts Slot {sidecar.sidecar_parts_slot}",
-                    f"Block 0x{sidecar.sidecar_block_abs_off:05X}",
-                ]:
-                    badge = QLabel(text)
-                    badge.setObjectName("garageCardStatBadge")
-                    badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                    badge.setAlignment(Qt.AlignCenter)
-                    sidecar_row.addWidget(badge, 0, Qt.AlignLeft)
-                sidecar_row.addStretch(1)
-                card_layout.addLayout(sidecar_row)
-
-                sidecar_note = QLabel(
-                    f"Signature clone: {sidecar.owned_record_signature_clone.hex(' ').upper()} | "
-                    f"Loc 0x{sidecar.owned_record_location_bits:02X} | Misc 0x{sidecar.owned_record_misc_bits:02X}"
-                )
-                sidecar_note.setObjectName("partsCardNote")
-                sidecar_note.setWordWrap(True)
-                card_layout.addWidget(sidecar_note)
+            # Tooltip — technical details for power users
+            tooltip_parts = [
+                f"Car #{snapshot.car_number:02X}",
+                f"Loc 0x{snapshot.location_bits:02X} | Misc 0x{snapshot.misc_bits:02X}",
+                f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
+            ]
+            if snapshot.optional_visual_sidecar:
+                sc = snapshot.optional_visual_sidecar
+                tooltip_parts.append(f"Sidecar: slot {sc.sidecar_parts_slot}, block 0x{sc.sidecar_block_abs_off:05X}")
+            if snapshot.global_visual_table_values:
+                if snapshot.global_visual_table_uniform_value is not None:
+                    tooltip_parts.append(f"Visual Table: 0x{snapshot.global_visual_table_uniform_value:02X}")
+                else:
+                    tooltip_parts.append("Visual Table: mixed values")
+            card.setToolTip("\n".join(tooltip_parts))
 
             row = idx // columns
             col = idx % columns
@@ -590,9 +495,21 @@ class PresetsMixin:
         for col in range(columns):
             self.snapshot_cards_layout.setColumnStretch(col, 1)
 
+    # ── Refresh ─────────────────────────────────────────────────
+
     def _refresh_presets_page(self) -> None:
         self._rebuild_snapshot_library_cards()
         self._rebuild_snapshot_cards()
+
+    # ── Helpers ─────────────────────────────────────────────────
+
+    def _snapshot_filename_slug(self, text: str) -> str:
+        safe = "".join(ch if ch.isalnum() else "_" for ch in text.strip())
+        while "__" in safe:
+            safe = safe.replace("__", "_")
+        return safe.strip("_") or "snapshot"
+
+    # ── Injection staging ───────────────────────────────────────
 
     def on_stage_snapshot_injection(self, snapshot_id: str, target_mode: str) -> None:
         if not self.savefile:
@@ -641,5 +558,3 @@ class PresetsMixin:
         payload = self.savefile.snapshot_to_dict(snapshot)
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         ToastNotification.show_toast(self, "Build snapshot exported")
-
-

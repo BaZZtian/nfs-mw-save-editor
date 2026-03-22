@@ -8,9 +8,9 @@ from PySide6.QtWidgets import QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBo
 
 from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
-from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits, get_tuning_limit
+from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits
 from ui.pages.constants import PARTS_TILE_MIN_WIDTH
-from ui.widgets import WantSpinBox
+from ui.widgets import WantSpinBox, build_perf_level_row
 
 
 @dataclass(frozen=True)
@@ -308,24 +308,8 @@ class PartsMixin:
         grid.setVerticalSpacing(6)
         for idx, name in enumerate(PERF_PART_NAMES):
             level = int(levels.get(name, 0))
-            max_level = max(level, int((limits or {}).get(name, get_tuning_limit(self._entry_model_name(entry), name, default=4))))
-            row_w = QWidget()
-            row_w.setObjectName("partsLevelRow")
-            row_layout = QHBoxLayout(row_w)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(6)
-            lbl = QLabel(name)
-            lbl.setObjectName("partsLevelLabel")
-            row_layout.addWidget(lbl)
-            for seg_idx in range(1, max_level + 1):
-                seg = QFrame()
-                seg.setObjectName("partsLevelSeg")
-                seg.setProperty("filled", str(seg_idx) if level >= seg_idx else "0")
-                seg.setFixedSize(20, 8)
-                row_layout.addWidget(seg)
-            num = QLabel(f"{level}/{max_level}")
-            num.setObjectName("partsLevelNum")
-            row_layout.addWidget(num)
+            max_level = max(level, int(limits.get(name, 0))) if editable else None
+            row_w, row_layout = build_perf_level_row(name, level, max_level)
             if editable:
                 btn_minus = QPushButton("\u2212")
                 btn_minus.setObjectName("partsLevelBtn")

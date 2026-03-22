@@ -31,9 +31,12 @@ TOAST_SUCCESS_BG = "rgba(34, 84, 61, 0.92)"
 TOAST_SUCCESS_BORDER = "#2D7A54"
 TOAST_ERROR_BG = "rgba(120, 30, 30, 0.94)"
 TOAST_ERROR_BORDER = "#D44444"
-JUNKMAN_BG = "rgba(42, 138, 138, 0.15)"
-JUNKMAN_BORDER = "#2A7A7A"
-JUNKMAN_TEXT = "#5ECECE"
+JUNKMAN_BG = "rgba(166, 227, 106, 0.14)"
+JUNKMAN_BORDER = "#5E8F2E"
+JUNKMAN_TEXT = "#A6E36A"
+MAXED_BG = "rgba(232, 106, 95, 0.14)"
+MAXED_BORDER = "#A64A42"
+MAXED_TEXT = "#E86A5F"
 LEVEL_SEG_LOW = "#3A5A82"
 LEVEL_SEG_HIGH = "#5E80AF"
 CAREER_SOURCE = "#7FA8E8"
@@ -641,11 +644,11 @@ QLabel#tuningStatusModified {{
     font-weight: 600;
 }}
 QLabel#tuningStatusMaxed {{
-    background: rgba(94, 206, 206, 0.14);
-    border: 1px solid {JUNKMAN_BORDER};
+    background: {MAXED_BG};
+    border: 1px solid {MAXED_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {JUNKMAN_TEXT};
+    color: {MAXED_TEXT};
     font-size: 11px;
     font-weight: 600;
 }}

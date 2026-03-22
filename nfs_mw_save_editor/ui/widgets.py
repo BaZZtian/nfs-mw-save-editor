@@ -1,7 +1,7 @@
 """Reusable widgets for the NFS MW Save Editor UI."""
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
 from PySide6.QtCore import Qt, QPropertyAnimation, QTimer, QEasingCurve, Property, QRectF
 from PySide6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
@@ -20,6 +20,39 @@ from PySide6.QtWidgets import (
 )
 
 from ui.icon_map import token_icon_path
+
+
+def build_perf_level_row(name: str, level: int, max_level: Optional[int]) -> tuple[QWidget, QHBoxLayout]:
+    """Build one performance level row: label + optional segments + level number.
+
+    Returns ``(row_widget, row_layout)`` so callers can append page-specific
+    controls (e.g. +/- buttons on the Tuning tab).
+
+    Pure function — no page state, no signal wiring.
+    """
+    row_w = QWidget()
+    row_w.setObjectName("partsLevelRow")
+    row_layout = QHBoxLayout(row_w)
+    row_layout.setContentsMargins(0, 0, 0, 0)
+    row_layout.setSpacing(6)
+
+    lbl = QLabel(name)
+    lbl.setObjectName("partsLevelLabel")
+    row_layout.addWidget(lbl)
+
+    if max_level is not None:
+        for seg_idx in range(1, max_level + 1):
+            seg = QFrame()
+            seg.setObjectName("partsLevelSeg")
+            seg.setProperty("filled", str(seg_idx) if level >= seg_idx else "0")
+            seg.setFixedSize(20, 8)
+            row_layout.addWidget(seg)
+
+    num = QLabel(f"{level}/{max_level}" if max_level is not None else f"{level}/?")
+    num.setObjectName("partsLevelNum")
+    row_layout.addWidget(num)
+
+    return row_w, row_layout
 
 
 class ShimmerFrame(QFrame):
