@@ -42,8 +42,8 @@ class GarageMixin:
         layout.setSpacing(10)
 
         hint = QLabel(
-            "Transfer operator view. Move existing owned cars between Career, My Cars, and Pink Slip while "
-            "tracking validated empty slots for future injection work."
+            "Move your cars between Career mode and My Cars. "
+            "Per-car bounty editing and pursuit stats live here."
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
@@ -62,7 +62,7 @@ class GarageMixin:
         self.garage_filter_buttons: Dict[str, QPushButton] = {}
         self.garage_filter_group = QButtonGroup(self)
         self.garage_filter_group.setExclusive(True)
-        for label in ["All", "Career", "My Cars", "Pink Slip", "Unknown"]:
+        for label in ["All", "Career", "My Cars"]:
             btn = QPushButton(label)
             btn.setObjectName("catButton")
             btn.setCheckable(True)
@@ -318,33 +318,20 @@ class GarageMixin:
 
     def _make_garage_source_badge(self, source_kind: str) -> QWidget:
         if source_kind == "Pink Slip":
-            pix = self._pink_slip_badge_icon()
-            if not pix.isNull():
-                badge = ShimmerFrame()
-                badge.setObjectName("pinkSlipBadge")
-                badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                badge.setToolTip(source_kind)
-
-                row = QHBoxLayout(badge)
-                row.setContentsMargins(8, 5, 10, 5)
-                row.setSpacing(6)
-
-                icon_label = QLabel()
-                icon_label.setObjectName("pinkSlipBadgeIcon")
-                icon_label.setPixmap(pix)
-                icon_label.setAlignment(Qt.AlignCenter)
-                icon_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-                row.addWidget(icon_label, 0, Qt.AlignVCenter)
-
-                text_label = QLabel("Pink Slip")
-                text_label.setObjectName("pinkSlipBadgeText")
-                text_label.setAlignment(Qt.AlignCenter)
-                text_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                row.addWidget(text_label, 0, Qt.AlignVCenter)
-                return badge
+            badge = QLabel("Pink Slip")
+            badge.setObjectName("pinkSlipBadgeText")
+            badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setToolTip(source_kind)
+            return badge
 
         label = QLabel()
-        label.setObjectName("garageCardStatBadge")
+        if source_kind == "Career":
+            label.setObjectName("careerSourceBadge")
+        elif source_kind == "My Cars":
+            label.setObjectName("myCarsSourceBadge")
+        else:
+            label.setObjectName("garageCardStatBadge")
         label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         label.setAlignment(Qt.AlignCenter)
         label.setToolTip(source_kind)
@@ -426,7 +413,6 @@ class GarageMixin:
             slot_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             slot_label.setAlignment(Qt.AlignCenter)
             source_label = self._make_garage_source_badge(slot.source_kind)
-            card.setProperty("pinkslip", slot.source_kind == "Pink Slip")
             header_row.addWidget(slot_label, 0, Qt.AlignLeft)
             header_row.addStretch(1)
             header_row.addWidget(source_label, 0, Qt.AlignRight)
@@ -438,6 +424,7 @@ class GarageMixin:
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
+            # ── Meta in tooltip ──────────────────────────────
             meta_row = QHBoxLayout()
             meta_row.setSpacing(8)
             for text in [
@@ -452,6 +439,10 @@ class GarageMixin:
                 meta_row.addWidget(badge, 0, Qt.AlignLeft)
             meta_row.addStretch(1)
             card_layout.addLayout(meta_row)
+
+            card.setToolTip(
+                f"Parts Slot {slot.parts_slot}  ·  Loc 0x{slot.location_bits:02X}  ·  Misc 0x{slot.misc_bits:02X}"
+            )
 
             action_row = QHBoxLayout()
             action_row.setSpacing(8)
@@ -497,55 +488,58 @@ class GarageMixin:
                 blocker.setWordWrap(True)
                 card_layout.addWidget(blocker)
 
-            sep = QFrame()
-            sep.setFrameShape(QFrame.HLine)
-            sep.setObjectName("garageCardSep")
-            card_layout.addWidget(sep)
-
-            bounty_label = QLabel("Bounty")
-            bounty_label.setObjectName("garageCardFieldLabel")
-            bounty_label.setAlignment(Qt.AlignCenter)
-
-            edit = QLineEdit()
-            edit.setPlaceholderText("0")
-            edit.setValidator(self._profile_number_validator)
-            edit.setAlignment(Qt.AlignCenter)
-            edit.setObjectName("garageCardEdit")
-            edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            if slot.has_pursuit_link and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT:
-                edit.editingFinished.connect(lambda idx=slot.career_slot: self.on_garage_slot_edit_finished(idx))
-            else:
-                edit.setEnabled(False)
-
-            current = QLabel("Current: -")
-            current.setObjectName("garageCardCurrent")
-            current.setAlignment(Qt.AlignCenter)
-
-            if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT:
-                self.garage_card_edits[slot.career_slot] = edit
-                self.garage_card_current_labels[slot.career_slot] = current
             self._garage_card_widgets_page[slot.abs_off] = card
 
-            card_layout.addWidget(bounty_label)
-            card_layout.addWidget(edit)
-            card_layout.addWidget(current)
+            # Bounty / pursuit stats only for Career cars
+            if not slot.is_my_cars:
+                sep = QFrame()
+                sep.setFrameShape(QFrame.HLine)
+                sep.setObjectName("garageCardSep")
+                card_layout.addWidget(sep)
 
-            stats_row = QHBoxLayout()
-            stats_row.setSpacing(8)
-            stats_row.setContentsMargins(0, 4, 0, 0)
+                bounty_label = QLabel("Bounty")
+                bounty_label.setObjectName("garageCardFieldLabel")
+                bounty_label.setAlignment(Qt.AlignCenter)
 
-            esc_lbl = QLabel(f"Escaped  {slot.escaped if slot.escaped is not None else '-'}")
-            esc_lbl.setObjectName("garageCardStatBadge")
-            esc_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            esc_lbl.setAlignment(Qt.AlignCenter)
-            bust_lbl = QLabel(f"Busted  {slot.busted if slot.busted is not None else '-'}")
-            bust_lbl.setObjectName("garageCardStatBadge")
-            bust_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            bust_lbl.setAlignment(Qt.AlignCenter)
-            stats_row.addWidget(esc_lbl, 0, Qt.AlignLeft)
-            stats_row.addStretch(1)
-            stats_row.addWidget(bust_lbl, 0, Qt.AlignRight)
-            card_layout.addLayout(stats_row)
+                edit = QLineEdit()
+                edit.setPlaceholderText("0")
+                edit.setValidator(self._profile_number_validator)
+                edit.setAlignment(Qt.AlignCenter)
+                edit.setObjectName("garageCardEdit")
+                edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                if slot.has_pursuit_link and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT:
+                    edit.editingFinished.connect(lambda idx=slot.career_slot: self.on_garage_slot_edit_finished(idx))
+                else:
+                    edit.setEnabled(False)
+
+                current = QLabel("Current: -")
+                current.setObjectName("garageCardCurrent")
+                current.setAlignment(Qt.AlignCenter)
+
+                if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT:
+                    self.garage_card_edits[slot.career_slot] = edit
+                    self.garage_card_current_labels[slot.career_slot] = current
+
+                card_layout.addWidget(bounty_label)
+                card_layout.addWidget(edit)
+                card_layout.addWidget(current)
+
+                stats_row = QHBoxLayout()
+                stats_row.setSpacing(8)
+                stats_row.setContentsMargins(0, 4, 0, 0)
+
+                esc_lbl = QLabel(f"Escaped  {slot.escaped if slot.escaped is not None else '-'}")
+                esc_lbl.setObjectName("garageCardStatBadge")
+                esc_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                esc_lbl.setAlignment(Qt.AlignCenter)
+                bust_lbl = QLabel(f"Busted  {slot.busted if slot.busted is not None else '-'}")
+                bust_lbl.setObjectName("garageCardStatBadge")
+                bust_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+                bust_lbl.setAlignment(Qt.AlignCenter)
+                stats_row.addWidget(esc_lbl, 0, Qt.AlignLeft)
+                stats_row.addStretch(1)
+                stats_row.addWidget(bust_lbl, 0, Qt.AlignRight)
+                card_layout.addLayout(stats_row)
 
             row = idx // columns
             col = idx % columns
@@ -597,7 +591,6 @@ class GarageMixin:
                     slot.career_slot != SaveFile.EMPTY_CAREER_SLOT and self._garage_card_changed(slot.career_slot)
                 )
                 card_w.setProperty("changed", changed)
-                card_w.setProperty("pinkslip", slot.source_kind == "Pink Slip")
                 card_w.style().unpolish(card_w)
                 card_w.style().polish(card_w)
 

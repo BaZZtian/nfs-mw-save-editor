@@ -17,40 +17,58 @@ from ui.pages.constants import *
 
 
 class SettingsMixin:
+    def _build_settings_group(self, title: str, widgets: list) -> QFrame:
+        """Create a garageCard-styled settings group with a title and child widgets."""
+        group = QFrame()
+        group.setObjectName("settingsGroup")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+
+        title_label = QLabel(title)
+        title_label.setObjectName("settingsGroupTitle")
+        layout.addWidget(title_label)
+
+        for w in widgets:
+            if isinstance(w, QWidget):
+                layout.addWidget(w)
+            else:
+                layout.addLayout(w)
+        return group
+
     def _build_settings_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.setSpacing(10)
-        layout.addWidget(QLabel("Settings"))
+        layout.setSpacing(12)
+        layout.setContentsMargins(10, 10, 10, 10)
 
-        self.chk_preserve_unknown = QCheckBox("Preserve Unknown (default ON)")
-        self.chk_preserve_unknown.setChecked(True)
-        self.chk_preserve_unknown.stateChanged.connect(self.on_preserve_toggle)
+        section = QLabel("Settings")
+        section.setObjectName("sectionLabel")
+        layout.addWidget(section)
 
-        self.chk_safe = QCheckBox("Safe max (<= 63)")
+        # ── Token Limits ─────────────────────────────────────
+        self.chk_safe = QCheckBox("Standard mode")
         self.chk_safe.setChecked(True)
         self.chk_safe.stateChanged.connect(self.on_range_toggle)
-        self.chk_adv = QCheckBox("Advanced (<= 255)")
+        self.chk_adv = QCheckBox("Legacy alternate mode")
         self.chk_adv.setChecked(False)
         self.chk_adv.stateChanged.connect(self.on_range_toggle)
-
-        self.chk_practical_cap10 = QCheckBox("Unlock limit (<= 63)")
+        self.chk_practical_cap10 = QCheckBox("Remove 10-token cap (allow current save maximum)")
         self.chk_practical_cap10.setChecked(False)
         self.chk_practical_cap10.stateChanged.connect(self.on_practical_cap_toggle)
-
-        self.chk_show_integrity = QCheckBox("Show Integrity panel on Profile")
-        self.chk_show_integrity.setChecked(False)
-        self.chk_show_integrity.stateChanged.connect(self.on_toggle_show_integrity)
-
-        self.chk_show_unlinked_pursuits = QCheckBox("Show unlinked pursuit diagnostics")
-        self.chk_show_unlinked_pursuits.setChecked(False)
-        self.chk_show_unlinked_pursuits.stateChanged.connect(self.on_toggle_unlinked_pursuits)
-
-        self.btn_clear_unknown = QPushButton("Clear Unknown (danger)")
-        self.btn_clear_unknown.clicked.connect(self.on_clear_unknown_confirm)
-
         self.lbl_limits = QLabel("Limits: -")
         self.lbl_limits.setObjectName("mutedLabel")
+
+        layout.addWidget(self._build_settings_group("Token Limits", [
+            self.chk_practical_cap10, self.lbl_limits,
+        ]))
+
+        # ── Data Safety ──────────────────────────────────────
+        self.chk_preserve_unknown = QCheckBox("Preserve unknown token data (recommended)")
+        self.chk_preserve_unknown.setChecked(True)
+        self.chk_preserve_unknown.stateChanged.connect(self.on_preserve_toggle)
+        self.btn_clear_unknown = QPushButton("Clear unknown data (danger)")
+        self.btn_clear_unknown.clicked.connect(self.on_clear_unknown_confirm)
         self.lbl_type_safety = QLabel(
             f"Safe Type_ID range: {SAFE_TYPE_MIN}-{SAFE_TYPE_MAX}. "
             "Using IDs outside this range may crash the game."
@@ -58,6 +76,23 @@ class SettingsMixin:
         self.lbl_type_safety.setObjectName("mutedLabel")
         self.lbl_type_safety.setWordWrap(True)
 
+        layout.addWidget(self._build_settings_group("Data Safety", [
+            self.chk_preserve_unknown, self.btn_clear_unknown, self.lbl_type_safety,
+        ]))
+
+        # ── Display ──────────────────────────────────────────
+        self.chk_show_integrity = QCheckBox("Show integrity panel on Profile")
+        self.chk_show_integrity.setChecked(False)
+        self.chk_show_integrity.stateChanged.connect(self.on_toggle_show_integrity)
+        self.chk_show_unlinked_pursuits = QCheckBox("Show pursuit diagnostics on Garage")
+        self.chk_show_unlinked_pursuits.setChecked(False)
+        self.chk_show_unlinked_pursuits.stateChanged.connect(self.on_toggle_unlinked_pursuits)
+
+        layout.addWidget(self._build_settings_group("Display", [
+            self.chk_show_integrity, self.chk_show_unlinked_pursuits,
+        ]))
+
+        # ── Catalog ──────────────────────────────────────────
         self.lbl_catalog_path = QLabel(f"Catalog: {self.catalog_path}")
         self.lbl_catalog_path.setObjectName("mutedLabel")
         self.lbl_catalog_path.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -67,16 +102,10 @@ class SettingsMixin:
         catalog_row.addWidget(self.lbl_catalog_path, 1)
         catalog_row.addWidget(self.btn_open_catalog)
 
-        layout.addWidget(self.chk_preserve_unknown)
-        layout.addWidget(self.chk_safe)
-        layout.addWidget(self.chk_adv)
-        layout.addWidget(self.chk_practical_cap10)
-        layout.addWidget(self.chk_show_integrity)
-        layout.addWidget(self.chk_show_unlinked_pursuits)
-        layout.addWidget(self.btn_clear_unknown)
-        layout.addWidget(self.lbl_limits)
-        layout.addWidget(self.lbl_type_safety)
-        layout.addLayout(catalog_row)
+        layout.addWidget(self._build_settings_group("Catalog", [
+            catalog_row,
+        ]))
+
         layout.addStretch(1)
         return w
 
@@ -115,8 +144,8 @@ class SettingsMixin:
         layout.addWidget(sep)
 
         desc = QLabel(
-            "Slot array is auto-detected per save (stride 0x0C).\n"
-            "Apply writes to memory; Save+backup writes to disk.\n\n"
+            "Token layout is auto-detected per save file.\n"
+            "Apply writes changes to memory; Save+backup writes to disk.\n\n"
             "Keyboard shortcuts:\n"
             "  Ctrl+O  Open save · Ctrl+S  Save+backup · Ctrl+Z  Reset Want\n\n"
             "Drag & drop .sav files directly onto the window."
@@ -137,5 +166,3 @@ class SettingsMixin:
 
         layout.addStretch(1)
         return w
-
-

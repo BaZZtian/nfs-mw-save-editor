@@ -10,6 +10,49 @@ TEXT = "#EAF0FA"
 MUTED = "#94A4BC"
 BORDER = "#27344A"
 
+# Phase 1: Semantic color variables
+BG_INPUT = "#0F1524"
+BG_BUTTON = "#141B2B"
+BG_BUTTON_HOVER = "#1A2436"
+BG_BUTTON_PRESS = "#121A28"
+BG_NAV_ACTIVE = "#1D2940"
+BG_NAV_HOVER = "#182236"
+BG_BULK_BTN = "#152033"
+BG_BULK_HOVER = "#1B2A42"
+BG_DISABLED = "#111827"
+CARD_HOVER_BG = "#182338"
+CARD_HOVER_BORDER = "#3A5274"
+CARD_CHANGED_BORDER = "#4A678E"
+CARD_CHANGED_HOVER_BORDER = "#5E80AF"
+DISABLED_TEXT = "#6D7686"
+DISABLED_BORDER = "#333C4B"
+MUTED_DARK = "#6D7F98"
+TOAST_SUCCESS_BG = "rgba(34, 84, 61, 0.92)"
+TOAST_SUCCESS_BORDER = "#2D7A54"
+TOAST_ERROR_BG = "rgba(120, 30, 30, 0.94)"
+TOAST_ERROR_BORDER = "#D44444"
+JUNKMAN_BG = "rgba(42, 138, 138, 0.15)"
+JUNKMAN_BORDER = "#2A7A7A"
+JUNKMAN_TEXT = "#5ECECE"
+LEVEL_SEG_LOW = "#3A5A82"
+LEVEL_SEG_HIGH = "#5E80AF"
+CAREER_SOURCE = "#7FA8E8"
+CAREER_SOURCE_BORDER = "#4F73A8"
+CAREER_SOURCE_BG = "rgba(79, 115, 168, 0.14)"
+MY_CARS_SOURCE = "#B7A4F5"
+MY_CARS_SOURCE_BORDER = "#6E5BA8"
+MY_CARS_SOURCE_BG = "rgba(110, 91, 168, 0.14)"
+GOLD = "#F08BB4"
+GOLD_BORDER = "#B85B86"
+GOLD_BG = "rgba(240, 139, 180, 0.14)"
+
+# Phase 3: Border-radius system
+RADIUS_SM = "4px"
+RADIUS_MD = "8px"
+RADIUS_LG = "10px"
+RADIUS_XL = "12px"
+RADIUS_PILL = "14px"
+
 STYLE = f"""
 QWidget {{
     background-color: {BG};
@@ -19,7 +62,7 @@ QWidget {{
 }}
 QMainWindow {{ background-color: {BG}; }}
 QLabel {{ color: {TEXT}; }}
-QLabel#mutedLabel {{ color: {MUTED}; }}
+QLabel#mutedLabel {{ background: transparent; color: {MUTED}; }}
 QLabel#sectionLabel {{
     color: {TEXT};
     font-size: 14px;
@@ -42,23 +85,23 @@ QLabel#pillLabel {{
     background: {ACCENT_SOFT};
     color: {ACCENT_BRIGHT};
     border: 1px solid {ACCENT};
-    border-radius: 14px;
+    border-radius: {RADIUS_PILL};
     padding: 6px 12px;
     font-weight: 600;
 }}
 
 /* Buttons */
 QPushButton {{
-    background-color: #141B2B;
+    background-color: {BG_BUTTON};
     color: {TEXT};
     border: 1px solid {ACCENT_SOFT};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 8px 12px;
     font-weight: 600;
 }}
-QPushButton:hover {{ background-color: #1A2436; }}
-QPushButton:pressed {{ background-color: #121A28; }}
-QPushButton:disabled {{ color: #6D7686; border-color: #333C4B; }}
+QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}
+QPushButton:pressed {{ background-color: {BG_BUTTON_PRESS}; }}
+QPushButton:disabled {{ color: {DISABLED_TEXT}; border-color: {DISABLED_BORDER}; }}
 QPushButton:checked {{
     background: {ACCENT};
     color: {TEXT};
@@ -71,12 +114,12 @@ QPushButton#navButton {{
     min-height: 36px;
 }}
 QPushButton#navButton:checked {{
-    background: #1D2940;
+    background: {BG_NAV_ACTIVE};
     border-left: 3px solid {ACCENT_BRIGHT};
     color: {TEXT};
 }}
 QPushButton#navButton:hover {{
-    background: #182236;
+    background: {BG_NAV_HOVER};
 }}
 QPushButton#catButton {{
     padding: 6px 12px;
@@ -91,6 +134,30 @@ QPushButton#cardBtn {{
     font-size: 14px;
     font-weight: 700;
 }}
+QPushButton#partsLevelBtn {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    padding: 0px;
+    min-height: 24px;
+    min-width: 24px;
+    border-radius: 6px;
+    color: {TEXT};
+    font-size: 14px;
+    font-weight: 700;
+}}
+QPushButton#partsLevelBtn:hover {{
+    background: {BG_BUTTON_HOVER};
+    border-color: {ACCENT};
+}}
+QPushButton#partsLevelBtn:pressed {{
+    background: {BG_BUTTON_PRESS};
+    border-color: {ACCENT_BRIGHT};
+}}
+QPushButton#partsLevelBtn:disabled {{
+    background: {BG_DISABLED};
+    border-color: {DISABLED_BORDER};
+    color: {MUTED_DARK};
+}}
 QPushButton#iconBtn {{
     padding: 0px 0px;
     min-height: 24px;
@@ -100,19 +167,19 @@ QPushButton#iconBtn {{
 QWidget#tokenCard {{
     background: {BG_CARD};
     border: 1px solid {BORDER};
-    border-radius: 12px;
+    border-radius: {RADIUS_XL};
     padding: 0px;
 }}
 QWidget#tokenCard[changed="true"] {{
-    border: 1px solid #4A678E;
+    border: 1px solid {CARD_CHANGED_BORDER};
     background: rgba(74, 107, 148, 0.12);
 }}
 QWidget#tokenCard[hovered="true"] {{
-    border: 1px solid #3A5274;
-    background: #182338;
+    border: 1px solid {CARD_HOVER_BORDER};
+    background: {CARD_HOVER_BG};
 }}
 QWidget#tokenCard[changed="true"][hovered="true"] {{
-    border: 1px solid #5E80AF;
+    border: 1px solid {CARD_CHANGED_HOVER_BORDER};
     background: rgba(111, 147, 196, 0.16);
 }}
 QWidget#tokenCard QLabel#haveLabel {{
@@ -128,7 +195,7 @@ QWidget#tokenCard QLineEdit#cardName {{
     color: {TEXT};
 }}
 QWidget#tokenCard QSpinBox {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
     border-radius: 6px;
     padding: 2px 4px;
@@ -160,7 +227,7 @@ QSlider#cardSlider::sub-page:horizontal {{
 QWidget#tokenRow {{
     background: {BG_PANEL};
     border: 1px solid {BORDER};
-    border-radius: 10px;
+    border-radius: {RADIUS_LG};
 }}
 QWidget#tokenRow[changed="true"] {{
     border: 1px solid {ACCENT};
@@ -176,9 +243,9 @@ QWidget#tokenRow QLineEdit {{
     padding: 4px 6px;
 }}
 QWidget#tokenRow QSpinBox {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
 }}
 
 /* Inputs */
@@ -186,7 +253,7 @@ QLineEdit, QSpinBox, QTextEdit, QPlainTextEdit {{
     background-color: {BG_PANEL};
     color: {TEXT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 6px 8px;
     selection-background-color: {ACCENT};
     selection-color: {TEXT};
@@ -201,21 +268,21 @@ QSpinBox::up-arrow, QSpinBox::down-arrow {{ width: 8px; height: 8px; }}
 /* Scroll */
 QScrollArea {{
     border: 1px solid {BORDER};
-    border-radius: 10px;
+    border-radius: {RADIUS_LG};
     background: {BG_PANEL};
 }}
 QScrollArea#cardScroll {{
     border: 1px solid {BORDER};
-    border-radius: 12px;
+    border-radius: {RADIUS_XL};
     background: {BG};
 }}
 
 /* Misc */
 QToolButton {{
-    background-color: #141B2B;
+    background-color: {BG_BUTTON};
     color: {TEXT};
     border: 1px solid {ACCENT_SOFT};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 8px 12px;
 }}
 QLabel#unsavedLabel {{
@@ -255,7 +322,7 @@ QCheckBox::indicator {{
     width: 18px;
     height: 18px;
     border: 1px solid {BORDER};
-    border-radius: 4px;
+    border-radius: {RADIUS_SM};
     background: {BG_PANEL};
 }}
 QCheckBox::indicator:checked {{
@@ -267,7 +334,7 @@ QCheckBox::indicator:checked {{
 QProgressBar#tokenProgress {{
     background: {BORDER};
     border: 1px solid {BORDER};
-    border-radius: 9px;
+    border-radius: {RADIUS_MD};
     text-align: center;
     color: {TEXT};
     font-size: 10px;
@@ -275,7 +342,7 @@ QProgressBar#tokenProgress {{
 }}
 QProgressBar#tokenProgress::chunk {{
     background: {ACCENT};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
 }}
 
 /* Empty State Overlay */
@@ -288,25 +355,25 @@ QLabel#emptyTitle {{
     font-weight: 700;
 }}
 QLabel#emptyHint {{
-    color: #6D7F98;
+    color: {MUTED_DARK};
     font-size: 13px;
 }}
 
 /* Toast Notifications */
 QLabel#toastSuccess {{
-    background: rgba(52, 76, 113, 0.94);
+    background: {TOAST_SUCCESS_BG};
     color: {TEXT};
-    border: 1px solid {ACCENT_BRIGHT};
-    border-radius: 8px;
+    border: 1px solid {TOAST_SUCCESS_BORDER};
+    border-radius: {RADIUS_MD};
     padding: 6px 16px;
     font-size: 12px;
     font-weight: 600;
 }}
 QLabel#toastError {{
-    background: rgba(100, 30, 30, 0.92);
+    background: {TOAST_ERROR_BG};
     color: {TEXT};
-    border: 1px solid #CC4444;
-    border-radius: 8px;
+    border: 1px solid {TOAST_ERROR_BORDER};
+    border-radius: {RADIUS_MD};
     padding: 6px 16px;
     font-size: 12px;
     font-weight: 600;
@@ -316,13 +383,13 @@ QLabel#toastError {{
 QFrame#statTile {{
     background: {BG_CARD};
     border: 1px solid {BORDER};
-    border-radius: 12px;
+    border-radius: {RADIUS_XL};
     padding: 0px;
 }}
 QLabel#statTileHeading {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 3px 8px;
     color: {MUTED};
     font-size: 11px;
@@ -330,27 +397,27 @@ QLabel#statTileHeading {{
     letter-spacing: 0.5px;
 }}
 QLabel#statTileValue {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 9px;
+    border-radius: {RADIUS_MD};
     padding: 4px 12px;
     color: {ACCENT_BRIGHT};
     font-size: 18px;
     font-weight: 700;
 }}
 QLineEdit#statTileEdit {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 4px 8px;
     font-size: 16px;
     font-weight: 700;
     color: {TEXT};
 }}
 QLabel#statTileSub {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 3px 8px;
     color: {MUTED};
     font-size: 10.5px;
@@ -360,18 +427,10 @@ QLabel#statTileSub {{
 QFrame#garageCard {{
     background: {BG_CARD};
     border: 1px solid {BORDER};
-    border-radius: 12px;
+    border-radius: {RADIUS_XL};
 }}
 QFrame#garageCard[changed="true"] {{
-    border: 1px solid #4A678E;
-    background: rgba(74, 107, 148, 0.12);
-}}
-QFrame#garageCard[pinkslip="true"] {{
-    border-left: 3px solid #D4A853;
-}}
-QFrame#garageCard[pinkslip="true"][changed="true"] {{
-    border: 1px solid #4A678E;
-    border-left: 3px solid #D4A853;
+    border: 1px solid {CARD_CHANGED_BORDER};
     background: rgba(74, 107, 148, 0.12);
 }}
 QFrame#garageCard[occupied="false"] {{
@@ -380,10 +439,10 @@ QFrame#garageCard[occupied="false"] {{
 QFrame#partsCard {{
     background: {BG_CARD};
     border: 1px solid {BORDER};
-    border-radius: 12px;
+    border-radius: {RADIUS_XL};
 }}
 QFrame#partsCard[changed="true"] {{
-    border: 1px solid #4A678E;
+    border: 1px solid {CARD_CHANGED_BORDER};
     background: rgba(74, 107, 148, 0.10);
 }}
 /* Parts level bar rows */
@@ -405,9 +464,9 @@ QLabel#partsLevelNum {{
     min-width: 18px;
 }}
 QSpinBox#partsLevelSpin {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 7px;
+    border-radius: {RADIUS_MD};
     padding: 3px 6px;
     min-width: 52px;
     color: {TEXT};
@@ -416,27 +475,27 @@ QSpinBox#partsLevelSpin {{
 }}
 QSpinBox#partsLevelSpin:disabled {{
     color: {MUTED};
-    background: #111827;
+    background: {BG_DISABLED};
 }}
 QFrame#partsLevelSeg {{
-    background: #0F1524;
-    border: 1px solid #1A2536;
+    background: {BG_INPUT};
+    border: 1px solid {ACCENT_SOFT};
     border-radius: 2px;
     min-width: 18px;
     min-height: 8px;
     max-height: 8px;
 }}
 QFrame#partsLevelSeg[filled="1"] {{
-    background: #3A5A82;
-    border-color: #3A5A82;
+    background: {LEVEL_SEG_LOW};
+    border-color: {LEVEL_SEG_LOW};
 }}
 QFrame#partsLevelSeg[filled="2"] {{
     background: {ACCENT};
     border-color: {ACCENT};
 }}
 QFrame#partsLevelSeg[filled="3"] {{
-    background: #5E80AF;
-    border-color: #5E80AF;
+    background: {LEVEL_SEG_HIGH};
+    border-color: {LEVEL_SEG_HIGH};
 }}
 QFrame#partsLevelSeg[filled="4"] {{
     background: {ACCENT_BRIGHT};
@@ -444,73 +503,73 @@ QFrame#partsLevelSeg[filled="4"] {{
 }}
 /* Junkman accent badges */
 QLabel#partsJunkmanActive {{
-    background: rgba(42, 138, 138, 0.15);
-    border: 1px solid #2A7A7A;
-    border-radius: 8px;
+    background: {JUNKMAN_BG};
+    border: 1px solid {JUNKMAN_BORDER};
+    border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: #5ECECE;
+    color: {JUNKMAN_TEXT};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#partsJunkmanNone {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 3px 8px;
     color: {MUTED};
     font-size: 11px;
     font-weight: 600;
 }}
 QPushButton#partsJunkmanToggle {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 3px 8px;
     color: {MUTED};
     font-size: 11px;
     font-weight: 600;
 }}
 QPushButton#partsJunkmanToggle[active="true"] {{
-    background: rgba(42, 138, 138, 0.15);
-    border: 1px solid #2A7A7A;
-    color: #5ECECE;
+    background: {JUNKMAN_BG};
+    border: 1px solid {JUNKMAN_BORDER};
+    color: {JUNKMAN_TEXT};
 }}
 QPushButton#partsJunkmanToggle:disabled {{
-    background: #111827;
+    background: {BG_DISABLED};
     border-color: {BORDER};
-    color: #6D7F98;
+    color: {MUTED_DARK};
 }}
 QPushButton#partsBulkBtn {{
-    background: #152033;
+    background: {BG_BULK_BTN};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 5px 10px;
     color: {TEXT};
     font-size: 11px;
     font-weight: 600;
 }}
 QPushButton#partsBulkBtn:hover {{
-    background: #1B2A42;
+    background: {BG_BULK_HOVER};
     border-color: {ACCENT};
 }}
 QPushButton#partsBulkBtn:disabled {{
-    background: #111827;
+    background: {BG_DISABLED};
     border-color: {BORDER};
-    color: #6D7F98;
+    color: {MUTED_DARK};
 }}
 QLabel#garageCardSlot {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 3px 8px;
     color: {MUTED};
     font-size: 10.5px;
     font-weight: 600;
 }}
 QLabel#garageCardMeta {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 4px 9px;
     color: {TEXT};
     font-size: 12px;
@@ -526,9 +585,9 @@ QFrame#garageCardSep {{
     color: {BORDER};
 }}
 QLineEdit#garageCardEdit {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 5px 8px;
     font-size: 14px;
     font-weight: 700;
@@ -540,9 +599,9 @@ QLabel#garageCardCurrent {{
     font-size: 10.5px;
 }}
 QLabel#partsCardRaw {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 7px 10px;
     color: {TEXT};
     font-family: 'Cascadia Mono', 'Consolas', monospace;
@@ -555,27 +614,95 @@ QLabel#partsCardNote {{
     font-size: 10.5px;
 }}
 QLabel#garageCardStatBadge {{
-    background: #0F1524;
+    background: {BG_INPUT};
     border: 1px solid {BORDER};
-    border-radius: 8px;
+    border-radius: {RADIUS_MD};
     padding: 3px 8px;
     color: {MUTED};
     font-size: 11px;
     font-weight: 600;
 }}
-QFrame#pinkSlipBadge {{
-    background: rgba(180, 140, 60, 0.12);
-    border: 1px solid #8B7340;
-    border-radius: 8px;
+QLabel#tuningStatusStock {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {MUTED};
+    font-size: 11px;
+    font-weight: 600;
 }}
-QLabel#pinkSlipBadgeIcon {{
-    background: transparent;
+QLabel#tuningStatusModified {{
+    background: rgba(79, 115, 168, 0.14);
+    border: 1px solid {CAREER_SOURCE_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {CAREER_SOURCE};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#tuningStatusMaxed {{
+    background: rgba(94, 206, 206, 0.14);
+    border: 1px solid {JUNKMAN_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {JUNKMAN_TEXT};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#tuningStatusJunkman {{
+    background: {JUNKMAN_BG};
+    border: 1px solid {JUNKMAN_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {JUNKMAN_TEXT};
+    font-size: 11px;
+    font-weight: 600;
 }}
 QLabel#pinkSlipBadgeText {{
+    background: {GOLD_BG};
+    border: 1px solid {GOLD_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {GOLD};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#careerSourceBadge {{
+    background: {CAREER_SOURCE_BG};
+    border: 1px solid {CAREER_SOURCE_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {CAREER_SOURCE};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#myCarsSourceBadge {{
+    background: {MY_CARS_SOURCE_BG};
+    border: 1px solid {MY_CARS_SOURCE_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {MY_CARS_SOURCE};
+    font-size: 11px;
+    font-weight: 600;
+}}
+
+/* Settings Page Group Cards */
+QFrame#settingsGroup {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+}}
+QLabel#settingsGroupTitle {{
     background: transparent;
-    color: #D4A853;
-    font-size: 11.5px;
+    color: {TEXT};
+    font-size: 13px;
     font-weight: 700;
+}}
+QFrame#settingsGroup QCheckBox {{
+    background: transparent;
+}}
+QFrame#settingsGroup QPushButton {{
+    background-color: {BG_BUTTON};
 }}
 
 /* About Page */

@@ -5,7 +5,6 @@ from typing import Dict, List
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -32,8 +31,7 @@ class MyCarsMixin:
         layout.setSpacing(10)
 
         hint = QLabel(
-            "Owned-car build manager. This page focuses on My Cars records and shares the same staged parts state "
-            "as the technical Parts page."
+            "Manage builds for your owned cars. Max Performance and Max Junkman shortcuts are available per car."
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
@@ -46,23 +44,6 @@ class MyCarsMixin:
         self.my_cars_search.textChanged.connect(self.on_my_cars_search_changed)
         controls.addWidget(self.my_cars_search, 1)
         layout.addLayout(controls)
-
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(6)
-        self.my_cars_filter_buttons: Dict[str, QPushButton] = {}
-        self.my_cars_filter_group = QButtonGroup(self)
-        self.my_cars_filter_group.setExclusive(True)
-        for label in ["All", "Tuned", "Stock", "Junkman"]:
-            btn = QPushButton(label)
-            btn.setObjectName("catButton")
-            btn.setCheckable(True)
-            btn.clicked.connect(lambda _, source=label: self._select_my_cars_filter(source))
-            self.my_cars_filter_group.addButton(btn)
-            self.my_cars_filter_buttons[label] = btn
-            filter_row.addWidget(btn)
-        self.my_cars_filter_buttons["All"].setChecked(True)
-        filter_row.addStretch(1)
-        layout.addLayout(filter_row)
 
         self.my_cars_cards = QWidget()
         self.my_cars_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -86,25 +67,9 @@ class MyCarsMixin:
     def _my_cars_card_entries(self) -> List[ResolvedMyCarsEntry]:
         entries = list(self.my_cars_entries)
         term = self.my_cars_search.text().strip().lower() if hasattr(self, "my_cars_search") else ""
-        mode = self.my_cars_filter
-        current_levels = self._current_parts_levels()
-        current_masks = self._current_parts_masks()
-        filtered: List[ResolvedMyCarsEntry] = []
-        for entry in entries:
-            if term and term not in entry.resolved_model_name.lower():
-                continue
-            levels = current_levels.get(entry.parts_slot, self._parts_level_dict_from_my_car(entry))
-            mask = int(current_masks.get(entry.parts_slot, entry.junkman_mask))
-            tuned = any(int(levels.get(name, 0)) > 0 for name in PERF_PART_NAMES)
-            stock = (not tuned) and mask == 0
-            if mode == "Tuned" and not tuned:
-                continue
-            if mode == "Stock" and not stock:
-                continue
-            if mode == "Junkman" and mask == 0:
-                continue
-            filtered.append(entry)
-        return filtered
+        if term:
+            entries = [e for e in entries if term in e.resolved_model_name.lower()]
+        return entries
 
     def _detect_my_cars_card_columns(self) -> int:
         return self._detect_col_count("my_cars_cards_scroll", MY_CARS_TILE_MIN_WIDTH, ((1100, 2),))
@@ -163,7 +128,7 @@ class MyCarsMixin:
             car_label.setAlignment(Qt.AlignCenter)
             header_row.addWidget(car_label, 0, Qt.AlignLeft)
             header_row.addStretch(1)
-            header_row.addWidget(self._make_stat_badge("My Cars"), 0, Qt.AlignRight)
+            header_row.addWidget(self._make_garage_source_badge("My Cars"), 0, Qt.AlignRight)
             card_layout.addLayout(header_row)
 
             name_label = QLabel(entry.resolved_model_name)
@@ -231,12 +196,6 @@ class MyCarsMixin:
         self._rebuild_my_cars_cards()
 
     def on_my_cars_search_changed(self) -> None:
-        self._refresh_my_cars_page()
-
-    def _select_my_cars_filter(self, source: str) -> None:
-        self.my_cars_filter = source
-        for label, button in self.my_cars_filter_buttons.items():
-            button.setChecked(label == source)
         self._refresh_my_cars_page()
 
     def on_my_cars_max_performance(self, parts_slot: int) -> None:

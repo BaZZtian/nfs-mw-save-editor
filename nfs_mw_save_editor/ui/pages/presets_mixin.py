@@ -38,8 +38,7 @@ class PresetsMixin:
         layout.addWidget(section)
 
         hint = QLabel(
-            "Legacy Junkman preset import/export stays here. The boss-car injector library below stages snapshot "
-            "injections into the current save, while the inspector section remains a read-only reverse/debug view."
+            "Import/export Junkman presets. Boss Car Injector below lets you add boss-car builds to your save."
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
@@ -278,6 +277,11 @@ class PresetsMixin:
             status_row.addStretch(1)
             card_layout.addLayout(status_row)
 
+            card.setToolTip(" · ".join([
+                "Primary only" if not entry.has_visual_sidecar else "Sidecar blocked",
+                "0x5577 ignored in v1" if entry.requires_unresolved_global_visual_state else "No global visual warning",
+            ]))
+
             plan_label = QLabel()
             plan_label.setObjectName("mutedLabel")
             plan_label.setWordWrap(True)
@@ -468,6 +472,13 @@ class PresetsMixin:
                 meta_row.addWidget(badge, 0, Qt.AlignLeft)
             meta_row.addStretch(1)
             card_layout.addLayout(meta_row)
+
+            card.setToolTip(" · ".join([
+                f"Car #{snapshot.car_number:02X}",
+                f"Loc 0x{snapshot.location_bits:02X}",
+                f"Misc 0x{snapshot.misc_bits:02X}",
+                f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
+            ]))
 
             status_row = QHBoxLayout()
             status_row.setSpacing(8)

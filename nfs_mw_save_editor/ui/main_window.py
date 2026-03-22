@@ -49,7 +49,6 @@ from ui.icon_map import nav_icon_path
 from ui.pages.constants import *
 from ui.pages.garage_mixin import GarageMixin
 from ui.pages.junkman_mixin import JunkmanMixin
-from ui.pages.my_cars_mixin import MyCarsMixin
 from ui.pages.parts_mixin import PartsMixin
 from ui.pages.presets_mixin import PresetsMixin
 from ui.pages.profile_mixin import ProfileMixin
@@ -99,7 +98,6 @@ class MainWindow(
     ProfileMixin,
     GarageMixin,
     PartsMixin,
-    MyCarsMixin,
     PresetsMixin,
     SettingsMixin,
     QMainWindow,
@@ -152,13 +150,11 @@ class MainWindow(
         self.clear_unknown_next = False
         self.show_only_changed = False
         self.garage_filter = "All"
-        self.parts_filter = "All"
-        self.my_cars_filter = "All"
+        self.tuning_filter = "All"
         self._profile_refreshing = False
         self._parts_refreshing = False
         self._garage_slot_columns = 0
         self._parts_slot_columns = 0
-        self._my_cars_slot_columns = 0
         self._snapshot_slot_columns = 0
         self._library_slot_columns = 0
         self._pink_slip_badge_pixmap: Optional[QPixmap] = None
@@ -193,12 +189,11 @@ class MainWindow(
         self.page_profile = self._build_profile_page()
         self.page_garage = self._build_garage_page()
         self.page_parts = self._build_parts_page()
-        self.page_my_cars = self._build_my_cars_page()
         self.page_presets = self._build_presets_page()
         self.page_settings = self._build_settings_page()
         self.page_about = self._build_about_page()
 
-        for p in [self.page_junk, self.page_profile, self.page_garage, self.page_parts, self.page_my_cars, self.page_presets,
+        for p in [self.page_junk, self.page_profile, self.page_garage, self.page_parts, self.page_presets,
                    self.page_settings, self.page_about]:
             self.stack.addWidget(p)
 
@@ -286,7 +281,7 @@ class MainWindow(
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
 
-        for name in ["Junkman", "Profile", "Garage", "Parts", "My Cars", "Presets", "Settings", "About"]:
+        for name in ["Junkman", "Profile", "Garage", "Tuning", "Presets", "Settings", "About"]:
             btn = QPushButton(name)
             btn.setObjectName("navButton")
             btn.setCheckable(True)
@@ -344,22 +339,21 @@ class MainWindow(
             "Junkman": self.page_junk,
             "Profile": self.page_profile,
             "Garage": self.page_garage,
-            "Parts": self.page_parts,
-            "My Cars": self.page_my_cars,
+            "Tuning": self.page_parts,
             "Presets": self.page_presets,
             "Settings": self.page_settings,
             "About": self.page_about,
         }
         self.stack.setCurrentWidget(mapping[name])
-        if name == "Junkman" and hasattr(self, "cards_container") and hasattr(self, "lbl_free"):
+        if name == "Profile":
+            self._refresh_profile_inputs()
+        elif name == "Junkman" and hasattr(self, "cards_container") and hasattr(self, "lbl_free"):
             self._sync_cards_per_row(force=True)
             self.refresh_cards()
         elif name == "Garage":
             self._maybe_reflow_garage_rows(force=True)
-        elif name == "Parts":
+        elif name == "Tuning":
             self._maybe_reflow_parts_rows(force=True)
-        elif name == "My Cars":
-            self._maybe_reflow_my_cars_rows(force=True)
         elif name == "Presets":
             self._maybe_reflow_library_rows(force=True)
             self._maybe_reflow_snapshot_rows(force=True)
@@ -674,13 +668,12 @@ class MainWindow(
             self.snapshot_detection_error = None
             self.show_all_garage_slots = False
 
-        self.lbl_limits.setText(
-            f"Limits: Safe {min(63, self._slot_capacity())}, Advanced {min(255, self._slot_capacity())}"
-        )
+        default_cap = min(10, self._slot_capacity())
+        unlocked_cap = min(63, self._slot_capacity())
+        self.lbl_limits.setText(f"Limits: Default {default_cap}, Unlocked {unlocked_cap}")
         self._refresh_profile_inputs()
         self._refresh_garage_page()
         self._refresh_parts_page()
-        self._refresh_my_cars_page()
         self._refresh_presets_page()
         self.refresh_cards()
 
@@ -725,7 +718,6 @@ class MainWindow(
                 self.cards_container.setFixedWidth(self._card_area_width(prev))
         self._maybe_reflow_garage_rows()
         self._maybe_reflow_parts_rows()
-        self._maybe_reflow_my_cars_rows()
         self._maybe_reflow_library_rows()
         self._maybe_reflow_snapshot_rows()
 

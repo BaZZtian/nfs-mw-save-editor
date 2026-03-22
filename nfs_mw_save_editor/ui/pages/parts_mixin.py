@@ -1,29 +1,31 @@
-"""Parts page: parts-block reader/editor, level controls, junkman toggles."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QButtonGroup,
-    QCheckBox,
-    QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QScrollArea,
-    QSizePolicy,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits, get_tuning_limit
-from ui.pages.constants import *
+from ui.pages.constants import PARTS_TILE_MIN_WIDTH
 from ui.widgets import WantSpinBox
+
+
+@dataclass(frozen=True)
+class TuningCardEntry:
+    raw_entry: object
+    display_name: str
+    source_kind: str
+    pink_slip: bool
+    parts_slot: int
+    block_abs_off: int
+    career_slot: Optional[int]
+    car_number: Optional[int]
+    marker: Optional[bytes]
+    confirmed_raw: Optional[bytes]
+    junkman_mask: int
 
 
 class PartsMixin:
@@ -32,11 +34,7 @@ class PartsMixin:
         layout = QVBoxLayout(w)
         layout.setContentsMargins(10, 6, 10, 8)
         layout.setSpacing(10)
-
-        hint = QLabel(
-            "Technical parts view/editor. Vehicle builds are resolved from parts_slot into the confirmed 0x198-byte "
-            "per-car parts block. Regular performance levels and Junkman categories shown here are save-backed and staged until apply."
-        )
+        hint = QLabel("Tune Career cars and My Cars builds in one place. Changes are staged until you Apply.")
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -44,29 +42,28 @@ class PartsMixin:
         controls = QHBoxLayout()
         controls.setSpacing(8)
         self.parts_search = QLineEdit()
-        self.parts_search.setPlaceholderText("Search parts by model name...")
+        self.parts_search.setPlaceholderText("Search tuning by model name...")
         self.parts_search.textChanged.connect(self.on_parts_search_changed)
         controls.addWidget(self.parts_search, 1)
-        self.chk_show_parts_diagnostics = QCheckBox("Show parts diagnostics")
-        self.chk_show_parts_diagnostics.setChecked(False)
+        self.chk_show_parts_diagnostics = QCheckBox("Show tuning diagnostics")
         self.chk_show_parts_diagnostics.stateChanged.connect(self.on_toggle_parts_diagnostics)
         controls.addWidget(self.chk_show_parts_diagnostics, 0)
         layout.addLayout(controls)
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(6)
-        self.parts_filter_buttons: Dict[str, QPushButton] = {}
-        self.parts_filter_group = QButtonGroup(self)
-        self.parts_filter_group.setExclusive(True)
-        for label in ["All", "Career", "Pink Slip", "Unknown"]:
+        self.tuning_filter_buttons: Dict[str, QPushButton] = {}
+        self.tuning_filter_group = QButtonGroup(self)
+        self.tuning_filter_group.setExclusive(True)
+        for label in ["All", "Career", "My Cars"]:
             btn = QPushButton(label)
             btn.setObjectName("catButton")
             btn.setCheckable(True)
-            btn.clicked.connect(lambda _, source=label: self._select_parts_filter(source))
-            self.parts_filter_group.addButton(btn)
-            self.parts_filter_buttons[label] = btn
+            btn.clicked.connect(lambda _, source=label: self._select_tuning_filter(source))
+            self.tuning_filter_group.addButton(btn)
+            self.tuning_filter_buttons[label] = btn
             filter_row.addWidget(btn)
-        self.parts_filter_buttons["All"].setChecked(True)
+        self.tuning_filter_buttons["All"].setChecked(True)
         filter_row.addStretch(1)
         layout.addLayout(filter_row)
 
@@ -89,105 +86,77 @@ class PartsMixin:
         self._rebuild_parts_cards()
         return w
 
-    def _parts_card_entries(self) -> List[ResolvedPartsEntry]:
-        entries = list(self.parts_entries)
-        term = self.parts_search.text().strip().lower() if hasattr(self, "parts_search") else ""
-        source = self.parts_filter
-        filtered: List[ResolvedPartsEntry] = []
-        for entry in entries:
-            if term and term not in entry.display_name.lower():
-                continue
-            if source != "All":
-                if source == "Unknown":
-                    if not entry.source_kind.startswith("Unknown"):
-                        continue
-                elif entry.source_kind != source:
-                    continue
-            filtered.append(entry)
-        return filtered
-
     def _detect_parts_card_columns(self) -> int:
         return self._detect_col_count("parts_cards_scroll", PARTS_TILE_MIN_WIDTH, ((1100, 2),))
 
     def _maybe_reflow_parts_rows(self, force: bool = False) -> None:
-        self._maybe_reflow_cols(
-            "parts_cards_scroll", "_parts_slot_columns", PARTS_TILE_MIN_WIDTH,
-            ((1100, 2),), self._rebuild_parts_cards, force,
-        )
+        self._maybe_reflow_cols("parts_cards_scroll", "_parts_slot_columns", PARTS_TILE_MIN_WIDTH, ((1100, 2),), self._rebuild_parts_cards, force)
 
     def _format_parts_raw(self, raw: bytes) -> str:
         return raw.hex(" ").upper()
 
-    def _make_stat_badge(self, text: str) -> QLabel:
+    def _make_stat_badge(self, text: str, object_name: str = "garageCardStatBadge") -> QLabel:
         label = QLabel(text)
-        label.setObjectName("garageCardStatBadge")
+        label.setObjectName(object_name)
         label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         label.setAlignment(Qt.AlignCenter)
         return label
 
+    def _make_tuning_status_badge(self, text: str) -> QLabel:
+        object_name = {
+            "Stock": "tuningStatusStock",
+            "Modified": "tuningStatusModified",
+            "Maxed": "tuningStatusMaxed",
+            "Junkman": "tuningStatusJunkman",
+        }.get(text, "garageCardStatBadge")
+        return self._make_stat_badge(text, object_name)
+
+    def _normalize_tuning_entry(self, entry: object) -> TuningCardEntry:
+        if isinstance(entry, ResolvedPartsEntry):
+            return TuningCardEntry(entry, entry.display_name, "Career", entry.source_kind == "Pink Slip", entry.parts_slot, entry.block_abs_off, entry.career_slot, None, entry.marker, entry.confirmed_raw, entry.junkman_mask)
+        if isinstance(entry, ResolvedMyCarsEntry):
+            slot = None if entry.career_slot == SaveFile.EMPTY_CAREER_SLOT else entry.career_slot
+            return TuningCardEntry(entry, entry.resolved_model_name, "My Cars", False, entry.parts_slot, entry.block_abs_off, slot, entry.car_number, None, None, entry.junkman_mask)
+        raise TypeError(f"Unsupported tuning entry type: {type(entry)!r}")
+
+    def _tuning_card_entries(self) -> List[TuningCardEntry]:
+        entries = [self._normalize_tuning_entry(e) for e in list(self.parts_entries) + list(self.my_cars_entries)]
+        term = self.parts_search.text().strip().lower() if hasattr(self, "parts_search") else ""
+        source = getattr(self, "tuning_filter", "All")
+        if term:
+            entries = [e for e in entries if term in e.display_name.lower()]
+        if source != "All":
+            entries = [e for e in entries if e.source_kind == source]
+        return entries
+
     def _parts_level_dict_from_entry(self, entry: ResolvedPartsEntry) -> Dict[str, int]:
-        return {
-            "Tires": entry.tires,
-            "Brakes": entry.brakes,
-            "Suspension": entry.suspension,
-            "Transmission": entry.transmission,
-            "Engine": entry.engine,
-            "Turbo": entry.turbo,
-            "NOS": entry.nos,
-        }
+        return {"Tires": entry.tires, "Brakes": entry.brakes, "Suspension": entry.suspension, "Transmission": entry.transmission, "Engine": entry.engine, "Turbo": entry.turbo, "NOS": entry.nos}
 
     def _parts_level_dict_from_my_car(self, entry: ResolvedMyCarsEntry) -> Dict[str, int]:
-        return {
-            "Tires": entry.tires,
-            "Brakes": entry.brakes,
-            "Suspension": entry.suspension,
-            "Transmission": entry.transmission,
-            "Engine": entry.engine,
-            "Turbo": entry.turbo,
-            "NOS": entry.nos,
-        }
+        return {"Tires": entry.tires, "Brakes": entry.brakes, "Suspension": entry.suspension, "Transmission": entry.transmission, "Engine": entry.engine, "Turbo": entry.turbo, "NOS": entry.nos}
 
     def _entry_model_name(self, entry) -> str:
-        if hasattr(entry, "display_name"):
-            return entry.display_name
-        return entry.resolved_model_name
+        return entry.display_name if hasattr(entry, "display_name") else entry.resolved_model_name
 
     def _entry_parts_levels(self, entry) -> Dict[str, int]:
-        if hasattr(entry, "display_name"):
-            return self._parts_level_dict_from_entry(entry)
-        return self._parts_level_dict_from_my_car(entry)
+        return self._parts_level_dict_from_entry(entry) if hasattr(entry, "display_name") else self._parts_level_dict_from_my_car(entry)
+
+    def _entry_by_parts_slot(self, parts_slot: int):
+        return next((e for e in (list(self.parts_entries) + list(self.my_cars_entries)) if e.parts_slot == parts_slot), None)
 
     def _current_parts_levels(self) -> Dict[int, Dict[str, int]]:
         want_map = self.want_parts_levels or {}
-        all_entries = list(self.parts_entries) + list(self.my_cars_entries)
         dedup: Dict[int, object] = {}
-        for entry in all_entries:
+        for entry in list(self.parts_entries) + list(self.my_cars_entries):
             dedup[entry.parts_slot] = entry
-        return {
-            entry.parts_slot: dict(
-                want_map.get(
-                    entry.parts_slot,
-                    self.have_parts_levels.get(
-                        entry.parts_slot,
-                        self._entry_parts_levels(entry),
-                    ),
-                )
-            )
-            for entry in dedup.values()
-        }
+        return {entry.parts_slot: dict(want_map.get(entry.parts_slot, self.have_parts_levels.get(entry.parts_slot, self._entry_parts_levels(entry)))) for entry in dedup.values()}
 
     def _current_parts_masks(self) -> Dict[int, int]:
         want_map = self.want_parts_masks or {}
-        all_entries = list(self.parts_entries) + list(self.my_cars_entries)
         dedup: Dict[int, object] = {}
-        for entry in all_entries:
+        for entry in list(self.parts_entries) + list(self.my_cars_entries):
             dedup[entry.parts_slot] = entry
-        return {
-            entry.parts_slot: int(
-                want_map.get(entry.parts_slot, self.have_parts_masks.get(entry.parts_slot, entry.junkman_mask))
-            )
-            for entry in dedup.values()
-        }
+        return {entry.parts_slot: int(want_map.get(entry.parts_slot, self.have_parts_masks.get(entry.parts_slot, entry.junkman_mask))) for entry in dedup.values()}
 
     def _parts_limits(self, entry) -> Optional[Dict[str, int]]:
         return get_model_tuning_limits(self._entry_model_name(entry))
@@ -197,13 +166,12 @@ class PartsMixin:
         have_levels = self.have_parts_levels.get(parts_slot, {})
         if any(int(current_levels.get(name, 0)) != int(have_levels.get(name, 0)) for name in PERF_PART_NAMES):
             return True
-        current_mask = self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))
-        return int(current_mask) != int(self.have_parts_masks.get(parts_slot, 0))
+        return int(self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))) != int(self.have_parts_masks.get(parts_slot, 0))
 
     def _has_parts_pending_changes(self) -> bool:
         if self.savefile is None or self.parts_detection_error:
             return False
-        all_slots = {entry.parts_slot for entry in self.parts_entries} | {entry.parts_slot for entry in self.my_cars_entries}
+        all_slots = {e.parts_slot for e in self.parts_entries} | {e.parts_slot for e in self.my_cars_entries}
         return any(self._parts_card_changed(parts_slot) for parts_slot in all_slots)
 
     def _parts_junkman_reason(self, levels: Dict[str, int], category: str) -> Optional[str]:
@@ -213,119 +181,180 @@ class PartsMixin:
             return "Requires regular NOS > 0"
         return None
 
-    def on_parts_level_changed(self, parts_slot: int, part_name: str, value: int) -> None:
-        if self._parts_refreshing or not self.savefile or self.parts_detection_error:
-            return
-        entry = next((item for item in (list(self.parts_entries) + list(self.my_cars_entries)) if item.parts_slot == parts_slot), None)
-        if entry is None:
-            return
-        limits = self._parts_limits(entry)
-        if limits is None:
-            return
-        cap = int(limits.get(part_name, 0))
-        wanted = max(0, min(int(value), cap))
+    def _ensure_parts_want_maps(self) -> None:
         if self.want_parts_levels is None:
             self.want_parts_levels = {slot: dict(levels) for slot, levels in self.have_parts_levels.items()}
         if self.want_parts_masks is None:
             self.want_parts_masks = dict(self.have_parts_masks)
-        self.want_parts_levels.setdefault(parts_slot, dict(self.have_parts_levels.get(parts_slot, {})))[part_name] = wanted
 
-        current_levels = self._current_parts_levels().get(parts_slot, {})
-        current_mask = self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))
+    def _apply_junkman_prereqs(self, levels: Dict[str, int], mask: int) -> int:
         turbo_bit = next((bit for bit, name in SaveFile.JUNKMAN_MASK_BITS if name == "Turbo"), 0)
         nos_bit = next((bit for bit, name in SaveFile.JUNKMAN_MASK_BITS if name == "NOS"), 0)
-        if turbo_bit and int(current_levels.get("Turbo", 0)) <= 0:
-            current_mask &= ~turbo_bit
-        if nos_bit and int(current_levels.get("NOS", 0)) <= 0:
-            current_mask &= ~nos_bit
-        self.want_parts_masks[parts_slot] = current_mask
+        if turbo_bit and int(levels.get("Turbo", 0)) <= 0:
+            mask &= ~turbo_bit
+        if nos_bit and int(levels.get("NOS", 0)) <= 0:
+            mask &= ~nos_bit
+        return mask
 
+    def _set_parts_slot_levels(self, parts_slot: int, levels: Dict[str, int]) -> None:
+        entry = self._entry_by_parts_slot(parts_slot)
+        limits = None if entry is None else self._parts_limits(entry)
+        if entry is None or limits is None:
+            return
+        self._ensure_parts_want_maps()
+        current = dict(self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry)))
+        for name in PERF_PART_NAMES:
+            current[name] = max(0, min(int(levels.get(name, current.get(name, 0))), int(limits.get(name, 0))))
+        assert self.want_parts_levels is not None and self.want_parts_masks is not None
+        self.want_parts_levels[parts_slot] = current
+        self.want_parts_masks[parts_slot] = self._apply_junkman_prereqs(current, int(self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))))
+
+    def _set_parts_slot_mask(self, parts_slot: int, mask: int) -> None:
+        entry = self._entry_by_parts_slot(parts_slot)
+        if entry is None:
+            return
+        self._ensure_parts_want_maps()
+        assert self.want_parts_masks is not None
+        self.want_parts_masks[parts_slot] = self._apply_junkman_prereqs(self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry)), int(mask))
+
+    def _parts_status_labels(self, entry) -> List[str]:
+        levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))
+        mask = self._current_parts_masks().get(entry.parts_slot, self.have_parts_masks.get(entry.parts_slot, 0))
+        labels: List[str] = []
+        if all(int(levels.get(name, 0)) == 0 for name in PERF_PART_NAMES) and int(mask) == 0:
+            labels.append("Stock")
+        if any(int(levels.get(name, 0)) > 0 for name in PERF_PART_NAMES):
+            labels.append("Modified")
+        limits = self._parts_limits(entry)
+        if limits is not None and all(int(levels.get(name, 0)) == int(limits.get(name, 0)) for name in PERF_PART_NAMES):
+            labels.append("Maxed")
+        if int(mask) != 0:
+            labels.append("Junkman")
+        return labels
+
+    def on_parts_level_changed(self, parts_slot: int, part_name: str, value: int) -> None:
+        if self._parts_refreshing or not self.savefile or self.parts_detection_error:
+            return
+        entry = self._entry_by_parts_slot(parts_slot)
+        if entry is None or self._parts_limits(entry) is None:
+            return
+        levels = dict(self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry)))
+        levels[part_name] = int(value)
+        self._set_parts_slot_levels(parts_slot, levels)
         self._update_action_states()
         self._refresh_parts_page()
-        self._refresh_my_cars_page()
 
     def on_parts_junkman_toggled(self, parts_slot: int, category: str, checked: bool) -> None:
         if self._parts_refreshing or not self.savefile or self.parts_detection_error:
             return
         bit = next((bit for bit, name in SaveFile.JUNKMAN_MASK_BITS if name == category), None)
-        if bit is None:
+        entry = self._entry_by_parts_slot(parts_slot)
+        if bit is None or entry is None:
             return
-        levels = self._current_parts_levels().get(parts_slot, self.have_parts_levels.get(parts_slot, {}))
+        levels = self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry))
         if self._parts_junkman_reason(levels, category):
             return
-        if self.want_parts_masks is None:
-            self.want_parts_masks = dict(self.have_parts_masks)
         current = self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))
-        self.want_parts_masks[parts_slot] = current | bit if checked else current & ~bit
+        self._set_parts_slot_mask(parts_slot, current | bit if checked else current & ~bit)
         self._update_action_states()
         self._refresh_parts_page()
-        self._refresh_my_cars_page()
+
+    def on_tuning_max_performance(self, parts_slot: int) -> None:
+        entry = self._entry_by_parts_slot(parts_slot)
+        limits = None if entry is None else self._parts_limits(entry)
+        if limits is None:
+            return
+        self._set_parts_slot_levels(parts_slot, {name: int(limits.get(name, 0)) for name in PERF_PART_NAMES})
+        self._update_action_states()
+        self._refresh_parts_page()
+
+    def on_tuning_max_junkman(self, parts_slot: int) -> None:
+        entry = self._entry_by_parts_slot(parts_slot)
+        if entry is None or self._parts_limits(entry) is None:
+            return
+        levels = self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry))
+        mask = 0
+        for bit, name in SaveFile.JUNKMAN_MASK_BITS:
+            if self._parts_junkman_reason(levels, name) is None:
+                mask |= bit
+        self._set_parts_slot_mask(parts_slot, mask)
+        self._update_action_states()
+        self._refresh_parts_page()
+
+    def on_tuning_stock_build(self, parts_slot: int) -> None:
+        entry = self._entry_by_parts_slot(parts_slot)
+        if entry is None or self._parts_limits(entry) is None:
+            return
+        self._set_parts_slot_levels(parts_slot, {name: 0 for name in PERF_PART_NAMES})
+        self._set_parts_slot_mask(parts_slot, 0)
+        self._update_action_states()
+        self._refresh_parts_page()
+
+    def on_tuning_clear_junkman(self, parts_slot: int) -> None:
+        entry = self._entry_by_parts_slot(parts_slot)
+        if entry is None or self._parts_limits(entry) is None:
+            return
+        self._set_parts_slot_mask(parts_slot, 0)
+        self._update_action_states()
+        self._refresh_parts_page()
 
     def _add_parts_perf_grid(self, parent: QVBoxLayout, entry) -> None:
-        """Build a 2-column grid of staged level rows for performance parts."""
-        current_levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))
+        levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))
         limits = self._parts_limits(entry)
         editable = limits is not None
-        perf_items = [(name, int(current_levels.get(name, 0))) for name in PERF_PART_NAMES]
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(6)
-        for idx, (name, level) in enumerate(perf_items):
-            max_level = max(int(level), int((limits or {}).get(name, get_tuning_limit(self._entry_model_name(entry), name, default=4))))
+        for idx, name in enumerate(PERF_PART_NAMES):
+            level = int(levels.get(name, 0))
+            max_level = max(level, int((limits or {}).get(name, get_tuning_limit(self._entry_model_name(entry), name, default=4))))
             row_w = QWidget()
             row_w.setObjectName("partsLevelRow")
             row_layout = QHBoxLayout(row_w)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(6)
-
             lbl = QLabel(name)
             lbl.setObjectName("partsLevelLabel")
-            lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             row_layout.addWidget(lbl)
-
             for seg_idx in range(1, max_level + 1):
                 seg = QFrame()
                 seg.setObjectName("partsLevelSeg")
-                if level >= seg_idx:
-                    seg.setProperty("filled", str(seg_idx))
-                else:
-                    seg.setProperty("filled", "0")
+                seg.setProperty("filled", str(seg_idx) if level >= seg_idx else "0")
                 seg.setFixedSize(20, 8)
                 row_layout.addWidget(seg)
-
             num = QLabel(f"{level}/{max_level}")
             num.setObjectName("partsLevelNum")
-            num.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             row_layout.addWidget(num)
-
             if editable:
+                btn_minus = QPushButton("\u2212")
+                btn_minus.setObjectName("partsLevelBtn")
+                btn_minus.setFixedSize(24, 24)
                 spin = WantSpinBox()
                 spin.setObjectName("partsLevelSpin")
                 spin.setRange(0, max_level)
                 spin.setValue(level)
                 spin.setAlignment(Qt.AlignCenter)
-                spin.setButtonSymbols(WantSpinBox.PlusMinus)
-                spin.valueChanged.connect(
-                    lambda val, slot=entry.parts_slot, part=name: self.on_parts_level_changed(slot, part, val)
-                )
+                spin.setButtonSymbols(WantSpinBox.NoButtons)
+                spin.valueChanged.connect(lambda val, slot=entry.parts_slot, part=name: self.on_parts_level_changed(slot, part, val))
+                btn_plus = QPushButton("+")
+                btn_plus.setObjectName("partsLevelBtn")
+                btn_plus.setFixedSize(24, 24)
+                btn_minus.clicked.connect(lambda _, s=spin: s.setValue(max(s.minimum(), s.value() - 1)))
+                btn_plus.clicked.connect(lambda _, s=spin: s.setValue(min(s.maximum(), s.value() + 1)))
+                row_layout.addWidget(btn_minus)
                 row_layout.addWidget(spin)
+                row_layout.addWidget(btn_plus)
             else:
                 row_layout.addWidget(self._make_stat_badge("Read-only"))
-
-            gr = idx // 2
-            gc = idx % 2
-            grid.addWidget(row_w, gr, gc)
+            grid.addWidget(row_w, idx // 2, idx % 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         parent.addLayout(grid)
 
     def _add_parts_junkman_section(self, parent: QVBoxLayout, entry) -> None:
-        current_levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))
-        current_mask = self._current_parts_masks().get(
-            entry.parts_slot,
-            self.have_parts_masks.get(entry.parts_slot, entry.junkman_mask),
-        )
+        levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))
+        mask = self._current_parts_masks().get(entry.parts_slot, self.have_parts_masks.get(entry.parts_slot, entry.junkman_mask))
         editable = self._parts_limits(entry) is not None
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
@@ -333,9 +362,9 @@ class PartsMixin:
         blocked: List[str] = []
         active_any = False
         for bit, cat in SaveFile.JUNKMAN_MASK_BITS:
-            enabled = bool(current_mask & bit)
+            enabled = bool(mask & bit)
             active_any = active_any or enabled
-            reason = self._parts_junkman_reason(current_levels, cat)
+            reason = self._parts_junkman_reason(levels, cat)
             if editable:
                 btn = QPushButton(cat)
                 btn.setCheckable(True)
@@ -346,24 +375,14 @@ class PartsMixin:
                 if reason:
                     btn.setToolTip(reason)
                     blocked.append(f"{cat}: {reason}")
-                btn.clicked.connect(
-                    lambda checked, slot=entry.parts_slot, category=cat: self.on_parts_junkman_toggled(slot, category, checked)
-                )
+                btn.clicked.connect(lambda checked, slot=entry.parts_slot, category=cat: self.on_parts_junkman_toggled(slot, category, checked))
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
                 row.addWidget(btn, 0, Qt.AlignLeft)
             elif enabled:
-                pill = QLabel(cat)
-                pill.setObjectName("partsJunkmanActive")
-                pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-                pill.setAlignment(Qt.AlignCenter)
-                row.addWidget(pill, 0, Qt.AlignLeft)
+                row.addWidget(self._make_stat_badge(cat, "partsJunkmanActive"), 0, Qt.AlignLeft)
         if not active_any and not editable:
-            pill = QLabel("None")
-            pill.setObjectName("partsJunkmanNone")
-            pill.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            pill.setAlignment(Qt.AlignCenter)
-            row.addWidget(pill, 0, Qt.AlignLeft)
+            row.addWidget(self._make_stat_badge("None", "partsJunkmanNone"), 0, Qt.AlignLeft)
         row.addStretch(1)
         parent.addLayout(row)
         if blocked:
@@ -379,142 +398,132 @@ class PartsMixin:
         self._parts_card_widgets = {}
         columns = max(1, self._detect_parts_card_columns())
         self._parts_slot_columns = columns
-
         if not self.savefile:
-            label = QLabel("Open a save to inspect resolved parts records.")
-            label.setObjectName("mutedLabel")
-            self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
+            self.parts_cards_layout.addWidget(QLabel("Open a save to inspect and edit tuning builds."), 0, 0, 1, columns)
             return
-
         if self.parts_detection_error:
-            label = QLabel(f"Parts viewer disabled: {self.parts_detection_error}")
+            label = QLabel(f"Tuning unavailable: {self.parts_detection_error}")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
             return
-
-        visible_entries = self._parts_card_entries()
+        visible_entries = self._tuning_card_entries()
         if not visible_entries:
-            label = QLabel("No parts entries match the current search/filter.")
+            label = QLabel("No tuning entries match the current search/filter.")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
             return
-
-        for idx, entry in enumerate(visible_entries):
+        for idx, card_entry in enumerate(visible_entries):
+            entry = card_entry.raw_entry
             card = QFrame()
             card.setObjectName("partsCard")
             card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            card.setMinimumWidth(320)
-            card.setProperty("changed", self._parts_card_changed(entry.parts_slot))
-
+            card.setMinimumWidth(360)
+            card.setProperty("changed", self._parts_card_changed(card_entry.parts_slot))
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(6)
 
-            # ── Header: slot + source badge ─────────────────
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
-            slot_label = QLabel(f"Slot {entry.career_slot + 1}")
-            slot_label.setObjectName("garageCardSlot")
-            slot_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            slot_label.setAlignment(Qt.AlignCenter)
-            source_label = self._make_garage_source_badge(entry.source_kind)
-            header_row.addWidget(slot_label, 0, Qt.AlignLeft)
+            if card_entry.source_kind == "Career" and card_entry.career_slot is not None:
+                slot_text = f"Career Slot {card_entry.career_slot + 1}"
+            elif card_entry.car_number is not None:
+                slot_text = f"Car #{card_entry.car_number:02X}"
+            else:
+                slot_text = f"Parts Slot {card_entry.parts_slot}"
+            header_row.addWidget(self._make_stat_badge(slot_text, "garageCardSlot"), 0, Qt.AlignLeft)
             header_row.addStretch(1)
-            header_row.addWidget(source_label, 0, Qt.AlignRight)
+            header_row.addWidget(self._make_garage_source_badge(card_entry.source_kind), 0, Qt.AlignRight)
+            if card_entry.pink_slip:
+                header_row.addWidget(self._make_garage_source_badge("Pink Slip"), 0, Qt.AlignRight)
             card_layout.addLayout(header_row)
 
-            # ── Car name ────────────────────────────────────
-            name_label = QLabel(entry.display_name)
-            name_label.setObjectName("garageCardMeta")
-            name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            name_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(name_label, 0, Qt.AlignLeft)
+            card_layout.addWidget(self._make_stat_badge(card_entry.display_name, "garageCardMeta"), 0, Qt.AlignLeft)
 
-            # ── Meta badges ─────────────────────────────────
+            statuses = self._parts_status_labels(entry)
+            if statuses:
+                status_row = QHBoxLayout()
+                status_row.setSpacing(8)
+                for text in statuses:
+                    status_row.addWidget(self._make_tuning_status_badge(text), 0, Qt.AlignLeft)
+                status_row.addStretch(1)
+                card_layout.addLayout(status_row)
+
+            limits = self._parts_limits(entry)
+            action_row = QHBoxLayout()
+            action_row.setSpacing(8)
+            for text, handler in [("Max Performance", self.on_tuning_max_performance), ("Max Junkman", self.on_tuning_max_junkman), ("Stock Build", self.on_tuning_stock_build), ("Clear Junkman", self.on_tuning_clear_junkman)]:
+                btn = QPushButton(text)
+                btn.setObjectName("partsBulkBtn")
+                btn.setEnabled(limits is not None)
+                btn.clicked.connect(lambda _, slot=card_entry.parts_slot, fn=handler: fn(slot))
+                action_row.addWidget(btn)
+            action_row.addStretch(1)
+            card_layout.addLayout(action_row)
+
             meta_row = QHBoxLayout()
             meta_row.setSpacing(8)
-            parts_label = QLabel(f"Parts Slot {entry.parts_slot}")
-            parts_label.setObjectName("garageCardStatBadge")
-            parts_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            parts_label.setAlignment(Qt.AlignCenter)
-            meta_row.addWidget(parts_label, 0, Qt.AlignLeft)
-
-            offset_label = QLabel(f"Block 0x{entry.block_abs_off:05X}")
-            offset_label.setObjectName("garageCardStatBadge")
-            offset_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            offset_label.setAlignment(Qt.AlignCenter)
-            meta_row.addWidget(offset_label, 0, Qt.AlignLeft)
+            meta_row.addWidget(self._make_stat_badge(f"Parts Slot {card_entry.parts_slot}"), 0, Qt.AlignLeft)
+            meta_row.addWidget(self._make_stat_badge(f"Block 0x{card_entry.block_abs_off:05X}"), 0, Qt.AlignLeft)
+            if card_entry.source_kind == "My Cars" and card_entry.career_slot is not None:
+                meta_row.addWidget(self._make_stat_badge(f"Career Slot {card_entry.career_slot + 1}"), 0, Qt.AlignLeft)
             meta_row.addStretch(1)
             card_layout.addLayout(meta_row)
 
-            limits = self._parts_limits(entry)
             if limits is None:
-                ro_label = QLabel("Read-only: no confirmed tuning cap mapping for this model.")
-                ro_label.setObjectName("partsCardNote")
-                ro_label.setWordWrap(True)
-                card_layout.addWidget(ro_label)
+                note = QLabel("Read-only: no confirmed tuning cap mapping for this model.")
+                note.setObjectName("partsCardNote")
+                note.setWordWrap(True)
+                card_layout.addWidget(note)
 
-            # ── Separator ───────────────────────────────────
             sep = QFrame()
             sep.setFrameShape(QFrame.HLine)
             sep.setObjectName("garageCardSep")
             card_layout.addWidget(sep)
-
-            # ── Performance (level bars) ────────────────────
             perf_label = QLabel("Performance")
             perf_label.setObjectName("garageCardFieldLabel")
             perf_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(perf_label)
-
             self._add_parts_perf_grid(card_layout, entry)
-
-            # ── Junkman (accent pills) ──────────────────────
             junkman_label = QLabel("Junkman")
             junkman_label.setObjectName("garageCardFieldLabel")
             junkman_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(junkman_label)
-
             self._add_parts_junkman_section(card_layout, entry)
 
-            # ── Diagnostics (toggle-gated) ──────────────────
             if self.show_parts_diagnostics:
                 diag_sep = QFrame()
                 diag_sep.setFrameShape(QFrame.HLine)
                 diag_sep.setObjectName("garageCardSep")
                 card_layout.addWidget(diag_sep)
-
                 diag_label = QLabel("Diagnostics")
                 diag_label.setObjectName("garageCardFieldLabel")
                 diag_label.setAlignment(Qt.AlignCenter)
                 card_layout.addWidget(diag_label)
+                card_layout.addWidget(self._make_stat_badge(f"Mask 0x{self._current_parts_masks().get(card_entry.parts_slot, card_entry.junkman_mask):02X}"), 0, Qt.AlignLeft)
+                if card_entry.marker is not None:
+                    card_layout.addWidget(self._make_stat_badge(f"Marker {self._format_parts_raw(card_entry.marker)}"), 0, Qt.AlignLeft)
+                if card_entry.confirmed_raw is not None:
+                    raw_label = QLabel("Confirmed Slice (+0x118..+0x137)")
+                    raw_label.setObjectName("partsCardNote")
+                    raw_label.setAlignment(Qt.AlignCenter)
+                    card_layout.addWidget(raw_label)
+                    raw_value = QLabel(self._format_parts_raw(card_entry.confirmed_raw))
+                    raw_value.setObjectName("partsCardRaw")
+                    raw_value.setAlignment(Qt.AlignCenter)
+                    raw_value.setWordWrap(True)
+                    raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                    card_layout.addWidget(raw_value)
+                else:
+                    note = QLabel("No confirmed raw diagnostic slice is exposed for this source type.")
+                    note.setObjectName("partsCardNote")
+                    note.setWordWrap(True)
+                    card_layout.addWidget(note)
 
-                marker_label = self._make_stat_badge(f"Marker {self._format_parts_raw(entry.marker)}")
-                card_layout.addWidget(marker_label, 0, Qt.AlignLeft)
-
-                mask_label = self._make_stat_badge(
-                    f"Mask 0x{self._current_parts_masks().get(entry.parts_slot, entry.junkman_mask):02X}"
-                )
-                card_layout.addWidget(mask_label, 0, Qt.AlignLeft)
-
-                raw_label = QLabel("Confirmed Slice (+0x118..+0x137)")
-                raw_label.setObjectName("partsCardNote")
-                raw_label.setAlignment(Qt.AlignCenter)
-                card_layout.addWidget(raw_label)
-
-                raw_value = QLabel(self._format_parts_raw(entry.confirmed_raw))
-                raw_value.setObjectName("partsCardRaw")
-                raw_value.setAlignment(Qt.AlignCenter)
-                raw_value.setWordWrap(True)
-                raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                card_layout.addWidget(raw_value)
-
-            row = idx // columns
-            col = idx % columns
-            self.parts_cards_layout.addWidget(card, row, col)
-            self._parts_card_widgets[entry.parts_slot] = card
-
+            self.parts_cards_layout.addWidget(card, idx // columns, idx % columns)
+            self._parts_card_widgets[card_entry.parts_slot] = card
         for col in range(columns):
             self.parts_cards_layout.setColumnStretch(col, 1)
 
@@ -525,19 +534,19 @@ class PartsMixin:
             self.chk_show_parts_diagnostics.setChecked(self.show_parts_diagnostics)
             self.chk_show_parts_diagnostics.setEnabled(loaded)
             self.chk_show_parts_diagnostics.blockSignals(False)
+        if hasattr(self, "tuning_filter_buttons"):
+            current = getattr(self, "tuning_filter", "All")
+            for label, button in self.tuning_filter_buttons.items():
+                button.setChecked(label == current)
         self._rebuild_parts_cards()
 
     def on_parts_search_changed(self) -> None:
-        self._refresh_parts_page()
-
-    def _select_parts_filter(self, source: str) -> None:
-        self.parts_filter = source
-        for label, button in self.parts_filter_buttons.items():
-            button.setChecked(label == source)
         self._refresh_parts_page()
 
     def on_toggle_parts_diagnostics(self) -> None:
         self.show_parts_diagnostics = self.chk_show_parts_diagnostics.isChecked()
         self._refresh_parts_page()
 
-
+    def _select_tuning_filter(self, source: str) -> None:
+        self.tuning_filter = source
+        self._refresh_parts_page()

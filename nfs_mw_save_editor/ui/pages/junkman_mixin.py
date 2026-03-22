@@ -516,7 +516,6 @@ class JunkmanMixin:
         self._refresh_profile_inputs()
         self._refresh_garage_page()
         self._refresh_parts_page()
-        self._refresh_my_cars_page()
         self._refresh_presets_page()
         self.refresh_cards()
 

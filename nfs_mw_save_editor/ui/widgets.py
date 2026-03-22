@@ -23,13 +23,13 @@ from ui.icon_map import token_icon_path
 
 
 class ShimmerFrame(QFrame):
-    """A QFrame with a subtle gold shimmer sweep animation.
+    """A QFrame with a subtle pink shimmer sweep animation.
 
     The shimmer is a semi-transparent linear gradient that sweeps
     left-to-right every ``interval_ms`` (default ~4 s).
     """
 
-    _SHIMMER_COLOR = QColor(212, 168, 83)  # #D4A853
+    _SHIMMER_COLOR = QColor(240, 139, 180)  # #F08BB4
 
     _DEFAULT_INTERVAL_MS = 4000
     _DEFAULT_SWEEP_MS = 1200
