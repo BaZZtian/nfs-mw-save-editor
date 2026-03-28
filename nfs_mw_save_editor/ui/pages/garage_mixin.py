@@ -389,6 +389,13 @@ class GarageMixin:
         label.setText(source_kind)
         return label
 
+    def _make_active_car_badge(self) -> QLabel:
+        badge = QLabel("Active")
+        badge.setObjectName("activeCarBadge")
+        badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        badge.setAlignment(Qt.AlignCenter)
+        return badge
+
     def _garage_card_changed(self, slot_index: int) -> bool:
         have_bounty = self.have_slot_bounties.get(slot_index, 0)
         want_bounty = self._current_slot_bounties().get(slot_index, have_bounty)
@@ -439,10 +446,19 @@ class GarageMixin:
             label.setWordWrap(True)
             self.garage_cards_layout.addWidget(label, 0, 0, 1, columns)
             return
+        projected_active_car_number = self.savefile.get_projected_active_career_car_number(
+            location_overrides=self._current_owned_locations(),
+            career_slot_overrides=self._current_owned_career_slots(),
+        )
 
         for idx, slot in enumerate(visible_slots):
             changed = self._garage_transfer_changed(slot.abs_off) or (
                 slot.career_slot != SaveFile.EMPTY_CAREER_SLOT and self._garage_card_changed(slot.career_slot)
+            )
+            is_active = (
+                projected_active_car_number is not None
+                and not slot.is_my_cars
+                and int(slot.car_number) == int(projected_active_car_number)
             )
             card = QFrame()
             card.setObjectName("garageCard")
@@ -467,6 +483,8 @@ class GarageMixin:
             header_row.addWidget(slot_label, 0, Qt.AlignLeft)
             header_row.addStretch(1)
             header_row.addWidget(source_label, 0, Qt.AlignRight)
+            if is_active:
+                header_row.addWidget(self._make_active_car_badge(), 0, Qt.AlignRight)
             card_layout.addLayout(header_row)
 
             name_label = QLabel(slot.display_name)

@@ -6,7 +6,7 @@ import json
 import logging
 import struct
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from core.cars import resolve_car_name
 from core.checksums import ea_crc32
@@ -310,6 +310,31 @@ class SaveFile:
     def choose_fallback_active_career_record(self) -> Optional[OwnedCarRecord]:
         candidates = self.get_active_career_candidates()
         return candidates[0] if candidates else None
+
+    def get_projected_active_career_car_number(
+        self,
+        location_overrides: Optional[Dict[int, int]] = None,
+        career_slot_overrides: Optional[Dict[int, int]] = None,
+    ) -> Optional[int]:
+        current_active_car_number = int(self.get_active_career_car_number())
+        current_location = location_overrides or {}
+        current_career_slot = career_slot_overrides or {}
+        candidates: List[Tuple[int, int, int]] = []
+        for record in self.get_owned_car_records():
+            location_bits = int(current_location.get(record.abs_off, record.location_bits))
+            career_slot = int(current_career_slot.get(record.abs_off, record.career_slot))
+            car_number = int(record.car_number)
+            if location_bits not in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG):
+                continue
+            if career_slot == self.EMPTY_CAREER_SLOT or car_number == self.EMPTY_CAR_NUMBER:
+                continue
+            candidates.append((career_slot, car_number, int(record.abs_off)))
+        if not candidates:
+            return None
+        if any(car_number == current_active_car_number for _career_slot, car_number, _abs_off in candidates):
+            return current_active_car_number
+        candidates.sort()
+        return int(candidates[0][1])
 
     def ensure_active_career_pointer_valid(self) -> int:
         active = self.get_active_career_record()

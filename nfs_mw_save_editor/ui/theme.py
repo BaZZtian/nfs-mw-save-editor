@@ -48,6 +48,9 @@ MY_CARS_SOURCE_BG = "rgba(110, 91, 168, 0.14)"
 GOLD = "#F08BB4"
 GOLD_BORDER = "#B85B86"
 GOLD_BG = "rgba(240, 139, 180, 0.14)"
+ACTIVE_CAR = "#74D39A"
+ACTIVE_CAR_BORDER = "#3E8A5D"
+ACTIVE_CAR_BG = "rgba(62, 138, 93, 0.14)"
 
 # Phase 3: Border-radius system
 RADIUS_SM = "4px"
@@ -685,6 +688,15 @@ QLabel#myCarsSourceBadge {{
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
     color: {MY_CARS_SOURCE};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#activeCarBadge {{
+    background: {ACTIVE_CAR_BG};
+    border: 1px solid {ACTIVE_CAR_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {ACTIVE_CAR};
     font-size: 11px;
     font-weight: 600;
 }}

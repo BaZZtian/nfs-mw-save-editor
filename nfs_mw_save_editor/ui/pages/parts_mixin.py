@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
@@ -398,8 +398,27 @@ class PartsMixin:
             label.setWordWrap(True)
             self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
             return
+        projected_active_car_number = self.savefile.get_projected_active_career_car_number(
+            location_overrides=self._current_owned_locations(),
+            career_slot_overrides=self._current_owned_career_slots(),
+        )
+        projected_active_parts_slots: Set[int] = set()
+        if projected_active_car_number is not None:
+            projected_active_parts_slots = {
+                int(entry.parts_slot)
+                for entry in self._current_transfer_entries()
+                if not entry.is_my_cars and int(entry.car_number) == int(projected_active_car_number)
+            }
         for idx, card_entry in enumerate(visible_entries):
             entry = card_entry.raw_entry
+            is_active = (
+                projected_active_car_number is not None
+                and card_entry.source_kind != "My Cars"
+                and (
+                    (card_entry.car_number is not None and int(card_entry.car_number) == int(projected_active_car_number))
+                    or int(card_entry.parts_slot) in projected_active_parts_slots
+                )
+            )
             card = QFrame()
             card.setObjectName("partsCard")
             card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -422,6 +441,8 @@ class PartsMixin:
             header_row.addWidget(self._make_garage_source_badge(card_entry.source_kind), 0, Qt.AlignRight)
             if card_entry.pink_slip:
                 header_row.addWidget(self._make_garage_source_badge("Pink Slip"), 0, Qt.AlignRight)
+            if is_active:
+                header_row.addWidget(self._make_active_car_badge(), 0, Qt.AlignRight)
             card_layout.addLayout(header_row)
 
             card_layout.addWidget(self._make_stat_badge(card_entry.display_name, "garageCardMeta"), 0, Qt.AlignLeft)
