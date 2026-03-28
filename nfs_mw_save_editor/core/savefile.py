@@ -32,6 +32,7 @@ from core.models import (
     SaveLayout,
     SnapshotInjectionPlan,
     SnapshotLibraryEntry,
+    SnapshotVisualSidecarEntry,
     VisualSidecarTemplate,
 )
 from core.tuning_limits import get_model_tuning_limits
@@ -41,6 +42,10 @@ logger = logging.getLogger(__name__)
 
 
 class SaveFile:
+    SNAPSHOT_FILE_PREFIX = "car_build_snapshot_"
+    LEGACY_SNAPSHOT_FILE_PREFIX = "boss_car_snapshot_"
+    SNAPSHOT_KIND = "car_build_snapshot_v2"
+    LEGACY_SNAPSHOT_KIND = "boss_car_build_snapshot_v2"
     # Junkman inventory slot layout (dynamically detected)
     SAVED_DATA_START = JunkmanInventory.SAVED_DATA_START
     SLOT_STRIDE = JunkmanInventory.SLOT_STRIDE
@@ -49,6 +54,7 @@ class SaveFile:
     SLOT_SIZE = JunkmanInventory.SLOT_SIZE
     SLOT_MAX = 200  # upper bound for diff helpers
     MONEY_OFFSET = 0x4039
+    ACTIVE_CAREER_CAR_NUMBER_OFFSET = 0x4034
     GARAGE_BASE_OFFSET = 0xE2ED
     GARAGE_SLOT_SIZE = 0x38
     GARAGE_BOUNTY_OFFSET = 0x10
@@ -89,6 +95,8 @@ class SaveFile:
     VISUAL_TABLE_ENTRY_COUNT = 57
     VISUAL_TABLE_ENTRY_STRIDE = 0x08
     VISUAL_TABLE_DEFAULT_VALUE = 0x01
+    VISUAL_TABLE_LEGACY_VALUE_OFFSET = 0x00
+    VISUAL_TABLE_MODE_OFFSET = 0x04
     EMPTY_PARTS_BLOCK_HEAD_FILL = 0xFF
     EMPTY_PARTS_BLOCK_ZERO_TAIL_OFFSET = 0x190
     EMPTY_PARTS_BLOCK_MARKER = b"\xFF\xCD\xCD\xCD"
@@ -164,6 +172,9 @@ class SaveFile:
 
     def _write_u16(self, offset: int, value: int) -> None:
         struct.pack_into("<H", self.data, offset, int(value) & 0xFFFF)
+
+    def _write_u8(self, offset: int, value: int) -> None:
+        self.data[offset] = int(value) & 0xFF
 
     def _write_u32(self, offset: int, value: int) -> None:
         struct.pack_into("<I", self.data, offset, int(value) & 0xFFFFFFFF)
@@ -270,6 +281,46 @@ class SaveFile:
     def set_money(self, value: int) -> None:
         self._write_u32(self.MONEY_OFFSET, self._require_u32(value))
 
+    def get_active_career_car_number(self) -> int:
+        return self._read_u8(self.ACTIVE_CAREER_CAR_NUMBER_OFFSET)
+
+    def set_active_career_car_number(self, car_number: int) -> None:
+        wanted = int(car_number)
+        if wanted < 0 or wanted > 0xFF:
+            raise ValueError("active career car_number must be in range 0..255")
+        self._write_u8(self.ACTIVE_CAREER_CAR_NUMBER_OFFSET, wanted)
+
+    def get_active_career_candidates(self) -> List[OwnedCarRecord]:
+        candidates = [
+            record
+            for record in self.get_owned_car_records()
+            if record.location_bits in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG)
+            and record.career_slot != self.EMPTY_CAREER_SLOT
+            and record.car_number != self.EMPTY_CAR_NUMBER
+        ]
+        return sorted(candidates, key=lambda record: (int(record.career_slot), int(record.car_number), int(record.abs_off)))
+
+    def get_active_career_record(self) -> Optional[OwnedCarRecord]:
+        active_car_number = self.get_active_career_car_number()
+        return next(
+            (record for record in self.get_active_career_candidates() if int(record.car_number) == int(active_car_number)),
+            None,
+        )
+
+    def choose_fallback_active_career_record(self) -> Optional[OwnedCarRecord]:
+        candidates = self.get_active_career_candidates()
+        return candidates[0] if candidates else None
+
+    def ensure_active_career_pointer_valid(self) -> int:
+        active = self.get_active_career_record()
+        if active is not None:
+            return int(active.car_number)
+        fallback = self.choose_fallback_active_career_record()
+        if fallback is None:
+            raise ValueError("Active career pointer has no surviving Career/Pink Slip target")
+        self.set_active_career_car_number(int(fallback.car_number))
+        return int(fallback.car_number)
+
     @classmethod
     def _is_garage_slot(cls, raw: bytes) -> bool:
         return (
@@ -277,6 +328,59 @@ class SaveFile:
             and raw[1:4] == cls.GARAGE_SIGNATURE_A
             and raw[8:12] == cls.GARAGE_SIGNATURE_B
         )
+
+    @classmethod
+    def _is_blank_pursuit_tail_slot(cls, raw: bytes) -> bool:
+        return (
+            len(raw) == cls.GARAGE_SLOT_SIZE
+            and raw[:1] == b"\xFF"
+            and raw[1:24] == (b"\xCD" * 23)
+            and raw[24:] == (b"\x00" * (cls.GARAGE_SLOT_SIZE - 24))
+        )
+
+    def _garage_slot_abs_off(self, career_slot: int) -> int:
+        wanted = int(career_slot)
+        if wanted < 0:
+            raise ValueError("career_slot must be >= 0")
+        abs_off = self.GARAGE_BASE_OFFSET + wanted * self.GARAGE_SLOT_SIZE
+        if abs_off + self.GARAGE_SLOT_SIZE > len(self.data):
+            raise ValueError(f"Career slot {wanted} points outside the file")
+        return abs_off
+
+    def _build_zero_pursuit_slot_payload(self, career_slot: int) -> bytes:
+        pursuits = self.get_pursuit_records()
+        if pursuits:
+            zero_template = next(
+                (
+                    record for record in reversed(pursuits)
+                    if (record.bounty, record.escaped, record.busted) == (0, 0, 0)
+                ),
+                pursuits[-1],
+            )
+            payload = bytearray(
+                self.data[zero_template.abs_off:zero_template.abs_off + self.GARAGE_SLOT_SIZE]
+            )
+        else:
+            payload = bytearray(self.GARAGE_SLOT_SIZE)
+        payload[0] = int(career_slot) & 0xFF
+        payload[1:4] = self.GARAGE_SIGNATURE_A
+        payload[8:12] = self.GARAGE_SIGNATURE_B
+        payload[self.GARAGE_BOUNTY_OFFSET:self.GARAGE_BOUNTY_OFFSET + 4] = b"\x00" * 4
+        payload[self.GARAGE_ESCAPED_OFFSET:self.GARAGE_ESCAPED_OFFSET + 2] = b"\x00" * 2
+        payload[self.GARAGE_BUSTED_OFFSET:self.GARAGE_BUSTED_OFFSET + 2] = b"\x00" * 2
+        return bytes(payload)
+
+    def _ensure_pursuit_slot_initialized(self, career_slot: int) -> int:
+        wanted = int(career_slot)
+        for slot in self.get_pursuit_records():
+            if slot.career_slot == wanted:
+                return slot.abs_off
+        abs_off = self._garage_slot_abs_off(wanted)
+        raw = bytes(self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE])
+        if not self._is_blank_pursuit_tail_slot(raw):
+            raise ValueError(f"Pursuit slot {wanted} was not detected")
+        self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE] = self._build_zero_pursuit_slot_payload(wanted)
+        return abs_off
 
     def get_pursuit_records(self) -> List[PursuitRecord]:
         slots: List[PursuitRecord] = []
@@ -563,6 +667,34 @@ class SaveFile:
                     is_zero=is_zero,
                 )
             )
+        next_slot = len(statuses)
+        while True:
+            try:
+                abs_off = self._garage_slot_abs_off(next_slot)
+            except ValueError:
+                break
+            raw = bytes(self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE])
+            if not self._is_blank_pursuit_tail_slot(raw):
+                break
+            reusable = True
+            blocked_reason = None
+            if next_slot in reserved_career_slots:
+                reusable = False
+                blocked_reason = "Reserved by staged injector"
+            statuses.append(
+                CareerSlotStatus(
+                    career_slot=next_slot,
+                    abs_off=abs_off,
+                    linked_car_count=0,
+                    reusable=reusable,
+                    blocked_reason=blocked_reason,
+                    bounty=0,
+                    escaped=0,
+                    busted=0,
+                    is_zero=True,
+                )
+            )
+            next_slot += 1
         return statuses
 
     def get_garage_allocator_snapshot(
@@ -667,14 +799,10 @@ class SaveFile:
 
     def clear_pursuit_slot(self, career_slot: int) -> None:
         wanted = int(career_slot)
-        for slot in self.get_pursuit_records():
-            if slot.career_slot != wanted:
-                continue
-            self._write_u32(slot.abs_off + self.GARAGE_BOUNTY_OFFSET, 0)
-            self._write_u16(slot.abs_off + self.GARAGE_ESCAPED_OFFSET, 0)
-            self._write_u16(slot.abs_off + self.GARAGE_BUSTED_OFFSET, 0)
-            return
-        raise ValueError(f"Pursuit slot {wanted} was not detected")
+        abs_off = self._ensure_pursuit_slot_initialized(wanted)
+        self._write_u32(abs_off + self.GARAGE_BOUNTY_OFFSET, 0)
+        self._write_u16(abs_off + self.GARAGE_ESCAPED_OFFSET, 0)
+        self._write_u16(abs_off + self.GARAGE_BUSTED_OFFSET, 0)
 
     def plan_owned_car_transfer(
         self,
@@ -687,12 +815,17 @@ class SaveFile:
         cleared_slots: Optional[Set[int]] = None,
         reserved_career_slots: Optional[Set[int]] = None,
         desired_career_slot: Optional[int] = None,
+        allow_restore_to_nonvalidated_slot: bool = False,
     ) -> OwnedCarTransferPlan:
         source = self._owned_record_by_abs_off(
             abs_off,
             location_overrides=location_overrides,
             misc_overrides=misc_overrides,
             career_slot_overrides=career_slot_overrides,
+        )
+        pursuit_slots = {record.career_slot for record in self.get_pursuit_records()}
+        source_has_pursuit_record = (
+            source.career_slot != self.EMPTY_CAREER_SLOT and source.career_slot in pursuit_slots
         )
         display_name = resolve_car_name(source.signature) or f"Sig {source.signature.hex().upper()}"
         target = str(target_mode)
@@ -712,7 +845,7 @@ class SaveFile:
             else:
                 target_location_bits = self.MY_CARS_FLAG
                 target_career_slot = None
-                if source.career_slot != self.EMPTY_CAREER_SLOT:
+                if source_has_pursuit_record:
                     cleared_source_career_slot = source.career_slot
                     clears_pursuit_slot = True
         elif target in ("career", "pink_slip"):
@@ -735,7 +868,10 @@ class SaveFile:
                     if desired_career_slot is not None:
                         slot_status = reusable_slots.get(int(desired_career_slot))
                         if slot_status is None:
-                            refusal = f"Career slot {int(desired_career_slot) + 1} is not a validated empty slot"
+                            if allow_restore_to_nonvalidated_slot:
+                                target_career_slot = int(desired_career_slot)
+                            else:
+                                refusal = f"Career slot {int(desired_career_slot) + 1} is not a validated empty slot"
                         else:
                             target_career_slot = slot_status.career_slot
                     elif reusable_slots:
@@ -770,8 +906,15 @@ class SaveFile:
         target_mode: str,
         *,
         desired_career_slot: Optional[int] = None,
+        allow_restore_to_nonvalidated_slot: bool = False,
     ) -> OwnedCarTransferPlan:
-        plan = self.plan_owned_car_transfer(abs_off, target_mode, desired_career_slot=desired_career_slot)
+        current_active_car_number = self.get_active_career_car_number()
+        plan = self.plan_owned_car_transfer(
+            abs_off,
+            target_mode,
+            desired_career_slot=desired_career_slot,
+            allow_restore_to_nonvalidated_slot=allow_restore_to_nonvalidated_slot,
+        )
         if plan.refusal_reason:
             raise ValueError(plan.refusal_reason)
         if plan.clears_pursuit_slot and plan.cleared_source_career_slot is not None:
@@ -781,6 +924,19 @@ class SaveFile:
             self.clear_owned_car_career_slot(plan.source_abs_off)
         else:
             self.set_owned_car_career_slot(plan.source_abs_off, plan.target_career_slot)
+        source_was_active_career = (
+            int(plan.source_location_bits) in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG)
+            and int(plan.source_career_slot) != self.EMPTY_CAREER_SLOT
+            and int(current_active_car_number) == int(self._read_u32(plan.source_abs_off))
+        )
+        target_is_career_like = (
+            int(plan.target_location_bits) in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG)
+            and plan.target_career_slot is not None
+        )
+        if source_was_active_career and not target_is_career_like:
+            fallback = self.choose_fallback_active_career_record()
+            if fallback is not None:
+                self.set_active_career_car_number(int(fallback.car_number))
         return plan
 
     _DEFAULT_SNAPSHOT_LIBRARY_DIR = ("assets", "unique_cars")
@@ -800,10 +956,20 @@ class SaveFile:
             return []
 
         entries: List[SnapshotLibraryEntry] = []
-        for path in sorted(library_root.rglob("boss_car_snapshot_*.json")):
+        snapshot_paths = {
+            path.resolve()
+            for pattern in (
+                f"{cls.SNAPSHOT_FILE_PREFIX}*.json",
+                f"{cls.LEGACY_SNAPSHOT_FILE_PREFIX}*.json",
+            )
+            for path in library_root.rglob(pattern)
+        }
+        for path in sorted(snapshot_paths):
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("kind") != "boss_car_build_snapshot_v2":
-                raise ValueError(f"{path} is not a boss_car_build_snapshot_v2 file")
+            if payload.get("kind") not in (cls.SNAPSHOT_KIND, cls.LEGACY_SNAPSHOT_KIND):
+                raise ValueError(
+                    f"{path} is not a {cls.SNAPSHOT_KIND} or {cls.LEGACY_SNAPSHOT_KIND} file"
+                )
             block = cls._hex_to_bytes(payload["primary_build_block"]["normalized_hex"])
             if len(block) != cls.PARTS_BLOCK_SIZE:
                 raise ValueError(f"{path} has invalid normalized primary block size {len(block)}")
@@ -821,6 +987,26 @@ class SaveFile:
                 (str(name), str(value))
                 for name, value in payload.get("primary_build_block", {}).get("primary_visual_fields", {}).items()
             )
+            sidecar_payload = payload.get("optional_visual_sidecar")
+            sidecar_entry: Optional[SnapshotVisualSidecarEntry] = None
+            if sidecar_payload is not None:
+                sidecar_block = cls._hex_to_bytes(sidecar_payload["normalized_sidecar_build_block_hex"])
+                if len(sidecar_block) != cls.PARTS_BLOCK_SIZE:
+                    raise ValueError(f"{path} has invalid normalized sidecar block size {len(sidecar_block)}")
+                sidecar_signature = cls._hex_to_bytes(sidecar_payload["owned_record_signature_clone_hex"])
+                if len(sidecar_signature) != cls.CAREER_VEHICLE_SIGNATURE_SIZE:
+                    raise ValueError(f"{path} has invalid sidecar signature length {len(sidecar_signature)}")
+                sidecar_marker = cls._hex_to_bytes(sidecar_payload["sidecar_marker_hex"])
+                if len(sidecar_marker) != 4:
+                    raise ValueError(f"{path} has invalid sidecar marker length {len(sidecar_marker)}")
+                sidecar_entry = SnapshotVisualSidecarEntry(
+                    owned_record_signature_clone=sidecar_signature,
+                    owned_record_location_bits=int(sidecar_payload["owned_record_location_bits"]),
+                    owned_record_misc_bits=int(sidecar_payload["owned_record_misc_bits"]),
+                    sidecar_parts_slot_offset=int(sidecar_payload["sidecar_parts_slot_offset"]),
+                    normalized_sidecar_build_block=sidecar_block,
+                    sidecar_marker=sidecar_marker,
+                )
             entry = SnapshotLibraryEntry(
                 snapshot_id=str(path.resolve()).lower(),
                 json_path=path.resolve(),
@@ -840,7 +1026,26 @@ class SaveFile:
                 performance_levels=performance,
                 primary_visual_fields=visuals,
                 requires_unresolved_global_visual_state=bool(payload.get("requires_unresolved_global_visual_state")),
-                has_visual_sidecar=payload.get("optional_visual_sidecar") is not None,
+                has_visual_sidecar=sidecar_entry is not None,
+                optional_visual_sidecar=sidecar_entry,
+                global_visual_table_uniform_value=(
+                    None
+                    if payload.get("global_visual_table", {}).get("uniform_value") is None
+                    else int(payload["global_visual_table"]["uniform_value"])
+                ),
+                global_visual_table_mode_offset=int(
+                    payload.get("global_visual_table", {}).get("mode_offset", cls.VISUAL_TABLE_MODE_OFFSET)
+                ),
+                global_visual_table_mode_uniform_value=(
+                    None
+                    if payload.get("global_visual_table", {}).get("mode_uniform_value") is None
+                    else int(payload["global_visual_table"]["mode_uniform_value"])
+                ),
+                global_visual_table_mode_tail_value=(
+                    None
+                    if payload.get("global_visual_table", {}).get("mode_tail_value") is None
+                    else int(payload["global_visual_table"]["mode_tail_value"])
+                ),
             )
             entries.append(entry)
         return sorted(entries, key=lambda item: (0 if item.library_bucket == "Main" else 1, item.display_name.lower(), item.file_label.lower()))
@@ -884,13 +1089,51 @@ class SaveFile:
         return candidate
 
     def _write_parts_block_for_slot(self, parts_slot: int, normalized_block: bytes) -> None:
+        self._write_parts_block_for_slot_with_marker(parts_slot, normalized_block, placeholder_marker=False)
+
+    def _write_parts_block_for_slot_with_marker(
+        self,
+        parts_slot: int,
+        normalized_block: bytes,
+        *,
+        placeholder_marker: bool,
+    ) -> None:
         slot = int(parts_slot)
         if len(normalized_block) != self.PARTS_BLOCK_SIZE:
             raise ValueError(f"normalized parts block must be exactly 0x{self.PARTS_BLOCK_SIZE:X} bytes")
         abs_off = self._parts_block_abs_off(slot)
         payload = bytearray(normalized_block)
-        payload[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4] = bytes((slot & 0xFF, 0xCD, 0xCD, 0xCD))
+        marker = self.EMPTY_PARTS_BLOCK_MARKER if placeholder_marker else bytes((slot & 0xFF, 0xCD, 0xCD, 0xCD))
+        payload[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4] = marker
         self.data[abs_off:abs_off + self.PARTS_BLOCK_SIZE] = payload
+
+    @staticmethod
+    def _find_adjacent_owned_slot_pair(
+        statuses: List[OwnedCarSlotStatus],
+    ) -> Tuple[Optional[OwnedCarSlotStatus], Optional[OwnedCarSlotStatus], bool]:
+        saw_primary = False
+        for idx, status in enumerate(statuses[:-1]):
+            if not status.reusable:
+                continue
+            saw_primary = True
+            nxt = statuses[idx + 1]
+            if nxt.reusable and nxt.abs_off == status.abs_off + SaveFile.CAREER_VEHICLE_SIZE:
+                return status, nxt, saw_primary
+        return None, None, saw_primary
+
+    @staticmethod
+    def _find_adjacent_parts_slot_pair(
+        statuses: List[PartsSlotStatus],
+    ) -> Tuple[Optional[PartsSlotStatus], Optional[PartsSlotStatus], bool]:
+        saw_primary = False
+        for idx, status in enumerate(statuses[:-1]):
+            if not status.reusable:
+                continue
+            saw_primary = True
+            nxt = statuses[idx + 1]
+            if nxt.reusable and nxt.parts_slot == status.parts_slot + 1:
+                return status, nxt, saw_primary
+        return None, None, saw_primary
 
     def plan_snapshot_injection(
         self,
@@ -912,30 +1155,60 @@ class SaveFile:
         target_career_slot: Optional[int] = None
         target_owned_abs_off: Optional[int] = None
         target_parts_slot: Optional[int] = None
+        target_sidecar_owned_abs_off: Optional[int] = None
+        target_sidecar_parts_slot: Optional[int] = None
 
-        if snapshot.has_visual_sidecar:
-            refusal = "Sidecar snapshots are not injectable yet"
-        elif target not in ("my_cars", "career"):
+        if target not in ("my_cars", "career"):
             refusal = f"Unsupported injector target: {target}"
         else:
             target_location_bits = self.MY_CARS_FLAG if target == "my_cars" else self.CAREER_FLAG
             if snapshot.requires_unresolved_global_visual_state:
                 warnings.append("Global visual table 0x5577 is not injected in v1.")
+            if snapshot.has_visual_sidecar:
+                if snapshot.optional_visual_sidecar is None:
+                    refusal = "Snapshot sidecar payload is missing"
+                elif snapshot.optional_visual_sidecar.sidecar_parts_slot_offset != 1:
+                    refusal = "Only +1 sidecar snapshots are supported"
 
-            owned_candidates = self.get_owned_car_slot_statuses(reserved_abs_offs=reserved_owned_abs_offs)
-            reusable_owned = [slot for slot in owned_candidates if slot.reusable]
-            if not reusable_owned:
-                refusal = "No validated empty owned-car slots available"
-            else:
-                target_owned_abs_off = reusable_owned[0].abs_off
+            if refusal is None:
+                owned_candidates = self.get_owned_car_slot_statuses(reserved_abs_offs=reserved_owned_abs_offs)
+                if snapshot.has_visual_sidecar:
+                    primary_owned, sidecar_owned, saw_primary_owned = self._find_adjacent_owned_slot_pair(owned_candidates)
+                    if primary_owned is None or sidecar_owned is None:
+                        refusal = (
+                            "No adjacent empty owned-car slot for sidecar"
+                            if saw_primary_owned else
+                            "No validated empty owned-car slots available"
+                        )
+                    else:
+                        target_owned_abs_off = primary_owned.abs_off
+                        target_sidecar_owned_abs_off = sidecar_owned.abs_off
+                else:
+                    reusable_owned = [slot for slot in owned_candidates if slot.reusable]
+                    if not reusable_owned:
+                        refusal = "No validated empty owned-car slots available"
+                    else:
+                        target_owned_abs_off = reusable_owned[0].abs_off
 
             if refusal is None:
                 parts_candidates = self.get_parts_slot_statuses(reserved_parts_slots=reserved_parts_slots)
-                reusable_parts = [slot for slot in parts_candidates if slot.reusable]
-                if not reusable_parts:
-                    refusal = "No validated empty parts slots available"
+                if snapshot.has_visual_sidecar:
+                    primary_parts, sidecar_parts, saw_primary_parts = self._find_adjacent_parts_slot_pair(parts_candidates)
+                    if primary_parts is None or sidecar_parts is None:
+                        refusal = (
+                            "No adjacent empty parts slot for sidecar"
+                            if saw_primary_parts else
+                            "No validated empty parts slots available"
+                        )
+                    else:
+                        target_parts_slot = primary_parts.parts_slot
+                        target_sidecar_parts_slot = sidecar_parts.parts_slot
                 else:
-                    target_parts_slot = reusable_parts[0].parts_slot
+                    reusable_parts = [slot for slot in parts_candidates if slot.reusable]
+                    if not reusable_parts:
+                        refusal = "No validated empty parts slots available"
+                    else:
+                        target_parts_slot = reusable_parts[0].parts_slot
 
             if refusal is None and target == "career":
                 career_candidates = self.get_career_slot_statuses(
@@ -967,6 +1240,8 @@ class SaveFile:
             target_career_slot=target_career_slot,
             refusal_reason=refusal,
             warnings=tuple(warnings),
+            target_sidecar_owned_abs_off=target_sidecar_owned_abs_off,
+            target_sidecar_parts_slot=target_sidecar_parts_slot,
         )
 
     def inject_snapshot(
@@ -981,11 +1256,24 @@ class SaveFile:
             raise ValueError(plan.refusal_reason)
         if plan.target_owned_abs_off is None or plan.target_parts_slot is None:
             raise ValueError("Snapshot injector plan did not produce target owned/parts slots")
+        sidecar = snapshot.optional_visual_sidecar if snapshot.has_visual_sidecar else None
         if target_mode == "career":
             if plan.target_career_slot is None:
                 raise ValueError("Career injection requires an allocated career slot")
             self.clear_pursuit_slot(plan.target_career_slot)
-        self._write_parts_block_for_slot(plan.target_parts_slot, snapshot.normalized_primary_build_block)
+        self._write_parts_block_for_slot_with_marker(
+            plan.target_parts_slot,
+            snapshot.normalized_primary_build_block,
+            placeholder_marker=False,
+        )
+        if sidecar is not None:
+            if plan.target_sidecar_owned_abs_off is None or plan.target_sidecar_parts_slot is None:
+                raise ValueError("Sidecar snapshot plan did not produce adjacent sidecar slots")
+            self._write_parts_block_for_slot_with_marker(
+                plan.target_sidecar_parts_slot,
+                sidecar.normalized_sidecar_build_block,
+                placeholder_marker=True,
+            )
         injected_car_number = self._allocate_injected_car_number()
         self._write_owned_car_record(
             plan.target_owned_abs_off,
@@ -996,6 +1284,18 @@ class SaveFile:
             parts_slot=plan.target_parts_slot,
             career_slot=(plan.target_career_slot if plan.target_career_slot is not None else self.EMPTY_CAREER_SLOT),
         )
+        if sidecar is not None:
+            self._write_owned_car_record(
+                plan.target_sidecar_owned_abs_off,
+                car_number=self.EMPTY_CAR_NUMBER,
+                signature=sidecar.owned_record_signature_clone,
+                location_bits=sidecar.owned_record_location_bits,
+                misc_bits=sidecar.owned_record_misc_bits,
+                parts_slot=plan.target_sidecar_parts_slot,
+                career_slot=self.EMPTY_CAREER_SLOT,
+            )
+        if target_mode == "career" and self.get_active_career_record() is None:
+            self.ensure_active_career_pointer_valid()
         return plan
 
     def get_garage_slots(self) -> List[ResolvedGarageEntry]:
@@ -1121,15 +1421,44 @@ class SaveFile:
         normalized[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4] = b"\x00\x00\x00\x00"
         return bytes(normalized)
 
-    def _visual_table_values(self) -> Tuple[int, ...]:
-        values: List[int] = []
+    def _visual_table_entries(self) -> Tuple[bytes, ...]:
+        entries: List[bytes] = []
         start = self.VISUAL_TABLE_BASE_OFFSET
         for idx in range(self.VISUAL_TABLE_ENTRY_COUNT):
             off = start + idx * self.VISUAL_TABLE_ENTRY_STRIDE
+            end = off + self.VISUAL_TABLE_ENTRY_STRIDE
+            if end > len(self.data):
+                break
+            entries.append(bytes(self.data[off:end]))
+        return tuple(entries)
+
+    def _visual_table_values(self, value_offset: int = VISUAL_TABLE_LEGACY_VALUE_OFFSET) -> Tuple[int, ...]:
+        values: List[int] = []
+        start = self.VISUAL_TABLE_BASE_OFFSET
+        for idx in range(self.VISUAL_TABLE_ENTRY_COUNT):
+            off = start + idx * self.VISUAL_TABLE_ENTRY_STRIDE + int(value_offset)
             if off >= len(self.data):
                 break
             values.append(self._read_u8(off))
         return tuple(values)
+
+    @classmethod
+    def _is_visual_table_tail_entry(cls, entry: bytes) -> bool:
+        return (
+            len(entry) == cls.VISUAL_TABLE_ENTRY_STRIDE
+            and entry[3] != 0xFF
+            and entry[7] != 0xFF
+        )
+
+    @classmethod
+    def _effective_visual_table_entries(cls, entries: Tuple[bytes, ...]) -> Tuple[bytes, ...]:
+        if entries and cls._is_visual_table_tail_entry(entries[-1]):
+            return entries[:-1]
+        return entries
+
+    @staticmethod
+    def _entry_probe_values(entries: Tuple[bytes, ...], value_offset: int) -> Tuple[int, ...]:
+        return tuple(int(entry[int(value_offset)]) for entry in entries if len(entry) > int(value_offset))
 
     @staticmethod
     def _uniform_value(values: Tuple[int, ...]) -> Optional[int]:
@@ -1191,7 +1520,19 @@ class SaveFile:
         record = self._owned_record_by_abs_off(abs_off)
         parts = self.get_parts_record(record.parts_slot)
         primary_block = self._read_parts_block_bytes(record.parts_slot)
-        visual_table_values = self._visual_table_values()
+        visual_table_entries = self._visual_table_entries()
+        visual_table_values = self._visual_table_values(self.VISUAL_TABLE_LEGACY_VALUE_OFFSET)
+        visual_table_mode_values = self._visual_table_values(self.VISUAL_TABLE_MODE_OFFSET)
+        effective_visual_entries = self._effective_visual_table_entries(visual_table_entries)
+        effective_visual_mode_values = self._entry_probe_values(
+            effective_visual_entries,
+            self.VISUAL_TABLE_MODE_OFFSET,
+        )
+        mode_tail_value = (
+            int(visual_table_entries[-1][self.VISUAL_TABLE_MODE_OFFSET])
+            if visual_table_entries and self._is_visual_table_tail_entry(visual_table_entries[-1])
+            else None
+        )
         performance_levels = tuple(
             (
                 name,
@@ -1231,10 +1572,15 @@ class SaveFile:
             primary_visual_fields=self._primary_visual_summary(primary_block),
             optional_visual_sidecar=self._detect_visual_sidecar(record),
             requires_unresolved_global_visual_state=any(
-                value != self.VISUAL_TABLE_DEFAULT_VALUE for value in visual_table_values
+                value != self.VISUAL_TABLE_DEFAULT_VALUE for value in effective_visual_mode_values
             ),
+            global_visual_table_entries=visual_table_entries,
             global_visual_table_values=visual_table_values,
             global_visual_table_uniform_value=self._uniform_value(visual_table_values),
+            global_visual_table_mode_offset=self.VISUAL_TABLE_MODE_OFFSET,
+            global_visual_table_mode_values=visual_table_mode_values,
+            global_visual_table_mode_uniform_value=self._uniform_value(effective_visual_mode_values),
+            global_visual_table_mode_tail_value=mode_tail_value,
         )
 
     def get_full_car_build_snapshots(self) -> List[FullCarBuildSnapshot]:
@@ -1247,7 +1593,7 @@ class SaveFile:
     def snapshot_to_dict(self, snapshot: FullCarBuildSnapshot) -> Dict[str, object]:
         sidecar = snapshot.optional_visual_sidecar
         return {
-            "kind": "boss_car_build_snapshot_v2",
+            "kind": self.SNAPSHOT_KIND,
             "source_file": str(self.path),
             "display_name": snapshot.display_name,
             "source_kind": snapshot.source_kind,
@@ -1289,12 +1635,18 @@ class SaveFile:
             "requires_unresolved_global_visual_state": snapshot.requires_unresolved_global_visual_state,
             "global_visual_table": {
                 "base_offset": self.VISUAL_TABLE_BASE_OFFSET,
-                "entry_count": len(snapshot.global_visual_table_values),
+                "entry_count": len(snapshot.global_visual_table_entries),
                 "stride": self.VISUAL_TABLE_ENTRY_STRIDE,
                 "default_value": self.VISUAL_TABLE_DEFAULT_VALUE,
+                "entries_hex": tuple(self._bytes_to_hex(entry) for entry in snapshot.global_visual_table_entries),
                 "uniform_value": snapshot.global_visual_table_uniform_value,
                 "unique_values": sorted(set(int(value) for value in snapshot.global_visual_table_values)),
                 "values_hex": " ".join(f"{value:02X}" for value in snapshot.global_visual_table_values),
+                "mode_offset": snapshot.global_visual_table_mode_offset,
+                "mode_uniform_value": snapshot.global_visual_table_mode_uniform_value,
+                "mode_tail_value": snapshot.global_visual_table_mode_tail_value,
+                "mode_unique_values": sorted(set(int(value) for value in snapshot.global_visual_table_mode_values)),
+                "mode_values_hex": " ".join(f"{value:02X}" for value in snapshot.global_visual_table_mode_values),
             },
         }
 

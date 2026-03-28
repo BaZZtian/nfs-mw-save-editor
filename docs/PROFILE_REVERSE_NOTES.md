@@ -288,20 +288,189 @@ Many visual saves also flip a 57-entry table near `0x5577`:
 
 - `57` entries
 - stride `0x08`
-- one observed byte per entry
-- values seen so far: `0x00`, `0x01`, `0x02`, `0x03`
+- each entry is now treated as a full `8-byte` record, not a single-byte value
+- the old byte-`+0` probe is preserved only as legacy/debug output
+- the new primary reverse focus is byte `+4` inside each 8-byte entry
+
+#### Expanded Ford GT visual-state matrix
+
+The initial Ford GT paint-type trio was useful because it proved that the active signal sits at
+byte `+4`, not byte `+0`. A broader controlled set was then checked using the same career
+`Ford GT` (`parts_slot 46`):
+
+- `fixture-a(stock Ford_GT(gloss_A))`
+- `fixture-a(Ford_GT_gloss_color_B)`
+- `fixture-a(Ford_GT_metallic_color_A)`
+- `fixture-a(Ford_GT_mettalic_color_B)`
+- `fixture-a(Ford_GT_custom_color_A)`
+- `fixture-a(Ford_GT_custom_color_B)`
+- `fixture-a(Ford_GT_only_changed_body_vinyl)`
+- `fixture-a(Ford_GT_only_changed_window_tint)`
+
+Block-level findings versus the gloss-A baseline:
+
+- `gloss_B`: only `+0x098` (`Paint`) changed, from `0x2E` to `0x34`
+- `metallic_A`: only `+0x098` changed, from `0x2E` to `0x7E`
+- `metallic_B`: only `+0x098` changed, from `0x2E` to `0x83`
+- `custom_A`: only `+0x098` changed, from `0x2E` to `0xCE`
+- `custom_B`: only `+0x098` changed, from `0x2E` to `0xD3`
+- `body_vinyl`: only `+0x09A..+0x09B` changed, from `FFFF` to `0D12`
+- `window_tint`: only `+0x106` changed, from `0x23` to `0x24`
+
+At the same time, the `0x5577` table showed:
+
+- byte `+0` of each entry stayed unchanged across this whole set
+- byte `+4` changed across the repeated regular rows
+- the final entry (`index 56`) has a different structure and behaves like a special tail /
+  footer record rather than another regular mode row
+- the first `56` regular rows changed together, while the tail stayed `0x00`
+
+Observed `0x5577+4` regular-row values from this set:
+
+- `gloss_A` (`Paint = 0x2E`) -> `0x01`
+- `gloss_B` (`Paint = 0x34`) -> `0x03`
+- `metallic_A` (`Paint = 0x7E`) -> `0x00`
+- `metallic_B` (`Paint = 0x83`) -> `0x02`
+- `custom_A` (`Paint = 0xCE`) -> `0x02`
+- `custom_B` (`Paint = 0xD3`) -> `0x00`
+- `body_vinyl` only -> `0x00`
+- `window_tint` only -> `0x03`
 
 Current interpretation:
 
-- it correlates with menu/category context
-- it is not yet proven to be a clean per-car visual payload
-- it is treated as unresolved global/frontend state for now
+- byte `+4` is still the leading active subfield; current evidence does **not** support byte
+  `+0` as the operative visual-mode signal
+- the earlier over-simple mapping `Gloss/Metallic/Custom -> 0x01/0x00/0x02` is **not**
+  sufficient
+- `0x5577+4` is a broader global visual mode/state byte:
+  - color changes within the same paint family can move it
+  - non-paint edits such as body vinyl and window tint can move it
+- the table is still not proven to be fully car-local replay data; it may remain
+  global/frontend state that influences how the current visual mode is interpreted
 
 Current policy:
 
-- snapshot extraction may report that this table also changed
-- injector work must not replay this table until a controlled A/B test proves it is
-  required and car-local
+- snapshot extraction reports both:
+  - legacy byte `+0`
+  - primary mode byte `+4`
+- injector work must not replay this state yet
+- future injector work may target only the uniform `0x5577+4` mode value if later
+  testing proves that this is sufficient for visual fidelity
+
+#### Ford GT -> Fiat active-car swap test
+
+Two additional saves were compared:
+
+- `fixture-a(switched_to_Ford_GT)`
+- `fixture-a(switched_to_Fiat)`
+
+The intent of this test was to see whether merely changing the active car in the garage would
+reset or rewrite `0x5577` if the table were just an "active car render cache".
+
+Observed result:
+
+- `0x5577` had **zero diffs** between the two saves
+- byte `+0` stayed unchanged
+- byte `+4` stayed unchanged
+- the special tail entry also stayed unchanged
+
+At the same time, the save did record the active-car switch elsewhere:
+
+- absolute offset `0x4034` changed from `95` to `104`
+- these values match the career `car_number` values of:
+  - `Ford GT` -> `95`
+  - `Fiat Punto` -> `104`
+- the remaining diffs were integrity/header-tail bytes (`CRC` / `MD5`) rather than new visual
+  payload
+
+Implication:
+
+- the simple hypothesis "`0x5577` is only a transient cache for whichever car is currently
+  active" is **not** supported by this test
+- active-car selection can change while `0x5577` remains bit-identical
+- `0x5577+4` still looks like a broader global visual/render state, but not a field that simply
+  tracks the currently selected car
+
+#### Active career car pointer (`0x4034`)
+
+Three additional controlled saves were then compared from `GaySIgm`:
+
+- `Active_Normal_A(active car is cobalt_ss)`
+- `Active_Normal_B(active car is supra(should be pink slip))`
+- `Active_Normal_C(active car is a stock audiTT)`
+
+Observed result:
+
+- the only diff in the local window `0x4020..0x4050` between each pair was byte `0x4034`
+- `0x4034` matched the selected career-linked car's `car_number` in all three cases:
+  - `Chevrolet Cobalt SS` (`Career`, slot `0`) -> `car_number 81`
+  - `Toyota Supra` (`Pink Slip`, slot `3`) -> `car_number 84`
+  - `Audi TT Quattro` (`Career`, slot `1`) -> `car_number 85`
+- this confirms that the field tracks the active career vehicle by **car number**, not by
+  `career_slot`
+- `Pink Slip` cars participate in the same mechanism; there is no separate active-pointer format
+  for them
+
+Broken-state correlation on `fixture-e`:
+
+- in healthy saves where `Ford Mustang GT?` was still career-linked, `0x4034 = 81` matched that
+  same car in `Career`
+- in `fixture-e.bak_20260328_140200.bak_20260328_155920`, only one career car remained
+  (`BMW M3 GTR`, pink-slip slot `25`), but `0x4034` still stayed `81`
+- in both broken saves:
+  - `fixture-e(broken save nr2)`
+  - `fixture-e(broken save, 0 career cars)`
+  `0x4034` still stayed `81`
+- in those broken saves, `81` resolved to `Ford Mustang GT?` in `My Cars`, not to any
+  career-linked vehicle
+
+Implication:
+
+- `0x4034` is now strongly confirmed as the save-level active career-car pointer
+- the field stores the active vehicle's **career car_number**
+- the broken `Career garage` state correlates with leaving `0x4034` pointing at a car that no
+  longer exists among career-linked owned records
+- future safety/product work should no longer be framed as only "keep at least one car in
+  Career"; it must preserve or retarget `0x4034` to a surviving career-linked car
+
+#### End-to-end injector fidelity test (`My Cars`, primary-only donor)
+
+An end-to-end injector test was then run with:
+
+- donor: `fixture-a` -> `My Cars Ford GT` (`primary-only`, `requires_unresolved_global_visual_state = true`)
+- clean target: `fixture-c`
+- injection mode: `My Cars`
+
+Pre-game injected state:
+
+- the injected `Ford GT` had the donor `0x198` build copied correctly:
+  - `Paint = 54`
+  - `Body Vinyl = CF 11`
+  - `Window Tint = 23`
+- no sidecar was present
+- `0x5577+4` in the clean target stayed at the target-native value `0x00`, not the donor's
+  `0x03`
+- `0x5577+0` also started at `0x00`
+
+After first in-game render and save (`fixture-c(TARGET_after_first_render_save)`):
+
+- in-game appearance was visually correct in `My Cars`
+- the injected `Ford GT` primary block had **zero diffs**
+- sidecar presence still stayed `false`
+- `0x5577+4` still stayed `0x00`
+- `0x5577+0` changed uniformly across all `57` table rows from `0x00` to `0x03`
+
+Implication:
+
+- for this primary-only donor, injector fidelity did **not** require replaying the donor's
+  `0x5577+4` value
+- the game rendered the car correctly from the copied primary build data alone
+- the save written after first render did mutate `0x5577`, but it mutated byte `+0`, not byte
+  `+4`
+- current strongest product conclusion:
+  - `Injector v1` can keep ignoring `0x5577` for primary-only snapshot injection
+  - any future `0x5577` work is now about understanding post-render global state, not about
+    unblocking current primary-only injector fidelity
 
 ## Resulting implementation model
 
@@ -342,7 +511,8 @@ Still not fully resolved:
 - exact meaning of flags at `+0x0C`
 - exact meaning of field at `+0x0E`
 - the meaning of the rest of the per-car parts block outside `+0x118..+0x137`
-- how current car / active career car is marked in these structures
+- the surrounding structure around `0x4034`; only the active-car byte itself is currently
+  confirmed
 
 Current fallback policy:
 - if a future save has no unique car-record match for a pursuit slot, the UI should

@@ -6,15 +6,19 @@ from typing import Callable, Optional
 from PySide6.QtCore import Qt, QPropertyAnimation, QTimer, QEasingCurve, Property, QRectF
 from PySide6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
 from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QSlider,
     QSizePolicy,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -368,3 +372,90 @@ class ToastNotification(QLabel):
     def show_toast(parent: QWidget, message: str, *, is_error: bool = False):
         """Show a brief toast notification."""
         ToastNotification(parent, message, is_error=is_error)
+
+
+class ApplyConfirmDialog(QDialog):
+    """Compact apply-confirm dialog with collapsible details."""
+
+    def __init__(
+        self,
+        parent: QWidget,
+        *,
+        summary_lines: list[str],
+        detail_sections: list[tuple[str, list[str]]],
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Apply changes?")
+        self.setModal(True)
+        self.setSizeGripEnabled(True)
+        self._base_width = 760
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(10)
+
+        title = QLabel("Apply changes to loaded save (memory only)?")
+        title.setObjectName("sectionLabel")
+        root.addWidget(title)
+
+        summary = QLabel("\n".join(summary_lines))
+        summary.setWordWrap(True)
+        summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        root.addWidget(summary)
+
+        detail_count = sum(len(lines) for _, lines in detail_sections)
+        self.details_toggle = QToolButton()
+        self.details_toggle.setText(f"Show Details ({detail_count})")
+        self.details_toggle.setCheckable(True)
+        self.details_toggle.setChecked(False)
+        self.details_toggle.toggled.connect(self._on_toggle_details)
+        root.addWidget(self.details_toggle, 0, Qt.AlignLeft)
+
+        self.details_edit = QPlainTextEdit()
+        self.details_edit.setReadOnly(True)
+        self.details_edit.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        self.details_edit.setMaximumHeight(320)
+        self.details_edit.setMinimumHeight(220)
+        self.details_edit.setVisible(False)
+        self.details_edit.setPlainText(self._details_text(detail_sections))
+        root.addWidget(self.details_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self._apply_btn = buttons.button(QDialogButtonBox.Ok)
+        self._cancel_btn = buttons.button(QDialogButtonBox.Cancel)
+        if self._apply_btn is not None:
+            self._apply_btn.setText("Apply")
+        if self._cancel_btn is not None:
+            self._cancel_btn.setText("Cancel")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+        root.activate()
+        self._collapsed_height = max(320, self.sizeHint().height() + 12)
+        self.resize(self._base_width, self._collapsed_height)
+
+    @staticmethod
+    def _details_text(detail_sections: list[tuple[str, list[str]]]) -> str:
+        chunks: list[str] = []
+        for title, lines in detail_sections:
+            if not lines:
+                continue
+            chunks.append(f"{title}:\n" + "\n".join(lines))
+        return "\n\n".join(chunks)
+
+    def _on_toggle_details(self, checked: bool) -> None:
+        self.details_toggle.setText("Hide Details" if checked else f"Show Details ({self._detail_line_count()})")
+        self.details_edit.setVisible(checked)
+        layout = self.layout()
+        if layout is not None:
+            layout.activate()
+        if checked:
+            target_height = max(self._collapsed_height + 260, self.sizeHint().height() + 12)
+            self.resize(max(self.width(), self._base_width), target_height)
+        else:
+            self.resize(max(self.width(), self._base_width), self._collapsed_height)
+
+    def _detail_line_count(self) -> int:
+        text = self.details_edit.toPlainText()
+        return 0 if not text else len([line for line in text.splitlines() if line.strip()])

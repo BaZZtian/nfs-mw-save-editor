@@ -9,6 +9,7 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
+    QDialog,
     QFileDialog,
     QGraphicsOpacityEffect,
     QGridLayout,
@@ -28,7 +29,7 @@ from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES
 from ui.icon_map import cat_icon_path
 from ui.pages.constants import *
-from ui.widgets import TokenCard, ToastNotification
+from ui.widgets import ApplyConfirmDialog, TokenCard, ToastNotification
 
 logger = logging.getLogger(__name__)
 
@@ -534,7 +535,7 @@ class JunkmanMixin:
                 mapping[tid] = 0
         return mapping
 
-    def _summary_text(self, want_full: Dict[int, int]) -> str:
+    def _build_apply_summary(self, want_full: Dict[int, int]) -> Dict[str, object]:
         total = self._slot_capacity()
         used = sum(self.have_counts.values())
         needed = sum(want_full.values())
@@ -569,6 +570,7 @@ class JunkmanMixin:
                     if (
                         int(want_loc) == SaveFile.MY_CARS_FLAG
                         and have_slot != SaveFile.EMPTY_CAREER_SLOT
+                        and entry.has_pursuit_link
                     ):
                         extra = f", frees slot {have_slot + 1}"
                     transfer_changes.append(
@@ -617,30 +619,40 @@ class JunkmanMixin:
                     slot_text += f", career {plan.target_career_slot + 1}"
                 warn_text = " [0x5577 ignored]" if plan.warnings else ""
                 injection_changes.append(f"{entry.display_name}: inject to {target_mode} -> {slot_text}{warn_text}")
-        summary = (
-            f"Total slots: {total}\n"
-            f"Used (have): {used}\n"
-            f"Free: {free}\n"
-            f"Need (want): {needed}\n"
-            f"Delta: +{add} / -{remove}\n"
-            f"Unknown preserved: {unknown_preserved}"
-        )
-        summary += f"\n\nProfile changes:\nMoney: {self.have_money} -> {self.want_money if self.want_money is not None else self.have_money}"
+        money_want = self.want_money if self.want_money is not None else self.have_money
+        summary_lines = [
+            f"Token slots: total {total}, used {used}, free {free}, need {needed}, delta +{add} / -{remove}",
+            f"Unknown preserved: {unknown_preserved}",
+            f"Money: {self.have_money} -> {money_want}",
+        ]
         if self.garage_detection_error:
-            summary += f"\nGarage: unavailable ({self.garage_detection_error})"
+            summary_lines.append(f"Garage: unavailable ({self.garage_detection_error})")
         else:
-            summary += f"\nTotal Bounty / Rating: {have_total_bounty} -> {want_total_bounty}"
-            if slot_changes:
-                summary += "\n" + "\n".join(slot_changes)
-            if transfer_changes:
-                summary += "\n\nTransfer changes:\n" + "\n".join(transfer_changes)
+            summary_lines.append(f"Total Bounty / Rating: {have_total_bounty} -> {want_total_bounty}")
+        summary_lines.append(f"Transfer changes: {len(transfer_changes)}")
+        summary_lines.append(f"Tuning changes: {len(parts_changes)}")
+        summary_lines.append(f"Snapshot injections: {len(injection_changes)}")
+
+        detail_sections: List[tuple[str, List[str]]] = [
+            ("Profile changes", [f"Money: {self.have_money} -> {money_want}"]),
+        ]
+        if self.garage_detection_error:
+            detail_sections[0][1].append(f"Garage unavailable: {self.garage_detection_error}")
+        else:
+            detail_sections[0][1].append(f"Total Bounty / Rating: {have_total_bounty} -> {want_total_bounty}")
+            detail_sections[0][1].extend(slot_changes)
+        if transfer_changes:
+            detail_sections.append(("Transfer changes", transfer_changes))
         if self.parts_detection_error:
-            summary += f"\n\nParts: unavailable ({self.parts_detection_error})"
+            detail_sections.append(("Tuning changes", [f"Unavailable: {self.parts_detection_error}"]))
         elif parts_changes:
-            summary += "\n\nParts changes:\n" + "\n".join(parts_changes)
+            detail_sections.append(("Tuning changes", parts_changes))
         if injection_changes:
-            summary += "\n\nSnapshot injections:\n" + "\n".join(injection_changes)
-        return summary
+            detail_sections.append(("Snapshot injections", injection_changes))
+        return {
+            "summary_lines": summary_lines,
+            "detail_sections": detail_sections,
+        }
 
     def on_apply_changes(self):
         if not self.savefile:
@@ -669,23 +681,26 @@ class JunkmanMixin:
                 f"Need {needed} slots, have {cap}.\nReduce Want values or clear a category.",
             )
             return
-        summary = self._summary_text(want_full)
-        res = QMessageBox.question(
-            self, "Apply changes?",
-            summary + "\n\nApply changes to loaded save (memory only)?",
-            QMessageBox.Yes | QMessageBox.No,
+        if not self.garage_detection_error and self._staged_career_vehicle_count() <= 0:
+            QMessageBox.warning(self, "Apply blocked", self._career_empty_block_reason())
+            return
+        summary = self._build_apply_summary(want_full)
+        dialog = ApplyConfirmDialog(
+            self,
+            summary_lines=list(summary["summary_lines"]),
+            detail_sections=list(summary["detail_sections"]),
         )
-        if res != QMessageBox.Yes:
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
             self.savefile.set_junkman_counts(want_full, clamp_max=self._current_max())
             self.savefile.set_money(self.want_money if self.want_money is not None else self.have_money)
+            pending_transfers = []
             if not self.garage_detection_error:
                 for slot_index, value in self._current_slot_bounties().items():
                     self.savefile.set_slot_bounty(slot_index, value)
                 current_locations = self._current_owned_locations()
                 current_career_slots = self._current_owned_career_slots()
-                pending_transfers = []
                 for entry in self.garage_transfer_entries:
                     have_loc = self.have_owned_locations.get(entry.abs_off, entry.location_bits)
                     want_loc = current_locations.get(entry.abs_off, have_loc)
@@ -723,6 +738,8 @@ class JunkmanMixin:
                         target_mode,
                         desired_career_slot=plan.target_career_slot,
                     )
+            if not self.garage_detection_error and (pending_transfers or self.want_snapshot_injections):
+                self.savefile.ensure_active_career_pointer_valid()
             if not self.parts_detection_error:
                 current_levels = self._current_parts_levels()
                 current_masks = self._current_parts_masks()

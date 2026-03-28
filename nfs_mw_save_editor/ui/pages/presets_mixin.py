@@ -277,9 +277,19 @@ class PresetsMixin:
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
-            # Warning badge — visible when visuals are incomplete
-            if entry.requires_unresolved_global_visual_state or entry.has_visual_sidecar:
-                warn_badge = QLabel("Visuals incomplete in v1")
+            # Capability / warning badges
+            if entry.has_visual_sidecar:
+                warn_badge = QLabel("Requires adjacent sidecar pair")
+                warn_badge.setObjectName("partsCardNote")
+                warn_badge.setWordWrap(True)
+                card_layout.addWidget(warn_badge)
+            if entry.requires_unresolved_global_visual_state:
+                mode_text = (
+                    f"0x5577+{entry.global_visual_table_mode_offset:X} ignored in v1"
+                    if entry.global_visual_table_mode_uniform_value is not None
+                    else "0x5577 global state ignored in v1"
+                )
+                warn_badge = QLabel(mode_text)
                 warn_badge.setObjectName("partsCardNote")
                 warn_badge.setWordWrap(True)
                 card_layout.addWidget(warn_badge)
@@ -352,9 +362,17 @@ class PresetsMixin:
                 f"Snapshot ID: {entry.snapshot_id[:60]}...",
             ]
             if entry.has_visual_sidecar:
-                tooltip_parts.append("Has visual sidecar (not injectable in v1)")
+                tooltip_parts.append("Has visual sidecar")
             if entry.requires_unresolved_global_visual_state:
-                tooltip_parts.append("Requires 0x5577 global visual table (not injected in v1)")
+                if entry.global_visual_table_mode_uniform_value is not None:
+                    tooltip_parts.append(
+                        f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} mode 0x{entry.global_visual_table_mode_uniform_value:02X} "
+                        "(not injected in v1)"
+                    )
+                else:
+                    tooltip_parts.append(
+                        f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} visual mode state (not injected in v1)"
+                    )
             card.setToolTip("\n".join(tooltip_parts))
 
             row = idx // columns
@@ -448,6 +466,18 @@ class PresetsMixin:
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
+            mode_label = QLabel(
+                f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode "
+                + (
+                    f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
+                    if snapshot.global_visual_table_mode_uniform_value is not None
+                    else "mixed"
+                )
+            )
+            mode_label.setObjectName("partsCardNote")
+            mode_label.setWordWrap(True)
+            card_layout.addWidget(mode_label)
+
             # Separator
             sep = QFrame()
             sep.setFrameShape(QFrame.HLine)
@@ -481,10 +511,22 @@ class PresetsMixin:
                 sc = snapshot.optional_visual_sidecar
                 tooltip_parts.append(f"Sidecar: slot {sc.sidecar_parts_slot}, block 0x{sc.sidecar_block_abs_off:05X}")
             if snapshot.global_visual_table_values:
-                if snapshot.global_visual_table_uniform_value is not None:
-                    tooltip_parts.append(f"Visual Table: 0x{snapshot.global_visual_table_uniform_value:02X}")
+                if snapshot.global_visual_table_mode_uniform_value is not None:
+                    tooltip_parts.append(
+                        f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: "
+                        f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
+                    )
                 else:
-                    tooltip_parts.append("Visual Table: mixed values")
+                    tooltip_parts.append(f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: mixed")
+                if snapshot.global_visual_table_mode_tail_value is not None:
+                    tooltip_parts.append(
+                        f"0x5577+{snapshot.global_visual_table_mode_offset:X} Tail: "
+                        f"0x{snapshot.global_visual_table_mode_tail_value:02X}"
+                    )
+                if snapshot.global_visual_table_uniform_value is not None:
+                    tooltip_parts.append(f"0x5577+0 Legacy: 0x{snapshot.global_visual_table_uniform_value:02X}")
+                else:
+                    tooltip_parts.append("0x5577+0 Legacy: mixed values")
             card.setToolTip("\n".join(tooltip_parts))
 
             row = idx // columns
@@ -546,7 +588,10 @@ class PresetsMixin:
         if snapshot is None:
             QMessageBox.warning(self, "Snapshot unavailable", "Could not resolve the requested build snapshot.")
             return
-        default_name = f"boss_car_snapshot_{self._snapshot_filename_slug(snapshot.display_name)}.json"
+        default_name = (
+            f"{self.savefile.SNAPSHOT_FILE_PREFIX}"
+            f"{self._snapshot_filename_slug(snapshot.display_name)}.json"
+        )
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Export build snapshot",

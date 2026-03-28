@@ -287,6 +287,16 @@ class VisualSidecarTemplate:
 
 
 @dataclass(frozen=True)
+class SnapshotVisualSidecarEntry:
+    owned_record_signature_clone: bytes
+    owned_record_location_bits: int
+    owned_record_misc_bits: int
+    sidecar_parts_slot_offset: int
+    normalized_sidecar_build_block: bytes
+    sidecar_marker: bytes
+
+
+@dataclass(frozen=True)
 class FullCarBuildSnapshot:
     car_abs_off: int
     display_name: str
@@ -305,8 +315,13 @@ class FullCarBuildSnapshot:
     primary_visual_fields: Tuple[Tuple[str, str], ...]
     optional_visual_sidecar: Optional[VisualSidecarTemplate]
     requires_unresolved_global_visual_state: bool
+    global_visual_table_entries: Tuple[bytes, ...]
     global_visual_table_values: Tuple[int, ...]
     global_visual_table_uniform_value: Optional[int]
+    global_visual_table_mode_offset: int
+    global_visual_table_mode_values: Tuple[int, ...]
+    global_visual_table_mode_uniform_value: Optional[int]
+    global_visual_table_mode_tail_value: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -324,6 +339,11 @@ class SnapshotLibraryEntry:
     primary_visual_fields: Tuple[Tuple[str, str], ...]
     requires_unresolved_global_visual_state: bool
     has_visual_sidecar: bool
+    optional_visual_sidecar: Optional[SnapshotVisualSidecarEntry] = None
+    global_visual_table_uniform_value: Optional[int] = None
+    global_visual_table_mode_offset: int = 4
+    global_visual_table_mode_uniform_value: Optional[int] = None
+    global_visual_table_mode_tail_value: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -338,3 +358,5 @@ class SnapshotInjectionPlan:
     target_career_slot: Optional[int]
     refusal_reason: Optional[str]
     warnings: Tuple[str, ...]
+    target_sidecar_owned_abs_off: Optional[int] = None
+    target_sidecar_parts_slot: Optional[int] = None

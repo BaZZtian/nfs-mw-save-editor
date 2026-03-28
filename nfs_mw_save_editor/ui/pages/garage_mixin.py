@@ -1,6 +1,7 @@
 """Garage page: transfer cards, allocator, pink-slip badges, garage handlers."""
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Dict, List, Optional, Set, Tuple
 
 from PySide6.QtCore import Qt
@@ -35,6 +36,30 @@ from ui.widgets import ShimmerFrame
 
 
 class GarageMixin:
+    def _career_empty_block_reason(self) -> str:
+        return "Career garage cannot be empty; keep at least one Career car"
+
+    def _is_career_like_state(self, location_bits: int, career_slot: int) -> bool:
+        return (
+            int(location_bits) in (SaveFile.CAREER_FLAG, SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG)
+            and int(career_slot) != SaveFile.EMPTY_CAREER_SLOT
+        )
+
+    def _staged_career_vehicle_count(self) -> int:
+        count = sum(
+            1
+            for entry in self._current_transfer_entries()
+            if self._is_career_like_state(entry.location_bits, entry.career_slot)
+        )
+        plans, _, _, _ = self._current_snapshot_injection_plans()
+        for snapshot_id, target_mode in self._ordered_snapshot_injection_items():
+            plan = plans.get(snapshot_id)
+            if plan is None or plan.refusal_reason:
+                continue
+            if str(target_mode) in ("career", "pink_slip") and plan.target_career_slot is not None:
+                count += 1
+        return count
+
     def _build_garage_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -146,6 +171,8 @@ class GarageMixin:
             want_slot = current_career_slots.get(entry.abs_off, have_slot)
             if have_slot == SaveFile.EMPTY_CAREER_SLOT:
                 continue
+            if not entry.has_pursuit_link:
+                continue
             if int(want_loc) == SaveFile.MY_CARS_FLAG or int(want_slot) == SaveFile.EMPTY_CAREER_SLOT:
                 cleared.add(int(have_slot))
         return cleared
@@ -205,8 +232,12 @@ class GarageMixin:
             if plan.refusal_reason is None:
                 if plan.target_owned_abs_off is not None:
                     reserved_owned.add(plan.target_owned_abs_off)
+                if plan.target_sidecar_owned_abs_off is not None:
+                    reserved_owned.add(plan.target_sidecar_owned_abs_off)
                 if plan.target_parts_slot is not None:
                     reserved_parts.add(plan.target_parts_slot)
+                if plan.target_sidecar_parts_slot is not None:
+                    reserved_parts.add(plan.target_sidecar_parts_slot)
                 if plan.target_career_slot is not None:
                     reserved_career.add(plan.target_career_slot)
         return plans, reserved_owned, reserved_parts, reserved_career
@@ -223,18 +254,37 @@ class GarageMixin:
             reserved_career_slots=reserved_career,
         )
 
-    def _garage_transfer_plan_for(self, abs_off: int, target_mode: str) -> OwnedCarTransferPlan:
+    def _garage_transfer_plan_for(
+        self,
+        abs_off: int,
+        target_mode: str,
+        desired_career_slot: Optional[int] = None,
+        allow_restore_to_nonvalidated_slot: bool = False,
+    ) -> OwnedCarTransferPlan:
         if not self.savefile:
             raise ValueError("No save loaded")
         _, _, _, reserved_career = self._current_snapshot_injection_plans()
-        return self.savefile.plan_owned_car_transfer(
+        plan = self.savefile.plan_owned_car_transfer(
             abs_off,
             target_mode,
             location_overrides=self._current_owned_locations(),
             career_slot_overrides=self._current_owned_career_slots(),
             cleared_slots=self._current_cleared_pursuit_slots(),
             reserved_career_slots=reserved_career,
+            desired_career_slot=desired_career_slot,
+            allow_restore_to_nonvalidated_slot=allow_restore_to_nonvalidated_slot,
         )
+        if plan.refusal_reason is None and str(target_mode) == "my_cars":
+            current_locations = self._current_owned_locations()
+            current_career_slots = self._current_owned_career_slots()
+            current_loc = int(current_locations.get(abs_off, plan.source_location_bits))
+            current_slot = int(current_career_slots.get(abs_off, plan.source_career_slot))
+            if (
+                self._is_career_like_state(current_loc, current_slot)
+                and self._staged_career_vehicle_count() <= 1
+            ):
+                return replace(plan, refusal_reason=self._career_empty_block_reason())
+        return plan
 
     def _garage_card_entries(self) -> List[ResolvedTransferCarEntry]:
         entries = list(self._current_transfer_entries())
@@ -398,12 +448,13 @@ class GarageMixin:
             card.setObjectName("garageCard")
             card.setProperty("changed", changed)
             card.setProperty("occupied", True)
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
             card.setMinimumWidth(240)
 
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(14, 12, 14, 12)
             card_layout.setSpacing(6)
+            card_layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
 
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
@@ -481,6 +532,15 @@ class GarageMixin:
                 release_note.setObjectName("mutedLabel")
                 release_note.setWordWrap(True)
                 card_layout.addWidget(release_note)
+            elif (
+                not slot.is_my_cars
+                and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+                and not slot.has_pursuit_link
+            ):
+                orphan_note = QLabel("No pursuit record")
+                orphan_note.setObjectName("mutedLabel")
+                orphan_note.setWordWrap(True)
+                card_layout.addWidget(orphan_note)
 
             if relevant_plans and all(plan.refusal_reason for plan in relevant_plans):
                 blocker = QLabel(next(plan.refusal_reason for plan in relevant_plans if plan.refusal_reason))
@@ -490,8 +550,8 @@ class GarageMixin:
 
             self._garage_card_widgets_page[slot.abs_off] = card
 
-            # Bounty / pursuit stats only for Career cars
-            if not slot.is_my_cars:
+            # Bounty / pursuit stats only for cars with a real pursuit record
+            if not slot.is_my_cars and slot.has_pursuit_link:
                 sep = QFrame()
                 sep.setFrameShape(QFrame.HLine)
                 sep.setObjectName("garageCardSep")
@@ -543,6 +603,7 @@ class GarageMixin:
 
             row = idx // columns
             col = idx % columns
+            card.setMinimumHeight(card.sizeHint().height() + 4)
             self.garage_cards_layout.addWidget(card, row, col)
 
         for col in range(columns):
@@ -593,6 +654,10 @@ class GarageMixin:
                 card_w.setProperty("changed", changed)
                 card_w.style().unpolish(card_w)
                 card_w.style().polish(card_w)
+                layout = card_w.layout()
+                if layout is not None:
+                    layout.activate()
+                    card_w.setMinimumHeight(layout.sizeHint().height() + 4)
 
         if hasattr(self, "garage_diag_text"):
             entries = self._garage_unlinked_entries()
@@ -622,8 +687,31 @@ class GarageMixin:
     def on_garage_transfer_requested(self, abs_off: int, target_mode: str) -> None:
         if self._profile_refreshing or not self.savefile or self.garage_detection_error:
             return
+        desired_slot = None
+        effective_target = str(target_mode)
+        allow_nonvalidated_restore = False
+        if effective_target == "career":
+            have_loc = int(self.have_owned_locations.get(abs_off, 0))
+            have_slot = int(self.have_owned_career_slots.get(abs_off, SaveFile.EMPTY_CAREER_SLOT))
+            current_loc = int(self._current_owned_locations().get(abs_off, have_loc))
+            current_slot = int(self._current_owned_career_slots().get(abs_off, have_slot))
+            if (
+                current_loc == SaveFile.MY_CARS_FLAG
+                and current_slot == SaveFile.EMPTY_CAREER_SLOT
+                and have_loc in (SaveFile.CAREER_FLAG, SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG)
+                and have_slot != SaveFile.EMPTY_CAREER_SLOT
+            ):
+                desired_slot = have_slot
+                effective_target = "pink_slip" if have_loc == (SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG) else "career"
+                original_entry = next((item for item in self.garage_transfer_entries if item.abs_off == abs_off), None)
+                allow_nonvalidated_restore = bool(original_entry is not None and not original_entry.has_pursuit_link)
         try:
-            plan = self._garage_transfer_plan_for(abs_off, target_mode)
+            plan = self._garage_transfer_plan_for(
+                abs_off,
+                effective_target,
+                desired_career_slot=desired_slot,
+                allow_restore_to_nonvalidated_slot=allow_nonvalidated_restore,
+            )
         except Exception as exc:
             QMessageBox.warning(self, "Transfer unavailable", str(exc))
             return
