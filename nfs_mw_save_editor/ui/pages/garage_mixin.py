@@ -1,7 +1,9 @@
 """Garage page: transfer cards, allocator, pink-slip badges, garage handlers."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, replace
+from time import perf_counter
 from typing import Dict, List, Optional, Set, Tuple
 
 from PySide6.QtCore import Qt
@@ -34,6 +36,8 @@ from resources import resource_path
 from ui.pages.constants import *
 from ui.rendering import ChunkedGridController, refresh_widget_style
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class GarageCardVm:
@@ -44,6 +48,23 @@ class GarageCardVm:
     have_bounty: int
     plan_my_cars: OwnedCarTransferPlan
     plan_career: OwnedCarTransferPlan
+
+
+@dataclass
+class GarageCardHandle:
+    card: QFrame
+    slot_label: QLabel
+    source_label: QLabel
+    active_badge: QLabel
+    name_label: QLabel
+    parts_badge: QLabel
+    loc_badge: QLabel
+    misc_badge: QLabel
+    move_my_cars_btn: QPushButton
+    move_career_btn: QPushButton
+    utility_label: QLabel
+    bounty_edit: Optional[QLineEdit]
+    bounty_current_label: Optional[QLabel]
 
 
 class GarageMixin:
@@ -151,6 +172,9 @@ class GarageMixin:
         self.garage_card_edits: Dict[int, QLineEdit] = {}
         self.garage_card_current_labels: Dict[int, QLabel] = {}
         self._garage_card_widgets_page: Dict[int, QFrame] = {}
+        self._garage_card_handles: Dict[int, GarageCardHandle] = {}
+        self._garage_visible_order: List[int] = []
+        self._garage_live_vm_map: Dict[int, GarageCardVm] = {}
         self._garage_render_controller = ChunkedGridController(
             self,
             name="Garage",
@@ -474,9 +498,13 @@ class GarageMixin:
         label.setWordWrap(True)
         return label
 
-    def _garage_card_view_models(self) -> List[GarageCardVm]:
+    def _garage_card_view_models(
+        self,
+        entries: Optional[List[ResolvedTransferCarEntry]] = None,
+    ) -> List[GarageCardVm]:
         if not self.savefile or self.garage_detection_error:
             return []
+        target_entries = list(entries) if entries is not None else self._garage_card_entries()
         current_locations = self._current_owned_locations()
         current_career_slots = self._current_owned_career_slots()
         cleared_slots = self._current_cleared_pursuit_slots()
@@ -489,7 +517,7 @@ class GarageMixin:
         )
 
         view_models: List[GarageCardVm] = []
-        for slot in self._garage_card_entries():
+        for slot in target_entries:
             career_slot = slot.career_slot
             view_models.append(
                 GarageCardVm(
@@ -530,6 +558,110 @@ class GarageMixin:
             )
         return view_models
 
+    def _garage_visible_vm_map(self) -> Dict[int, GarageCardVm]:
+        entry_by_abs_off = {
+            int(entry.abs_off): entry for entry in self._current_transfer_entries()
+        }
+        frozen_entries = [
+            entry_by_abs_off[key]
+            for key in self._garage_visible_order
+            if key in entry_by_abs_off
+        ]
+        return {vm.slot.abs_off: vm for vm in self._garage_card_view_models(frozen_entries)}
+
+    def _apply_garage_source_badge(self, label: QLabel, source_kind: str) -> None:
+        if source_kind == "Career":
+            label.setObjectName("careerSourceBadge")
+        elif source_kind == "My Cars":
+            label.setObjectName("myCarsSourceBadge")
+        elif source_kind == "Pink Slip":
+            label.setObjectName("pinkSlipBadgeText")
+        else:
+            label.setObjectName("garageCardStatBadge")
+        label.setText(source_kind)
+        label.setToolTip(source_kind)
+        refresh_widget_style(label)
+
+    def _garage_card_tooltip(self, slot: ResolvedTransferCarEntry) -> str:
+        return (
+            f"Parts Slot {slot.parts_slot} | Loc 0x{slot.location_bits:02X} | "
+            f"Misc 0x{slot.misc_bits:02X}"
+        )
+
+    def _garage_action_tooltip(
+        self,
+        slot: ResolvedTransferCarEntry,
+        target_mode: str,
+        plan: OwnedCarTransferPlan,
+    ) -> str:
+        if plan.refusal_reason:
+            return str(plan.refusal_reason)
+        if target_mode == "my_cars":
+            return (
+                "Move this car to My Cars and free its linked Career slot."
+                if slot.has_pursuit_link
+                else "Move this car to My Cars."
+            )
+        return "Move this car into the next validated Career slot."
+
+    def _garage_utility_summary(self, vm: GarageCardVm) -> Tuple[str, str]:
+        slot = vm.slot
+        visible_plan = vm.plan_career if slot.is_my_cars else vm.plan_my_cars
+        if visible_plan.refusal_reason:
+            return "Blocked", str(visible_plan.refusal_reason)
+        if vm.plan_my_cars.clears_pursuit_slot and vm.plan_my_cars.cleared_source_career_slot is not None:
+            detail = f"Moving to My Cars frees Career Slot {vm.plan_my_cars.cleared_source_career_slot + 1}."
+            return f"Frees Slot {vm.plan_my_cars.cleared_source_career_slot + 1}", detail
+        if (
+            not slot.is_my_cars
+            and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+            and not slot.has_pursuit_link
+        ):
+            return "No pursuit link", "No pursuit record is linked to this car."
+        return "Ready", "Action state is valid."
+
+    def _apply_garage_card_vm(self, handle: GarageCardHandle, vm: GarageCardVm) -> None:
+        slot = vm.slot
+        slot_text = (
+            f"Career Slot {slot.career_slot + 1}"
+            if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+            else f"Car #{slot.car_number:02X}"
+        )
+        handle.card.setProperty("changed", vm.changed)
+        handle.slot_label.setText(slot_text)
+        self._apply_garage_source_badge(handle.source_label, slot.source_kind)
+        handle.active_badge.setVisible(vm.is_active)
+        handle.name_label.setText(slot.display_name)
+        handle.parts_badge.setText(f"Parts Slot {slot.parts_slot}")
+        handle.loc_badge.setText(f"Loc 0x{slot.location_bits:02X}")
+        handle.misc_badge.setText(f"Misc 0x{slot.misc_bits:02X}")
+        handle.card.setToolTip(self._garage_card_tooltip(slot))
+
+        handle.move_my_cars_btn.setVisible(not slot.is_my_cars)
+        handle.move_my_cars_btn.setEnabled(vm.plan_my_cars.refusal_reason is None)
+        handle.move_my_cars_btn.setToolTip(self._garage_action_tooltip(slot, "my_cars", vm.plan_my_cars))
+
+        handle.move_career_btn.setVisible(slot.is_my_cars)
+        handle.move_career_btn.setEnabled(vm.plan_career.refusal_reason is None)
+        handle.move_career_btn.setToolTip(self._garage_action_tooltip(slot, "career", vm.plan_career))
+
+        utility_text, utility_tooltip = self._garage_utility_summary(vm)
+        handle.utility_label.setText(utility_text)
+        handle.utility_label.setToolTip(utility_tooltip)
+
+        if handle.bounty_edit is not None and handle.bounty_current_label is not None:
+            edit_enabled = (
+                not slot.is_my_cars
+                and slot.has_pursuit_link
+                and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+            )
+            handle.bounty_edit.setEnabled(edit_enabled)
+            if edit_enabled:
+                self._set_profile_line_edit(handle.bounty_edit, vm.current_bounty, True)
+            handle.bounty_current_label.setText(self._format_current_value(vm.have_bounty))
+
+        refresh_widget_style(handle.card)
+
     def _build_garage_card(self, vm: GarageCardVm) -> QWidget:
         slot = vm.slot
         card = QFrame()
@@ -555,12 +687,15 @@ class GarageMixin:
         slot_label.setObjectName("garageCardSlot")
         slot_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         slot_label.setAlignment(Qt.AlignCenter)
-        source_label = self._make_garage_source_badge(slot.source_kind)
+        source_label = QLabel()
+        source_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        source_label.setAlignment(Qt.AlignCenter)
+        active_badge = self._make_active_car_badge()
+        active_badge.setVisible(False)
         header_row.addWidget(slot_label, 0, Qt.AlignLeft)
         header_row.addStretch(1)
         header_row.addWidget(source_label, 0, Qt.AlignRight)
-        if vm.is_active:
-            header_row.addWidget(self._make_active_car_badge(), 0, Qt.AlignRight)
+        header_row.addWidget(active_badge, 0, Qt.AlignRight)
         card_layout.addLayout(header_row)
 
         name_label = QLabel(slot.display_name)
@@ -571,82 +706,49 @@ class GarageMixin:
 
         meta_row = QHBoxLayout()
         meta_row.setSpacing(8)
-        for text in [
-            f"Parts Slot {slot.parts_slot}",
-            f"Loc 0x{slot.location_bits:02X}",
-            f"Misc 0x{slot.misc_bits:02X}",
-        ]:
-            badge = QLabel(text)
-            badge.setObjectName("garageCardStatBadge")
-            badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            badge.setAlignment(Qt.AlignCenter)
+        parts_badge = QLabel()
+        parts_badge.setObjectName("garageCardStatBadge")
+        parts_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        parts_badge.setAlignment(Qt.AlignCenter)
+        loc_badge = QLabel()
+        loc_badge.setObjectName("garageCardStatBadge")
+        loc_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        loc_badge.setAlignment(Qt.AlignCenter)
+        misc_badge = QLabel()
+        misc_badge.setObjectName("garageCardStatBadge")
+        misc_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        misc_badge.setAlignment(Qt.AlignCenter)
+        for badge in [parts_badge, loc_badge, misc_badge]:
             meta_row.addWidget(badge, 0, Qt.AlignLeft)
         meta_row.addStretch(1)
         card_layout.addLayout(meta_row)
 
-        card.setToolTip(
-            f"Parts Slot {slot.parts_slot} | Loc 0x{slot.location_bits:02X} | Misc 0x{slot.misc_bits:02X}"
-        )
-
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        relevant_plans: List[OwnedCarTransferPlan] = []
-        if not slot.is_my_cars:
-            btn_my_cars = QPushButton("Move to My Cars")
-            btn_my_cars.setObjectName("partsBulkBtn")
-            btn_my_cars.setEnabled(vm.plan_my_cars.refusal_reason is None)
-            btn_my_cars.setToolTip(
-                vm.plan_my_cars.refusal_reason
-                or (
-                    "Move this car to My Cars and free its linked Career slot."
-                    if slot.has_pursuit_link
-                    else "Move this car to My Cars."
-                )
-            )
-            btn_my_cars.clicked.connect(
-                lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "my_cars")
-            )
-            action_row.addWidget(btn_my_cars)
-            relevant_plans.append(vm.plan_my_cars)
-
-        if slot.is_my_cars:
-            btn_career = QPushButton("Move to Career")
-            btn_career.setObjectName("partsBulkBtn")
-            btn_career.setEnabled(vm.plan_career.refusal_reason is None)
-            btn_career.setToolTip(vm.plan_career.refusal_reason or "Move this car into the next validated Career slot.")
-            btn_career.clicked.connect(
-                lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "career")
-            )
-            action_row.addWidget(btn_career)
-            relevant_plans.append(vm.plan_career)
+        btn_my_cars = QPushButton("Move to My Cars")
+        btn_my_cars.setObjectName("partsBulkBtn")
+        btn_my_cars.clicked.connect(
+            lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "my_cars")
+        )
+        action_row.addWidget(btn_my_cars)
+        btn_career = QPushButton("Move to Career")
+        btn_career.setObjectName("partsBulkBtn")
+        btn_career.clicked.connect(
+            lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "career")
+        )
+        action_row.addWidget(btn_career)
         action_row.addStretch(1)
         card_layout.addLayout(action_row)
 
-        if vm.plan_my_cars.clears_pursuit_slot and vm.plan_my_cars.cleared_source_career_slot is not None:
-            release_note = QLabel(
-                f"Moving to My Cars frees Career Slot {vm.plan_my_cars.cleared_source_career_slot + 1}."
-            )
-            release_note.setObjectName("mutedLabel")
-            release_note.setWordWrap(True)
-            card_layout.addWidget(release_note)
-        elif (
-            not slot.is_my_cars
-            and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
-            and not slot.has_pursuit_link
-        ):
-            orphan_note = QLabel("No pursuit record is linked to this car.")
-            orphan_note.setObjectName("mutedLabel")
-            orphan_note.setWordWrap(True)
-            card_layout.addWidget(orphan_note)
-
-        if relevant_plans and all(plan.refusal_reason for plan in relevant_plans):
-            blocker = QLabel(f"Blocked: {next(plan.refusal_reason for plan in relevant_plans if plan.refusal_reason)}")
-            blocker.setObjectName("mutedLabel")
-            blocker.setWordWrap(True)
-            card_layout.addWidget(blocker)
+        utility_label = QLabel()
+        utility_label.setObjectName("mutedLabel")
+        utility_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        card_layout.addWidget(utility_label)
 
         self._garage_card_widgets_page[slot.abs_off] = card
 
+        bounty_edit: Optional[QLineEdit] = None
+        bounty_current_label: Optional[QLabel] = None
         if not slot.is_my_cars and slot.has_pursuit_link:
             sep = QFrame()
             sep.setFrameShape(QFrame.HLine)
@@ -669,6 +771,8 @@ class GarageMixin:
             current = QLabel(self._format_current_value(vm.have_bounty))
             current.setObjectName("garageCardCurrent")
             current.setAlignment(Qt.AlignCenter)
+            bounty_edit = edit
+            bounty_current_label = current
 
             if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT:
                 self.garage_card_edits[slot.career_slot] = edit
@@ -696,19 +800,47 @@ class GarageMixin:
             stats_row.addWidget(bust_lbl, 0, Qt.AlignRight)
             card_layout.addLayout(stats_row)
 
+        handle = GarageCardHandle(
+            card=card,
+            slot_label=slot_label,
+            source_label=source_label,
+            active_badge=active_badge,
+            name_label=name_label,
+            parts_badge=parts_badge,
+            loc_badge=loc_badge,
+            misc_badge=misc_badge,
+            move_my_cars_btn=btn_my_cars,
+            move_career_btn=btn_career,
+            utility_label=utility_label,
+            bounty_edit=bounty_edit,
+            bounty_current_label=bounty_current_label,
+        )
+        self._garage_card_handles[slot.abs_off] = handle
+        self._apply_garage_card_vm(handle, vm)
+
         card.setMinimumHeight(card.sizeHint().height() + 4)
         refresh_widget_style(card)
         return card
+
+    def _build_garage_card_for_key(self, abs_off: int) -> QWidget:
+        vm = self._garage_live_vm_map.get(int(abs_off))
+        if vm is None:
+            raise KeyError(f"Missing garage VM for abs_off={abs_off}")
+        return self._build_garage_card(vm)
 
     def _rebuild_garage_cards(self, *, animate: bool = False, reset_scroll: bool = False) -> None:
         self.garage_card_edits = {}
         self.garage_card_current_labels = {}
         self._garage_card_widgets_page = {}
+        self._garage_card_handles = {}
+        view_models = self._garage_card_view_models()
+        self._garage_visible_order = [vm.slot.abs_off for vm in view_models]
+        self._garage_live_vm_map = {vm.slot.abs_off: vm for vm in view_models}
         columns = max(1, self._detect_garage_slot_columns())
         self._garage_slot_columns = columns
         self._garage_render_controller.schedule_render(
-            self._garage_card_view_models(),
-            build_widget=self._build_garage_card,
+            self._garage_visible_order,
+            build_widget=self._build_garage_card_for_key,
             columns=columns,
             empty_widget_factory=self._garage_empty_widget,
             animate=animate,
@@ -733,6 +865,37 @@ class GarageMixin:
             )
         )
 
+    def _sync_garage_summary_chrome(self, *, loaded: bool) -> None:
+        snapshot = self._current_allocator_snapshot() if loaded else None
+        if snapshot is None:
+            self.garage_alloc_owned.setText("Owned empty: -")
+            self.garage_alloc_career.setText("Career empty: -")
+            self.garage_alloc_blocked.setText("Blocked: -")
+        else:
+            self.garage_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
+            self.garage_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
+            blocked_total = len(snapshot.blocked_owned_slots) + len(snapshot.blocked_career_slots)
+            self.garage_alloc_blocked.setText(f"Blocked: {blocked_total}")
+        self._sync_garage_diagnostics_visibility()
+        self._refresh_garage_diagnostics_text()
+
+    def _patch_garage_cards_in_place(self) -> None:
+        if not self._garage_page_visible():
+            self._mark_garage_cards_dirty()
+            return
+        started = perf_counter()
+        vm_map = self._garage_visible_vm_map()
+        self._garage_live_vm_map.update(vm_map)
+        patched = 0
+        for abs_off, handle in list(self._garage_card_handles.items()):
+            vm = vm_map.get(abs_off)
+            if vm is None:
+                continue
+            self._apply_garage_card_vm(handle, vm)
+            patched += 1
+        self._garage_cards_dirty = True
+        logger.debug("Garage interactive patch: %d card(s) in %d ms", patched, int((perf_counter() - started) * 1000))
+
     def _refresh_garage_page(self, reason: str = "data_change") -> None:
         loaded = self.savefile is not None
         if hasattr(self, "chk_show_unlinked_pursuits"):
@@ -745,19 +908,7 @@ class GarageMixin:
             self._mark_garage_cards_dirty()
             return
 
-        snapshot = self._current_allocator_snapshot() if loaded else None
-        if snapshot is None:
-            self.garage_alloc_owned.setText("Owned empty: -")
-            self.garage_alloc_career.setText("Career empty: -")
-            self.garage_alloc_blocked.setText("Blocked: -")
-        else:
-            self.garage_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
-            self.garage_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
-            blocked_total = len(snapshot.blocked_owned_slots) + len(snapshot.blocked_career_slots)
-            self.garage_alloc_blocked.setText(f"Blocked: {blocked_total}")
-
-        self._sync_garage_diagnostics_visibility()
-        self._refresh_garage_diagnostics_text()
+        self._sync_garage_summary_chrome(loaded=loaded)
 
         columns = max(1, self._detect_garage_slot_columns())
         self._garage_slot_columns = columns
@@ -834,13 +985,12 @@ class GarageMixin:
         self.want_owned_career_slots[abs_off] = (
             SaveFile.EMPTY_CAREER_SLOT if plan.target_career_slot is None else int(plan.target_career_slot)
         )
-        self._mark_garage_cards_dirty()
+        self._garage_cards_dirty = True
         self._mark_parts_cards_dirty()
         self._mark_presets_cards_dirty(library=True, snapshot=False)
+        self._sync_garage_summary_chrome(loaded=True)
+        self._patch_garage_cards_in_place()
         self._update_action_states()
-        self._refresh_garage_page(reason="data_change")
-        self._refresh_parts_page(reason="data_change")
-        self._refresh_presets_page(reason="data_change")
 
     def on_garage_slot_edit_finished(self, slot_index: int) -> None:
         if self._profile_refreshing or not self.savefile or self.garage_detection_error:
@@ -857,6 +1007,7 @@ class GarageMixin:
             self.want_slot_bounties = dict(self.have_slot_bounties)
         self.want_slot_bounties[slot_index] = value
         self._refresh_garage_totals(True)
-        self._mark_garage_cards_dirty()
-        self._refresh_garage_page(reason="data_change")
+        self._garage_cards_dirty = True
+        self._sync_garage_summary_chrome(loaded=True)
+        self._patch_garage_cards_in_place()
         self._update_action_states()

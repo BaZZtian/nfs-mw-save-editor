@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Dict, List
 
 from PySide6.QtCore import Qt
@@ -30,6 +32,8 @@ from ui.pages.constants import *
 from ui.rendering import ChunkedGridController, refresh_widget_style
 from ui.widgets import ToastNotification, build_perf_level_row
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class SnapshotLibraryCardVm:
@@ -43,6 +47,18 @@ class SnapshotLibraryCardVm:
 @dataclass(frozen=True)
 class SnapshotCardVm:
     snapshot: FullCarBuildSnapshot
+
+
+@dataclass
+class SnapshotLibraryCardHandle:
+    card: QFrame
+    bucket_badge: QLabel
+    source_badge: QLabel
+    name_label: QLabel
+    inject_my_btn: QPushButton
+    inject_career_btn: QPushButton
+    unstage_btn: QPushButton
+    utility_label: QLabel
 
 
 class PresetsMixin:
@@ -156,6 +172,9 @@ class PresetsMixin:
 
         self._snapshot_card_widgets: Dict[int, QFrame] = {}
         self._snapshot_library_card_widgets: Dict[str, QFrame] = {}
+        self._snapshot_library_card_handles: Dict[str, SnapshotLibraryCardHandle] = {}
+        self._snapshot_library_visible_order: List[str] = []
+        self._snapshot_library_live_vm_map: Dict[str, SnapshotLibraryCardVm] = {}
         self._snapshot_library_render_controller = ChunkedGridController(
             self,
             name="PresetsLibrary",
@@ -260,8 +279,11 @@ class PresetsMixin:
         label.setWordWrap(True)
         return label
 
-    def _snapshot_library_card_view_models(self) -> List[SnapshotLibraryCardVm]:
-        visible_entries = self._snapshot_library_entries()
+    def _snapshot_library_card_view_models(
+        self,
+        entries: List[SnapshotLibraryEntry] | None = None,
+    ) -> List[SnapshotLibraryCardVm]:
+        visible_entries = list(entries) if entries is not None else self._snapshot_library_entries()
         plans, reserved_owned, reserved_parts, reserved_career = self._current_snapshot_injection_plans()
         current_locations = self._current_owned_locations()
         current_career_slots = self._current_owned_career_slots()
@@ -301,6 +323,133 @@ class PresetsMixin:
                 )
             )
         return view_models
+
+    def _snapshot_library_visible_vm_map(self) -> Dict[str, SnapshotLibraryCardVm]:
+        entries_by_id = {entry.snapshot_id: entry for entry in self.snapshot_library}
+        frozen_entries = [
+            entries_by_id[key]
+            for key in self._snapshot_library_visible_order
+            if key in entries_by_id
+        ]
+        return {
+            vm.entry.snapshot_id: vm
+            for vm in self._snapshot_library_card_view_models(frozen_entries)
+        }
+
+    def _snapshot_library_utility_summary(self, vm: SnapshotLibraryCardVm) -> tuple[str, str]:
+        tooltip_parts: List[str] = []
+        if not self.savefile:
+            return "Open a save to stage", "Open a save to stage an injection."
+        if vm.staged_mode is not None:
+            tooltip_parts.append(
+                "Staged target: "
+                + ("My Cars" if vm.staged_mode == "my_cars" else "Career")
+            )
+            if vm.staged_plan is not None and vm.staged_plan.refusal_reason is None:
+                target_bits: List[str] = []
+                if vm.staged_plan.target_parts_slot is not None:
+                    target_bits.append(f"Parts Slot {vm.staged_plan.target_parts_slot}")
+                if vm.staged_plan.target_career_slot is not None:
+                    target_bits.append(f"Career Slot {vm.staged_plan.target_career_slot + 1}")
+                if target_bits:
+                    tooltip_parts.append("Resolved to " + " | ".join(target_bits))
+            if vm.staged_plan is not None and vm.staged_plan.refusal_reason:
+                tooltip_parts.append(f"Staged result blocked: {vm.staged_plan.refusal_reason}")
+                return "Staged blocked", "\n".join(tooltip_parts)
+            return (
+                "Staged to My Cars" if vm.staged_mode == "my_cars" else "Staged to Career",
+                "\n".join(tooltip_parts) or "Injection is staged.",
+            )
+        if vm.plan_my is not None and vm.plan_my.refusal_reason:
+            tooltip_parts.append(f"My Cars blocked: {vm.plan_my.refusal_reason}")
+        if vm.plan_career is not None and vm.plan_career.refusal_reason:
+            tooltip_parts.append(f"Career blocked: {vm.plan_career.refusal_reason}")
+        if tooltip_parts:
+            if len(tooltip_parts) == 2:
+                return "All targets blocked", "\n".join(tooltip_parts)
+            return (
+                "My Cars blocked" if tooltip_parts[0].startswith("My Cars") else "Career blocked",
+                "\n".join(tooltip_parts),
+            )
+        return "Ready to stage", "Both injection targets are currently available."
+
+    def _snapshot_library_card_tooltip(self, vm: SnapshotLibraryCardVm) -> str:
+        entry = vm.entry
+        tooltip_parts = [
+            f"File: {entry.file_label}",
+            f"Snapshot ID: {entry.snapshot_id[:60]}...",
+        ]
+        if entry.has_visual_sidecar:
+            tooltip_parts.append("Has visual sidecar")
+        if entry.requires_unresolved_global_visual_state:
+            if entry.global_visual_table_mode_uniform_value is not None:
+                tooltip_parts.append(
+                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} mode 0x{entry.global_visual_table_mode_uniform_value:02X} "
+                    "(not injected in v1)"
+                )
+            else:
+                tooltip_parts.append(
+                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} visual mode state (not injected in v1)"
+                )
+        utility_text, utility_tooltip = self._snapshot_library_utility_summary(vm)
+        tooltip_parts.append(f"State: {utility_text}")
+        if utility_tooltip:
+            tooltip_parts.append(utility_tooltip)
+        return "\n".join(tooltip_parts)
+
+    def _apply_snapshot_library_card_vm(self, handle: SnapshotLibraryCardHandle, vm: SnapshotLibraryCardVm) -> None:
+        entry = vm.entry
+        handle.card.setProperty("changed", vm.staged_mode is not None)
+        handle.bucket_badge.setText(entry.library_bucket)
+        self._apply_garage_source_badge(handle.source_badge, entry.source_kind)
+        handle.name_label.setText(entry.display_name)
+
+        handle.inject_my_btn.setText("Add to My Cars")
+        handle.inject_my_btn.setEnabled(
+            self.savefile is not None
+            and vm.plan_my is not None
+            and vm.plan_my.refusal_reason is None
+        )
+        handle.inject_career_btn.setText("Add to Career")
+        handle.inject_career_btn.setEnabled(
+            self.savefile is not None
+            and vm.plan_career is not None
+            and vm.plan_career.refusal_reason is None
+        )
+        if vm.staged_mode == "my_cars":
+            handle.inject_my_btn.setText("Staged: My Cars")
+            handle.inject_my_btn.setEnabled(False)
+        elif vm.staged_mode == "career":
+            handle.inject_career_btn.setText("Staged: Career")
+            handle.inject_career_btn.setEnabled(False)
+        handle.unstage_btn.setVisible(vm.staged_mode is not None)
+        handle.unstage_btn.setEnabled(vm.staged_mode is not None)
+
+        utility_text, utility_tooltip = self._snapshot_library_utility_summary(vm)
+        handle.utility_label.setText(utility_text)
+        handle.utility_label.setToolTip(utility_tooltip)
+        handle.card.setToolTip(self._snapshot_library_card_tooltip(vm))
+        refresh_widget_style(handle.card)
+
+    def _patch_snapshot_library_cards_in_place(self) -> None:
+        if not (self._presets_page_visible() and getattr(self, "presets_view", "Library") == "Library"):
+            self._mark_presets_cards_dirty(library=True, snapshot=False)
+            return
+        started = perf_counter()
+        vm_map = self._snapshot_library_visible_vm_map()
+        self._snapshot_library_live_vm_map.update(vm_map)
+        patched = 0
+        for snapshot_id, handle in list(self._snapshot_library_card_handles.items()):
+            vm = vm_map.get(snapshot_id)
+            if vm is None:
+                continue
+            self._apply_snapshot_library_card_vm(handle, vm)
+            patched += 1
+        logger.debug(
+            "Presets Library interactive patch: %d card(s) in %d ms",
+            patched,
+            int((perf_counter() - started) * 1000),
+        )
 
     # ── Library cards ───────────────────────────────────────────
 
@@ -724,7 +873,10 @@ class PresetsMixin:
         bucket_badge.setAlignment(Qt.AlignCenter)
         header_row.addWidget(bucket_badge, 0, Qt.AlignLeft)
         header_row.addStretch(1)
-        header_row.addWidget(self._make_garage_source_badge(entry.source_kind), 0, Qt.AlignRight)
+        source_badge = QLabel()
+        source_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        source_badge.setAlignment(Qt.AlignCenter)
+        header_row.addWidget(source_badge, 0, Qt.AlignRight)
         card_layout.addLayout(header_row)
 
         name_label = QLabel(entry.display_name)
@@ -783,82 +935,55 @@ class PresetsMixin:
         )
         action_row.addWidget(inject_career)
 
-        if vm.staged_mode == "my_cars":
-            inject_my.setText("Staged: My Cars")
-            inject_my.setEnabled(False)
-        elif vm.staged_mode == "career":
-            inject_career.setText("Staged: Career")
-            inject_career.setEnabled(False)
-
-        if vm.staged_mode is not None:
-            unstage_btn = QPushButton("Unstage")
-            unstage_btn.setObjectName("partsBulkBtn")
-            unstage_btn.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_clear_snapshot_injection(sid))
-            action_row.addWidget(unstage_btn)
+        unstage_btn = QPushButton("Unstage")
+        unstage_btn.setObjectName("partsBulkBtn")
+        unstage_btn.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_clear_snapshot_injection(sid))
+        action_row.addWidget(unstage_btn)
 
         action_row.addStretch(1)
         card_layout.addLayout(action_row)
 
-        if vm.staged_plan is not None and vm.staged_plan.refusal_reason is None:
-            staged_bits: List[str] = []
-            if vm.staged_plan.target_parts_slot is not None:
-                staged_bits.append(f"Parts Slot {vm.staged_plan.target_parts_slot}")
-            if vm.staged_plan.target_career_slot is not None:
-                staged_bits.append(f"Career Slot {vm.staged_plan.target_career_slot + 1}")
-            if staged_bits:
-                staged_label = QLabel("Staged target: " + " | ".join(staged_bits))
-                staged_label.setObjectName("partsCardNote")
-                staged_label.setWordWrap(True)
-                card_layout.addWidget(staged_label)
-
-        refusal_texts: List[str] = []
-        if not self.savefile:
-            refusal_texts.append("Open a save to stage an injection")
-        else:
-            if vm.plan_my is not None and vm.plan_my.refusal_reason and vm.staged_mode != "my_cars":
-                refusal_texts.append(f"My Cars blocked: {vm.plan_my.refusal_reason}")
-            if vm.plan_career is not None and vm.plan_career.refusal_reason and vm.staged_mode != "career":
-                refusal_texts.append(f"Career blocked: {vm.plan_career.refusal_reason}")
-            if vm.staged_plan is not None and vm.staged_plan.refusal_reason:
-                refusal_texts.append(f"Staged result blocked: {vm.staged_plan.refusal_reason}")
-        if refusal_texts:
-            refusal_label = QLabel(" | ".join(refusal_texts))
-            refusal_label.setObjectName("mutedLabel")
-            refusal_label.setWordWrap(True)
-            card_layout.addWidget(refusal_label)
-
-        tooltip_parts = [
-            f"File: {entry.file_label}",
-            f"Snapshot ID: {entry.snapshot_id[:60]}...",
-        ]
-        if entry.has_visual_sidecar:
-            tooltip_parts.append("Has visual sidecar")
-        if entry.requires_unresolved_global_visual_state:
-            if entry.global_visual_table_mode_uniform_value is not None:
-                tooltip_parts.append(
-                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} mode 0x{entry.global_visual_table_mode_uniform_value:02X} "
-                    "(not injected in v1)"
-                )
-            else:
-                tooltip_parts.append(
-                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} visual mode state (not injected in v1)"
-                )
-        card.setToolTip("\n".join(tooltip_parts))
+        utility_label = QLabel()
+        utility_label.setObjectName("mutedLabel")
+        utility_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        card_layout.addWidget(utility_label)
 
         card.setMinimumHeight(card.sizeHint().height() + 4)
         self._snapshot_library_card_widgets[entry.snapshot_id] = card
+        handle = SnapshotLibraryCardHandle(
+            card=card,
+            bucket_badge=bucket_badge,
+            source_badge=source_badge,
+            name_label=name_label,
+            inject_my_btn=inject_my,
+            inject_career_btn=inject_career,
+            unstage_btn=unstage_btn,
+            utility_label=utility_label,
+        )
+        self._snapshot_library_card_handles[entry.snapshot_id] = handle
+        self._apply_snapshot_library_card_vm(handle, vm)
         refresh_widget_style(card)
         return card
+
+    def _build_snapshot_library_card_for_key(self, snapshot_id: str) -> QWidget:
+        vm = self._snapshot_library_live_vm_map.get(str(snapshot_id))
+        if vm is None:
+            raise KeyError(f"Missing presets VM for snapshot_id={snapshot_id}")
+        return self._build_snapshot_library_card(vm)
 
     def _rebuild_snapshot_library_cards(self, *, animate: bool = False, reset_scroll: bool = False) -> None:
         if not hasattr(self, "snapshot_library_cards_layout"):
             return
         self._snapshot_library_card_widgets = {}
+        self._snapshot_library_card_handles = {}
+        view_models = self._snapshot_library_card_view_models()
+        self._snapshot_library_visible_order = [vm.entry.snapshot_id for vm in view_models]
+        self._snapshot_library_live_vm_map = {vm.entry.snapshot_id: vm for vm in view_models}
         columns = max(1, self._detect_library_card_columns())
         self._library_slot_columns = columns
         self._snapshot_library_render_controller.schedule_render(
-            self._snapshot_library_card_view_models(),
-            build_widget=self._build_snapshot_library_card,
+            self._snapshot_library_visible_order,
+            build_widget=self._build_snapshot_library_card_for_key,
             columns=columns,
             empty_widget_factory=self._snapshot_library_empty_widget,
             animate=animate,
@@ -1060,17 +1185,15 @@ class PresetsMixin:
             QMessageBox.warning(self, UI_TITLE_BLOCKED, reason)
             return
         self.want_snapshot_injections[entry.snapshot_id] = str(target_mode)
-        self._mark_presets_cards_dirty(library=True, snapshot=False)
+        self._snapshot_library_cards_dirty = True
         self._mark_garage_cards_dirty()
-        self._refresh_presets_page(reason="data_change")
-        self._refresh_garage_page(reason="data_change")
+        self._patch_snapshot_library_cards_in_place()
         self._update_action_states()
 
     def on_clear_snapshot_injection(self, snapshot_id: str) -> None:
         if str(snapshot_id) in self.want_snapshot_injections:
             self.want_snapshot_injections.pop(str(snapshot_id), None)
-            self._mark_presets_cards_dirty(library=True, snapshot=False)
+            self._snapshot_library_cards_dirty = True
             self._mark_garage_cards_dirty()
-            self._refresh_presets_page(reason="data_change")
-            self._refresh_garage_page(reason="data_change")
+            self._patch_snapshot_library_cards_in_place()
             self._update_action_states()
