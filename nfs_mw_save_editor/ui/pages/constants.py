@@ -1,7 +1,16 @@
 """Module-level constants shared across MainWindow and page mixins."""
 from dataclasses import dataclass
+
 CAT_LIST = ["All", "Performance", "Visual", "Police", "Unknown"]
 APP_NAME = "NFS_MW_Junkman_Editor"
+APP_DISPLAY_NAME = "NFS MW 2005 Save Editor"
+APP_VERSION = "v1.2.0-preview"
+APP_PLATFORM = "PC"
+APP_WINDOW_TITLE = f"{APP_DISPLAY_NAME} ({APP_PLATFORM} {APP_VERSION})"
+UI_TITLE_BLOCKED = "Blocked"
+UI_TITLE_UNAVAILABLE = "Unavailable"
+UI_TITLE_SNAPSHOT_UNAVAILABLE = "Snapshot unavailable"
+UI_TITLE_APPLY_FAILED = "Apply failed"
 CATALOG_FILENAME = "token_catalog.json"
 SAFE_TYPE_MIN = 1
 SAFE_TYPE_MAX = 22

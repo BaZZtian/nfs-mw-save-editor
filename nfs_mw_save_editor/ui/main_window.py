@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QSize, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QFileDialog,
     QFrame,
@@ -53,6 +54,7 @@ from ui.pages.parts_mixin import PartsMixin
 from ui.pages.presets_mixin import PresetsMixin
 from ui.pages.profile_mixin import ProfileMixin
 from ui.pages.settings_mixin import SettingsMixin
+from ui.theme import apply_theme, load_saved_theme_name, save_theme_name
 from ui.widgets import ToastNotification
 
 logger = logging.getLogger(__name__)
@@ -107,7 +109,10 @@ class MainWindow(
         icon_path = resource_path("assets", "icon.ico")
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
-        self.setWindowTitle("NFS MW 2005 - Junkman Inventory (PC v1.3)")
+        self.setWindowTitle(APP_WINDOW_TITLE)
+        app = QApplication.instance()
+        app_theme = app.property("themeName") if app is not None else None
+        self.theme_name = app_theme if isinstance(app_theme, str) and app_theme else load_saved_theme_name()
 
     #  state
         self.savefile: Optional[SaveFile] = None
@@ -744,6 +749,20 @@ class MainWindow(
                 os.startfile(folder)
             except Exception:
                 logger.warning("Failed to open catalog folder %s", folder, exc_info=True)
+
+    def on_theme_changed(self, theme_name: str) -> None:
+        resolved_name = save_theme_name(theme_name)
+        self.theme_name = resolved_name
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app, resolved_name)
+        if hasattr(self, "cmb_theme"):
+            self.cmb_theme.blockSignals(True)
+            self.cmb_theme.setCurrentText(resolved_name)
+            self.cmb_theme.blockSignals(False)
+        if hasattr(self, "_update_theme_preview"):
+            self._update_theme_preview(resolved_name)
+        self.update()
 
     def on_open(self, filepath: str | None = None):
         path = filepath
