@@ -247,7 +247,7 @@ class ProfileMixin:
             )
             self._refresh_garage_totals(loaded)
             self._refresh_profile_summary(loaded)
-            self._refresh_garage_page()
+            self._refresh_garage_page(reason="data_change")
         finally:
             self._profile_refreshing = False
 

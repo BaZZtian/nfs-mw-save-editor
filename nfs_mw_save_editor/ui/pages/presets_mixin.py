@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
 
@@ -23,10 +24,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core.models import FullCarBuildSnapshot, SnapshotLibraryEntry
+from core.models import FullCarBuildSnapshot, SnapshotInjectionPlan, SnapshotLibraryEntry
 from core.tuning_limits import get_model_tuning_limits
 from ui.pages.constants import *
+from ui.rendering import ChunkedGridController, refresh_widget_style
 from ui.widgets import ToastNotification, build_perf_level_row
+
+
+@dataclass(frozen=True)
+class SnapshotLibraryCardVm:
+    entry: SnapshotLibraryEntry
+    staged_mode: str | None
+    plan_my: SnapshotInjectionPlan | None
+    plan_career: SnapshotInjectionPlan | None
+    staged_plan: SnapshotInjectionPlan | None
+
+
+@dataclass(frozen=True)
+class SnapshotCardVm:
+    snapshot: FullCarBuildSnapshot
 
 
 class PresetsMixin:
@@ -140,31 +156,47 @@ class PresetsMixin:
 
         self._snapshot_card_widgets: Dict[int, QFrame] = {}
         self._snapshot_library_card_widgets: Dict[str, QFrame] = {}
-        self._rebuild_snapshot_library_cards()
-        self._rebuild_snapshot_cards()
+        self._snapshot_library_render_controller = ChunkedGridController(
+            self,
+            name="PresetsLibrary",
+            layout=self.snapshot_library_cards_layout,
+            scroll_area=self.snapshot_library_scroll,
+        )
+        self._snapshot_render_controller = ChunkedGridController(
+            self,
+            name="PresetsMySave",
+            layout=self.snapshot_cards_layout,
+            scroll_area=self.snapshot_cards_scroll,
+        )
         return w
+
+    def _presets_page_visible(self) -> bool:
+        return hasattr(self, "stack") and hasattr(self, "page_presets") and self.stack.currentWidget() is self.page_presets
 
     # ── View toggle / search ────────────────────────────────────
 
     def _on_presets_view_changed(self, view: str) -> None:
         self.presets_view = view
-        is_library = (view == "Library")
+        is_library = view == "Library"
         for btn in self.snapshot_library_filter_buttons.values():
             btn.setVisible(is_library)
         self.presets_stack.setCurrentIndex(0 if is_library else 1)
         self.presets_search.setPlaceholderText(
             "Search build library..." if is_library else "Search builds in this save...",
         )
-        self._refresh_presets_page()
+        self._refresh_presets_page(reason="page_enter")
 
     def _on_presets_search_changed(self) -> None:
-        self._refresh_presets_page()
+        self._mark_presets_cards_dirty()
+        if hasattr(self, "_presets_search_timer"):
+            self._presets_search_timer.start(150)
 
     def on_snapshot_library_filter_changed(self, value: str) -> None:
         self.snapshot_library_filter = str(value)
         for label, button in self.snapshot_library_filter_buttons.items():
             button.setChecked(label == self.snapshot_library_filter)
-        self._refresh_presets_page()
+        self._mark_presets_cards_dirty(library=True, snapshot=False)
+        self._refresh_presets_page(reason="filter_change")
 
     # ── Shared perf grid (read-only) ────────────────────────────
 
@@ -188,10 +220,17 @@ class PresetsMixin:
         return self._detect_col_count("snapshot_library_scroll", LIBRARY_TILE_MIN_WIDTH, ((1100, 2),))
 
     def _maybe_reflow_library_rows(self, force: bool = False) -> None:
-        self._maybe_reflow_cols(
-            "snapshot_library_scroll", "_library_slot_columns", LIBRARY_TILE_MIN_WIDTH,
-            ((1100, 2),), self._rebuild_snapshot_library_cards, force,
-        )
+        columns = max(1, self._detect_library_card_columns())
+        if not force and columns == getattr(self, "_library_slot_columns", 0):
+            return
+        self._library_slot_columns = columns
+        if self.presets_view != "Library":
+            return
+        if self._snapshot_library_cards_dirty or not self._snapshot_library_render_controller.has_rendered_content():
+            if self._presets_page_visible():
+                self._refresh_presets_page(reason="reflow")
+            return
+        self._snapshot_library_render_controller.reflow(columns)
 
     # ── Library entries filter ──────────────────────────────────
 
@@ -208,6 +247,60 @@ class PresetsMixin:
                 if query in entry.display_name.lower() or query in entry.file_label.lower()
             ]
         return entries
+
+    def _snapshot_library_empty_widget(self, _: int) -> QWidget:
+        if self.snapshot_library_error:
+            text = f"Build library unavailable: {self.snapshot_library_error}"
+        elif not self.snapshot_library:
+            text = f"No snapshot files found in {self.snapshot_library_root}."
+        else:
+            text = "No build-library entries match the current search."
+        label = QLabel(text)
+        label.setObjectName("mutedLabel")
+        label.setWordWrap(True)
+        return label
+
+    def _snapshot_library_card_view_models(self) -> List[SnapshotLibraryCardVm]:
+        visible_entries = self._snapshot_library_entries()
+        plans, reserved_owned, reserved_parts, reserved_career = self._current_snapshot_injection_plans()
+        current_locations = self._current_owned_locations()
+        current_career_slots = self._current_owned_career_slots()
+        cleared_slots = self._current_cleared_pursuit_slots()
+        view_models: List[SnapshotLibraryCardVm] = []
+        for entry in visible_entries:
+            plan_my = None
+            plan_career = None
+            if self.savefile is not None and not self.snapshot_library_error:
+                plan_my = self.savefile.plan_snapshot_injection(
+                    entry,
+                    "my_cars",
+                    location_overrides=current_locations,
+                    career_slot_overrides=current_career_slots,
+                    cleared_slots=cleared_slots,
+                    reserved_owned_abs_offs=set(reserved_owned),
+                    reserved_parts_slots=set(reserved_parts),
+                    reserved_career_slots=set(reserved_career),
+                )
+                plan_career = self.savefile.plan_snapshot_injection(
+                    entry,
+                    "career",
+                    location_overrides=current_locations,
+                    career_slot_overrides=current_career_slots,
+                    cleared_slots=cleared_slots,
+                    reserved_owned_abs_offs=set(reserved_owned),
+                    reserved_parts_slots=set(reserved_parts),
+                    reserved_career_slots=set(reserved_career),
+                )
+            view_models.append(
+                SnapshotLibraryCardVm(
+                    entry=entry,
+                    staged_mode=self.want_snapshot_injections.get(entry.snapshot_id),
+                    plan_my=plan_my,
+                    plan_career=plan_career,
+                    staged_plan=plans.get(entry.snapshot_id),
+                )
+            )
+        return view_models
 
     # ── Library cards ───────────────────────────────────────────
 
@@ -389,10 +482,17 @@ class PresetsMixin:
         return self._detect_col_count("snapshot_cards_scroll", SNAPSHOT_TILE_MIN_WIDTH, ((1100, 2),))
 
     def _maybe_reflow_snapshot_rows(self, force: bool = False) -> None:
-        self._maybe_reflow_cols(
-            "snapshot_cards_scroll", "_snapshot_slot_columns", SNAPSHOT_TILE_MIN_WIDTH,
-            ((1100, 2),), self._rebuild_snapshot_cards, force,
-        )
+        columns = max(1, self._detect_snapshot_card_columns())
+        if not force and columns == getattr(self, "_snapshot_slot_columns", 0):
+            return
+        self._snapshot_slot_columns = columns
+        if self.presets_view != "My Save":
+            return
+        if self._snapshot_cards_dirty or not self._snapshot_render_controller.has_rendered_content():
+            if self._presets_page_visible():
+                self._refresh_presets_page(reason="reflow")
+            return
+        self._snapshot_render_controller.reflow(columns)
 
     # ── Snapshot entries filter ─────────────────────────────────
 
@@ -603,3 +703,374 @@ class PresetsMixin:
         payload = self.savefile.snapshot_to_dict(snapshot)
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         ToastNotification.show_toast(self, "Build snapshot exported")
+
+    def _build_snapshot_library_card(self, vm: SnapshotLibraryCardVm) -> QWidget:
+        entry = vm.entry
+        card = QFrame()
+        card.setObjectName("partsCard")
+        card.setProperty("changed", vm.staged_mode is not None)
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        card.setMinimumWidth(360)
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 12, 14, 12)
+        card_layout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+        bucket_badge = QLabel(entry.library_bucket)
+        bucket_badge.setObjectName("garageCardSlot")
+        bucket_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        bucket_badge.setAlignment(Qt.AlignCenter)
+        header_row.addWidget(bucket_badge, 0, Qt.AlignLeft)
+        header_row.addStretch(1)
+        header_row.addWidget(self._make_garage_source_badge(entry.source_kind), 0, Qt.AlignRight)
+        card_layout.addLayout(header_row)
+
+        name_label = QLabel(entry.display_name)
+        name_label.setObjectName("garageCardMeta")
+        name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        name_label.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(name_label, 0, Qt.AlignLeft)
+
+        if entry.has_visual_sidecar:
+            warn_badge = QLabel("Needs adjacent sidecar slots")
+            warn_badge.setObjectName("partsCardNote")
+            warn_badge.setWordWrap(True)
+            card_layout.addWidget(warn_badge)
+        if entry.requires_unresolved_global_visual_state:
+            mode_text = (
+                f"Uses extra 0x5577+{entry.global_visual_table_mode_offset:X} visual state not replayed in this preview"
+                if entry.global_visual_table_mode_uniform_value is not None
+                else "Uses extra 0x5577 visual state not replayed in this preview"
+            )
+            warn_badge = QLabel(mode_text)
+            warn_badge.setObjectName("partsCardNote")
+            warn_badge.setWordWrap(True)
+            card_layout.addWidget(warn_badge)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setObjectName("garageCardSep")
+        card_layout.addWidget(sep)
+
+        perf_label = QLabel("Performance")
+        perf_label.setObjectName("garageCardFieldLabel")
+        perf_label.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(perf_label)
+        self._add_presets_perf_grid(card_layout, entry.performance_levels, entry.display_name)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+
+        inject_my = QPushButton("Add to My Cars")
+        inject_my.setObjectName("partsBulkBtn")
+        inject_my.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "my_cars"))
+        inject_my.setEnabled(
+            self.savefile is not None
+            and vm.plan_my is not None
+            and vm.plan_my.refusal_reason is None
+        )
+        action_row.addWidget(inject_my)
+
+        inject_career = QPushButton("Add to Career")
+        inject_career.setObjectName("partsBulkBtn")
+        inject_career.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "career"))
+        inject_career.setEnabled(
+            self.savefile is not None
+            and vm.plan_career is not None
+            and vm.plan_career.refusal_reason is None
+        )
+        action_row.addWidget(inject_career)
+
+        if vm.staged_mode == "my_cars":
+            inject_my.setText("Staged: My Cars")
+            inject_my.setEnabled(False)
+        elif vm.staged_mode == "career":
+            inject_career.setText("Staged: Career")
+            inject_career.setEnabled(False)
+
+        if vm.staged_mode is not None:
+            unstage_btn = QPushButton("Unstage")
+            unstage_btn.setObjectName("partsBulkBtn")
+            unstage_btn.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_clear_snapshot_injection(sid))
+            action_row.addWidget(unstage_btn)
+
+        action_row.addStretch(1)
+        card_layout.addLayout(action_row)
+
+        if vm.staged_plan is not None and vm.staged_plan.refusal_reason is None:
+            staged_bits: List[str] = []
+            if vm.staged_plan.target_parts_slot is not None:
+                staged_bits.append(f"Parts Slot {vm.staged_plan.target_parts_slot}")
+            if vm.staged_plan.target_career_slot is not None:
+                staged_bits.append(f"Career Slot {vm.staged_plan.target_career_slot + 1}")
+            if staged_bits:
+                staged_label = QLabel("Staged target: " + " | ".join(staged_bits))
+                staged_label.setObjectName("partsCardNote")
+                staged_label.setWordWrap(True)
+                card_layout.addWidget(staged_label)
+
+        refusal_texts: List[str] = []
+        if not self.savefile:
+            refusal_texts.append("Open a save to stage an injection")
+        else:
+            if vm.plan_my is not None and vm.plan_my.refusal_reason and vm.staged_mode != "my_cars":
+                refusal_texts.append(f"My Cars blocked: {vm.plan_my.refusal_reason}")
+            if vm.plan_career is not None and vm.plan_career.refusal_reason and vm.staged_mode != "career":
+                refusal_texts.append(f"Career blocked: {vm.plan_career.refusal_reason}")
+            if vm.staged_plan is not None and vm.staged_plan.refusal_reason:
+                refusal_texts.append(f"Staged result blocked: {vm.staged_plan.refusal_reason}")
+        if refusal_texts:
+            refusal_label = QLabel(" | ".join(refusal_texts))
+            refusal_label.setObjectName("mutedLabel")
+            refusal_label.setWordWrap(True)
+            card_layout.addWidget(refusal_label)
+
+        tooltip_parts = [
+            f"File: {entry.file_label}",
+            f"Snapshot ID: {entry.snapshot_id[:60]}...",
+        ]
+        if entry.has_visual_sidecar:
+            tooltip_parts.append("Has visual sidecar")
+        if entry.requires_unresolved_global_visual_state:
+            if entry.global_visual_table_mode_uniform_value is not None:
+                tooltip_parts.append(
+                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} mode 0x{entry.global_visual_table_mode_uniform_value:02X} "
+                    "(not injected in v1)"
+                )
+            else:
+                tooltip_parts.append(
+                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} visual mode state (not injected in v1)"
+                )
+        card.setToolTip("\n".join(tooltip_parts))
+
+        card.setMinimumHeight(card.sizeHint().height() + 4)
+        self._snapshot_library_card_widgets[entry.snapshot_id] = card
+        refresh_widget_style(card)
+        return card
+
+    def _rebuild_snapshot_library_cards(self, *, animate: bool = False, reset_scroll: bool = False) -> None:
+        if not hasattr(self, "snapshot_library_cards_layout"):
+            return
+        self._snapshot_library_card_widgets = {}
+        columns = max(1, self._detect_library_card_columns())
+        self._library_slot_columns = columns
+        self._snapshot_library_render_controller.schedule_render(
+            self._snapshot_library_card_view_models(),
+            build_widget=self._build_snapshot_library_card,
+            columns=columns,
+            empty_widget_factory=self._snapshot_library_empty_widget,
+            animate=animate,
+            reset_scroll=reset_scroll,
+        )
+        self._snapshot_library_cards_dirty = False
+
+    def _snapshot_cards_empty_widget(self, _: int) -> QWidget:
+        if not self.savefile:
+            text = "Open a save to inspect build snapshots from this save."
+        elif self.snapshot_detection_error:
+            text = f"Build snapshot tools unavailable: {self.snapshot_detection_error}"
+        elif not self.build_snapshots:
+            text = "No build snapshots were detected in this save."
+        else:
+            text = "No build snapshots match the current search."
+        label = QLabel(text)
+        label.setObjectName("mutedLabel")
+        label.setWordWrap(True)
+        return label
+
+    def _snapshot_card_view_models(self) -> List[SnapshotCardVm]:
+        if not self.savefile or self.snapshot_detection_error:
+            return []
+        return [SnapshotCardVm(snapshot=snapshot) for snapshot in self._snapshot_card_entries()]
+
+    def _build_snapshot_card(self, vm: SnapshotCardVm) -> QWidget:
+        snapshot = vm.snapshot
+        card = QFrame()
+        card.setObjectName("partsCard")
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        card.setMinimumWidth(360)
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 12, 14, 12)
+        card_layout.setSpacing(6)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+        slot_badge = QLabel(f"Parts Slot {snapshot.parts_slot}")
+        slot_badge.setObjectName("garageCardSlot")
+        slot_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        slot_badge.setAlignment(Qt.AlignCenter)
+        header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
+        header_row.addStretch(1)
+        header_row.addWidget(self._make_garage_source_badge(snapshot.source_kind), 0, Qt.AlignRight)
+        card_layout.addLayout(header_row)
+
+        name_label = QLabel(snapshot.display_name)
+        name_label.setObjectName("garageCardMeta")
+        name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        name_label.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(name_label, 0, Qt.AlignLeft)
+
+        mode_label = QLabel(
+            f"0x5577+{snapshot.global_visual_table_mode_offset:X} visual mode: "
+            + (
+                f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
+                if snapshot.global_visual_table_mode_uniform_value is not None
+                else "mixed"
+            )
+        )
+        mode_label.setObjectName("partsCardNote")
+        mode_label.setWordWrap(True)
+        card_layout.addWidget(mode_label)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setObjectName("garageCardSep")
+        card_layout.addWidget(sep)
+
+        perf_label = QLabel("Performance")
+        perf_label.setObjectName("garageCardFieldLabel")
+        perf_label.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(perf_label)
+        self._add_presets_perf_grid(card_layout, snapshot.performance_levels, snapshot.display_name)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        export_btn = QPushButton("Export Snapshot")
+        export_btn.setObjectName("partsBulkBtn")
+        export_btn.clicked.connect(lambda _, off=snapshot.car_abs_off: self.on_export_build_snapshot(off))
+        action_row.addWidget(export_btn, 0, Qt.AlignLeft)
+        action_row.addStretch(1)
+        card_layout.addLayout(action_row)
+
+        tooltip_parts = [
+            f"Car #{snapshot.car_number:02X}",
+            f"Loc 0x{snapshot.location_bits:02X} | Misc 0x{snapshot.misc_bits:02X}",
+            f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
+        ]
+        if snapshot.optional_visual_sidecar:
+            sc = snapshot.optional_visual_sidecar
+            tooltip_parts.append(f"Sidecar: slot {sc.sidecar_parts_slot}, block 0x{sc.sidecar_block_abs_off:05X}")
+        if snapshot.global_visual_table_values:
+            if snapshot.global_visual_table_mode_uniform_value is not None:
+                tooltip_parts.append(
+                    f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: "
+                    f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
+                )
+            else:
+                tooltip_parts.append(f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: mixed")
+            if snapshot.global_visual_table_mode_tail_value is not None:
+                tooltip_parts.append(
+                    f"0x5577+{snapshot.global_visual_table_mode_offset:X} Tail: "
+                    f"0x{snapshot.global_visual_table_mode_tail_value:02X}"
+                )
+            if snapshot.global_visual_table_uniform_value is not None:
+                tooltip_parts.append(f"0x5577+0 Legacy: 0x{snapshot.global_visual_table_uniform_value:02X}")
+            else:
+                tooltip_parts.append("0x5577+0 Legacy: mixed values")
+        card.setToolTip("\n".join(tooltip_parts))
+
+        card.setMinimumHeight(card.sizeHint().height() + 4)
+        self._snapshot_card_widgets[snapshot.car_abs_off] = card
+        refresh_widget_style(card)
+        return card
+
+    def _rebuild_snapshot_cards(self, *, animate: bool = False, reset_scroll: bool = False) -> None:
+        if not hasattr(self, "snapshot_cards_layout"):
+            return
+        self._snapshot_card_widgets = {}
+        columns = max(1, self._detect_snapshot_card_columns())
+        self._snapshot_slot_columns = columns
+        self._snapshot_render_controller.schedule_render(
+            self._snapshot_card_view_models(),
+            build_widget=self._build_snapshot_card,
+            columns=columns,
+            empty_widget_factory=self._snapshot_cards_empty_widget,
+            animate=animate,
+            reset_scroll=reset_scroll,
+        )
+        self._snapshot_cards_dirty = False
+
+    def _refresh_presets_page(self, reason: str = "data_change") -> None:
+        current_view = getattr(self, "presets_view", "Library")
+        is_library = current_view == "Library"
+        if hasattr(self, "presets_view_buttons"):
+            for label, button in self.presets_view_buttons.items():
+                button.setChecked(label == current_view)
+        if hasattr(self, "snapshot_library_filter_buttons"):
+            for label, button in self.snapshot_library_filter_buttons.items():
+                button.setVisible(is_library)
+                button.setChecked(label == getattr(self, "snapshot_library_filter", "All"))
+        if hasattr(self, "presets_stack"):
+            self.presets_stack.setCurrentIndex(0 if is_library else 1)
+        if hasattr(self, "presets_search"):
+            self.presets_search.setPlaceholderText(
+                "Search build library..." if is_library else "Search builds in this save..."
+            )
+
+        if not self._presets_page_visible():
+            self._mark_presets_cards_dirty()
+            return
+
+        if is_library:
+            columns = max(1, self._detect_library_card_columns())
+            self._library_slot_columns = columns
+            if (
+                reason in {"page_enter", "reflow"}
+                and not self._snapshot_library_cards_dirty
+                and self._snapshot_library_render_controller.has_rendered_content()
+            ):
+                self._snapshot_library_render_controller.reflow(columns)
+                return
+            self._rebuild_snapshot_library_cards(
+                animate=reason in {"page_enter", "filter_change"},
+                reset_scroll=reason in {"search_change", "filter_change"},
+            )
+            return
+
+        columns = max(1, self._detect_snapshot_card_columns())
+        self._snapshot_slot_columns = columns
+        if (
+            reason in {"page_enter", "reflow"}
+            and not self._snapshot_cards_dirty
+            and self._snapshot_render_controller.has_rendered_content()
+        ):
+            self._snapshot_render_controller.reflow(columns)
+            return
+        self._rebuild_snapshot_cards(
+            animate=reason in {"page_enter", "filter_change"},
+            reset_scroll=reason in {"search_change", "filter_change"},
+        )
+
+    def on_stage_snapshot_injection(self, snapshot_id: str, target_mode: str) -> None:
+        if not self.savefile:
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
+            return
+        library_by_id = self._snapshot_library_by_id()
+        entry = library_by_id.get(str(snapshot_id))
+        if entry is None:
+            QMessageBox.warning(self, UI_TITLE_SNAPSHOT_UNAVAILABLE, "Could not resolve the selected library snapshot.")
+            return
+        plans, _, _, _ = self._current_snapshot_injection_plans(extra=(entry.snapshot_id, target_mode))
+        plan = plans.get(entry.snapshot_id)
+        if plan is None or plan.refusal_reason:
+            reason = plan.refusal_reason if plan is not None else "Unknown injector planner failure"
+            QMessageBox.warning(self, UI_TITLE_BLOCKED, reason)
+            return
+        self.want_snapshot_injections[entry.snapshot_id] = str(target_mode)
+        self._mark_presets_cards_dirty(library=True, snapshot=False)
+        self._mark_garage_cards_dirty()
+        self._refresh_presets_page(reason="data_change")
+        self._refresh_garage_page(reason="data_change")
+        self._update_action_states()
+
+    def on_clear_snapshot_injection(self, snapshot_id: str) -> None:
+        if str(snapshot_id) in self.want_snapshot_injections:
+            self.want_snapshot_injections.pop(str(snapshot_id), None)
+            self._mark_presets_cards_dirty(library=True, snapshot=False)
+            self._mark_garage_cards_dirty()
+            self._refresh_presets_page(reason="data_change")
+            self._refresh_garage_page(reason="data_change")
+            self._update_action_states()

@@ -16,7 +16,7 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -167,10 +167,15 @@ class MainWindow(
         self.want_snapshot_injections: Dict[str, str] = {}
         self.snapshot_library_filter = "All"
         self.presets_view = "Library"
+        self._garage_cards_dirty = True
+        self._parts_cards_dirty = True
+        self._snapshot_cards_dirty = True
+        self._snapshot_library_cards_dirty = True
 
         self.catalog_path = _ensure_user_catalog_path()
         self.load_catalog()
         self._build_ui()
+        self._setup_render_timers()
         self.refresh_state()
 
     def _build_ui(self):
@@ -213,6 +218,23 @@ class MainWindow(
 
         # -- Drag & drop --
         self.setAcceptDrops(True)
+
+    def _setup_render_timers(self) -> None:
+        self._resize_reflow_timer = QTimer(self)
+        self._resize_reflow_timer.setSingleShot(True)
+        self._resize_reflow_timer.timeout.connect(self._on_heavy_page_reflow_timeout)
+
+        self._garage_search_timer = QTimer(self)
+        self._garage_search_timer.setSingleShot(True)
+        self._garage_search_timer.timeout.connect(lambda: self._refresh_garage_page(reason="search_change"))
+
+        self._parts_search_timer = QTimer(self)
+        self._parts_search_timer.setSingleShot(True)
+        self._parts_search_timer.timeout.connect(lambda: self._refresh_parts_page(reason="search_change"))
+
+        self._presets_search_timer = QTimer(self)
+        self._presets_search_timer.setSingleShot(True)
+        self._presets_search_timer.timeout.connect(lambda: self._refresh_presets_page(reason="search_change"))
 
     def _build_header(self):
         row = QHBoxLayout()
@@ -357,12 +379,62 @@ class MainWindow(
             self._sync_cards_per_row(force=True)
             self.refresh_cards()
         elif name == "Garage":
-            self._maybe_reflow_garage_rows(force=True)
+            self._refresh_garage_page(reason="page_enter")
         elif name == "Tuning":
-            self._maybe_reflow_parts_rows(force=True)
+            self._refresh_parts_page(reason="page_enter")
         elif name == "Presets":
-            self._maybe_reflow_library_rows(force=True)
-            self._maybe_reflow_snapshot_rows(force=True)
+            self._refresh_presets_page(reason="page_enter")
+
+    def _current_stack_page_name(self) -> Optional[str]:
+        if not hasattr(self, "stack"):
+            return None
+        current = self.stack.currentWidget()
+        if current is self.page_garage:
+            return "Garage"
+        if current is self.page_parts:
+            return "Tuning"
+        if current is self.page_presets:
+            return "Presets"
+        if current is self.page_profile:
+            return "Profile"
+        if current is self.page_junk:
+            return "Junkman"
+        return None
+
+    def _mark_garage_cards_dirty(self) -> None:
+        self._garage_cards_dirty = True
+        if hasattr(self, "_garage_render_controller"):
+            self._garage_render_controller.cancel()
+
+    def _mark_parts_cards_dirty(self) -> None:
+        self._parts_cards_dirty = True
+        if hasattr(self, "_parts_render_controller"):
+            self._parts_render_controller.cancel()
+
+    def _mark_presets_cards_dirty(self, *, library: bool = True, snapshot: bool = True) -> None:
+        if library:
+            self._snapshot_library_cards_dirty = True
+            if hasattr(self, "_snapshot_library_render_controller"):
+                self._snapshot_library_render_controller.cancel()
+        if snapshot:
+            self._snapshot_cards_dirty = True
+            if hasattr(self, "_snapshot_render_controller"):
+                self._snapshot_render_controller.cancel()
+
+    def _mark_all_heavy_pages_dirty(self) -> None:
+        self._mark_garage_cards_dirty()
+        self._mark_parts_cards_dirty()
+        self._mark_presets_cards_dirty()
+
+    def _on_heavy_page_reflow_timeout(self) -> None:
+        current = self._current_stack_page_name()
+        if current == "Garage":
+            self._maybe_reflow_garage_rows()
+        elif current == "Tuning":
+            self._maybe_reflow_parts_rows()
+        elif current == "Presets":
+            self._maybe_reflow_library_rows()
+            self._maybe_reflow_snapshot_rows()
 
     def _section_label(self, text: str) -> QLabel:
         lbl = QLabel(text)
@@ -677,10 +749,15 @@ class MainWindow(
         default_cap = min(10, self._slot_capacity())
         unlocked_cap = min(63, self._slot_capacity())
         self.lbl_limits.setText(f"Limits: Default {default_cap}, Unlocked {unlocked_cap}")
+        self._mark_all_heavy_pages_dirty()
         self._refresh_profile_inputs()
-        self._refresh_garage_page()
-        self._refresh_parts_page()
-        self._refresh_presets_page()
+        current_page = self._current_stack_page_name()
+        if current_page == "Garage":
+            self._refresh_garage_page(reason="data_change")
+        elif current_page == "Tuning":
+            self._refresh_parts_page(reason="data_change")
+        elif current_page == "Presets":
+            self._refresh_presets_page(reason="data_change")
         self.refresh_cards()
 
     def _has_pending_changes(self) -> bool:
@@ -722,10 +799,8 @@ class MainWindow(
                 self.refresh_cards()
             else:
                 self.cards_container.setFixedWidth(self._card_area_width(prev))
-        self._maybe_reflow_garage_rows()
-        self._maybe_reflow_parts_rows()
-        self._maybe_reflow_library_rows()
-        self._maybe_reflow_snapshot_rows()
+        if hasattr(self, "_resize_reflow_timer"):
+            self._resize_reflow_timer.start(120)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

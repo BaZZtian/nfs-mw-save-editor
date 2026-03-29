@@ -514,10 +514,11 @@ class JunkmanMixin:
         }
         self.want_parts_masks = None if self.parts_detection_error else dict(self.have_parts_masks)
         self.want_snapshot_injections = {}
+        self._mark_all_heavy_pages_dirty()
         self._refresh_profile_inputs()
-        self._refresh_garage_page()
-        self._refresh_parts_page()
-        self._refresh_presets_page()
+        self._refresh_garage_page(reason="data_change")
+        self._refresh_parts_page(reason="data_change")
+        self._refresh_presets_page(reason="data_change")
         self.refresh_cards()
 
     def on_clear_all_want(self):
@@ -832,4 +833,3 @@ class JunkmanMixin:
         payload = {"counts": self.have_counts}
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         ToastNotification.show_toast(self, "Have exported")
-

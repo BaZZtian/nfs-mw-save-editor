@@ -10,6 +10,7 @@ from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits
 from ui.pages.constants import PARTS_TILE_MIN_WIDTH
+from ui.rendering import ChunkedGridController, refresh_widget_style
 from ui.widgets import WantSpinBox, build_perf_level_row
 
 
@@ -26,6 +27,17 @@ class TuningCardEntry:
     marker: Optional[bytes]
     confirmed_raw: Optional[bytes]
     junkman_mask: int
+
+
+@dataclass(frozen=True)
+class PartsCardVm:
+    card_entry: TuningCardEntry
+    changed: bool
+    is_active: bool
+    levels: Dict[str, int]
+    mask: int
+    statuses: List[str]
+    limits: Optional[Dict[str, int]]
 
 
 class PartsMixin:
@@ -83,14 +95,30 @@ class PartsMixin:
         layout.addWidget(self.parts_cards_scroll, 1)
 
         self._parts_card_widgets: Dict[int, QFrame] = {}
-        self._rebuild_parts_cards()
+        self._parts_render_controller = ChunkedGridController(
+            self,
+            name="Tuning",
+            layout=self.parts_cards_layout,
+            scroll_area=self.parts_cards_scroll,
+        )
         return w
+
+    def _parts_page_visible(self) -> bool:
+        return hasattr(self, "stack") and hasattr(self, "page_parts") and self.stack.currentWidget() is self.page_parts
 
     def _detect_parts_card_columns(self) -> int:
         return self._detect_col_count("parts_cards_scroll", PARTS_TILE_MIN_WIDTH, ((1100, 2),))
 
     def _maybe_reflow_parts_rows(self, force: bool = False) -> None:
-        self._maybe_reflow_cols("parts_cards_scroll", "_parts_slot_columns", PARTS_TILE_MIN_WIDTH, ((1100, 2),), self._rebuild_parts_cards, force)
+        columns = max(1, self._detect_parts_card_columns())
+        if not force and columns == getattr(self, "_parts_slot_columns", 0):
+            return
+        self._parts_slot_columns = columns
+        if self._parts_cards_dirty or not self._parts_render_controller.has_rendered_content():
+            if self._parts_page_visible():
+                self._refresh_parts_page(reason="reflow")
+            return
+        self._parts_render_controller.reflow(columns)
 
     def _format_parts_raw(self, raw: bytes) -> str:
         return raw.hex(" ").upper()
@@ -232,6 +260,59 @@ class PartsMixin:
             labels.append("Junkman")
         return labels
 
+    def _parts_empty_widget(self, _: int) -> QWidget:
+        if not self.savefile:
+            text = "Open a save to inspect and edit tuning builds."
+        elif self.parts_detection_error:
+            text = f"Tuning tools unavailable: {self.parts_detection_error}"
+        else:
+            text = "No tuning entries match the current search or filter."
+        label = QLabel(text)
+        label.setObjectName("mutedLabel")
+        label.setWordWrap(True)
+        return label
+
+    def _parts_card_view_models(self) -> List[PartsCardVm]:
+        if not self.savefile or self.parts_detection_error:
+            return []
+        current_levels = self._current_parts_levels()
+        current_masks = self._current_parts_masks()
+        projected_active_car_number = self.savefile.get_projected_active_career_car_number(
+            location_overrides=self._current_owned_locations(),
+            career_slot_overrides=self._current_owned_career_slots(),
+        )
+        projected_active_parts_slots: Set[int] = set()
+        if projected_active_car_number is not None:
+            projected_active_parts_slots = {
+                int(entry.parts_slot)
+                for entry in self._current_transfer_entries()
+                if not entry.is_my_cars and int(entry.car_number) == int(projected_active_car_number)
+            }
+
+        view_models: List[PartsCardVm] = []
+        for card_entry in self._tuning_card_entries():
+            entry = card_entry.raw_entry
+            limits = self._parts_limits(entry)
+            view_models.append(
+                PartsCardVm(
+                    card_entry=card_entry,
+                    changed=self._parts_card_changed(card_entry.parts_slot),
+                    is_active=(
+                        projected_active_car_number is not None
+                        and card_entry.source_kind != "My Cars"
+                        and (
+                            (card_entry.car_number is not None and int(card_entry.car_number) == int(projected_active_car_number))
+                            or int(card_entry.parts_slot) in projected_active_parts_slots
+                        )
+                    ),
+                    levels=dict(current_levels.get(card_entry.parts_slot, self._entry_parts_levels(entry))),
+                    mask=int(current_masks.get(card_entry.parts_slot, self.have_parts_masks.get(card_entry.parts_slot, 0))),
+                    statuses=self._parts_status_labels(entry),
+                    limits=None if limits is None else {name: int(value) for name, value in limits.items()},
+                )
+            )
+        return view_models
+
     def on_parts_level_changed(self, parts_slot: int, part_name: str, value: int) -> None:
         if self._parts_refreshing or not self.savefile or self.parts_detection_error:
             return
@@ -241,8 +322,9 @@ class PartsMixin:
         levels = dict(self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry)))
         levels[part_name] = int(value)
         self._set_parts_slot_levels(parts_slot, levels)
+        self._mark_parts_cards_dirty()
         self._update_action_states()
-        self._refresh_parts_page()
+        self._refresh_parts_page(reason="data_change")
 
     def on_parts_junkman_toggled(self, parts_slot: int, category: str, checked: bool) -> None:
         if self._parts_refreshing or not self.savefile or self.parts_detection_error:
@@ -256,8 +338,9 @@ class PartsMixin:
             return
         current = self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))
         self._set_parts_slot_mask(parts_slot, current | bit if checked else current & ~bit)
+        self._mark_parts_cards_dirty()
         self._update_action_states()
-        self._refresh_parts_page()
+        self._refresh_parts_page(reason="data_change")
 
     def on_tuning_max_performance(self, parts_slot: int) -> None:
         entry = self._entry_by_parts_slot(parts_slot)
@@ -265,8 +348,9 @@ class PartsMixin:
         if limits is None:
             return
         self._set_parts_slot_levels(parts_slot, {name: int(limits.get(name, 0)) for name in PERF_PART_NAMES})
+        self._mark_parts_cards_dirty()
         self._update_action_states()
-        self._refresh_parts_page()
+        self._refresh_parts_page(reason="data_change")
 
     def on_tuning_max_junkman(self, parts_slot: int) -> None:
         entry = self._entry_by_parts_slot(parts_slot)
@@ -278,8 +362,9 @@ class PartsMixin:
             if self._parts_junkman_reason(levels, name) is None:
                 mask |= bit
         self._set_parts_slot_mask(parts_slot, mask)
+        self._mark_parts_cards_dirty()
         self._update_action_states()
-        self._refresh_parts_page()
+        self._refresh_parts_page(reason="data_change")
 
     def on_tuning_stock_build(self, parts_slot: int) -> None:
         entry = self._entry_by_parts_slot(parts_slot)
@@ -287,20 +372,23 @@ class PartsMixin:
             return
         self._set_parts_slot_levels(parts_slot, {name: 0 for name in PERF_PART_NAMES})
         self._set_parts_slot_mask(parts_slot, 0)
+        self._mark_parts_cards_dirty()
         self._update_action_states()
-        self._refresh_parts_page()
+        self._refresh_parts_page(reason="data_change")
 
     def on_tuning_clear_junkman(self, parts_slot: int) -> None:
         entry = self._entry_by_parts_slot(parts_slot)
         if entry is None or self._parts_limits(entry) is None:
             return
         self._set_parts_slot_mask(parts_slot, 0)
+        self._mark_parts_cards_dirty()
         self._update_action_states()
-        self._refresh_parts_page()
+        self._refresh_parts_page(reason="data_change")
 
-    def _add_parts_perf_grid(self, parent: QVBoxLayout, entry) -> None:
-        levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))
-        limits = self._parts_limits(entry)
+    def _add_parts_perf_grid(self, parent: QVBoxLayout, vm: PartsCardVm) -> None:
+        card_entry = vm.card_entry
+        levels = vm.levels
+        limits = vm.limits
         editable = limits is not None
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
@@ -311,7 +399,7 @@ class PartsMixin:
             max_level = max(level, int(limits.get(name, 0))) if editable else None
             row_w, row_layout = build_perf_level_row(name, level, max_level)
             if editable:
-                btn_minus = QPushButton("\u2212")
+                btn_minus = QPushButton("-")
                 btn_minus.setObjectName("partsLevelBtn")
                 btn_minus.setFixedSize(24, 24)
                 spin = WantSpinBox()
@@ -320,7 +408,9 @@ class PartsMixin:
                 spin.setValue(level)
                 spin.setAlignment(Qt.AlignCenter)
                 spin.setButtonSymbols(WantSpinBox.NoButtons)
-                spin.valueChanged.connect(lambda val, slot=entry.parts_slot, part=name: self.on_parts_level_changed(slot, part, val))
+                spin.valueChanged.connect(
+                    lambda val, slot=card_entry.parts_slot, part=name: self.on_parts_level_changed(slot, part, val)
+                )
                 btn_plus = QPushButton("+")
                 btn_plus.setObjectName("partsLevelBtn")
                 btn_plus.setFixedSize(24, 24)
@@ -336,10 +426,11 @@ class PartsMixin:
         grid.setColumnStretch(1, 1)
         parent.addLayout(grid)
 
-    def _add_parts_junkman_section(self, parent: QVBoxLayout, entry) -> None:
-        levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))
-        mask = self._current_parts_masks().get(entry.parts_slot, self.have_parts_masks.get(entry.parts_slot, entry.junkman_mask))
-        editable = self._parts_limits(entry) is not None
+    def _add_parts_junkman_section(self, parent: QVBoxLayout, vm: PartsCardVm) -> None:
+        card_entry = vm.card_entry
+        levels = vm.levels
+        mask = vm.mask
+        editable = vm.limits is not None
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
@@ -359,7 +450,9 @@ class PartsMixin:
                 if reason:
                     btn.setToolTip(reason)
                     blocked.append(f"{cat}: {reason}")
-                btn.clicked.connect(lambda checked, slot=entry.parts_slot, category=cat: self.on_parts_junkman_toggled(slot, category, checked))
+                btn.clicked.connect(
+                    lambda checked, slot=card_entry.parts_slot, category=cat: self.on_parts_junkman_toggled(slot, category, checked)
+                )
                 btn.style().unpolish(btn)
                 btn.style().polish(btn)
                 row.addWidget(btn, 0, Qt.AlignLeft)
@@ -375,164 +468,138 @@ class PartsMixin:
             note.setWordWrap(True)
             parent.addWidget(note)
 
-    def _rebuild_parts_cards(self) -> None:
-        if not hasattr(self, "parts_cards_layout"):
-            return
-        self._clear_layout(self.parts_cards_layout)
-        self._parts_card_widgets = {}
-        columns = max(1, self._detect_parts_card_columns())
-        self._parts_slot_columns = columns
-        if not self.savefile:
-            self.parts_cards_layout.addWidget(QLabel("Open a save to inspect and edit tuning builds."), 0, 0, 1, columns)
-            return
-        if self.parts_detection_error:
-            label = QLabel(f"Tuning tools unavailable: {self.parts_detection_error}")
-            label.setObjectName("mutedLabel")
-            label.setWordWrap(True)
-            self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
-            return
-        visible_entries = self._tuning_card_entries()
-        if not visible_entries:
-            label = QLabel("No tuning entries match the current search or filter.")
-            label.setObjectName("mutedLabel")
-            label.setWordWrap(True)
-            self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
-            return
-        projected_active_car_number = self.savefile.get_projected_active_career_car_number(
-            location_overrides=self._current_owned_locations(),
-            career_slot_overrides=self._current_owned_career_slots(),
-        )
-        projected_active_parts_slots: Set[int] = set()
-        if projected_active_car_number is not None:
-            projected_active_parts_slots = {
-                int(entry.parts_slot)
-                for entry in self._current_transfer_entries()
-                if not entry.is_my_cars and int(entry.car_number) == int(projected_active_car_number)
-            }
-        for idx, card_entry in enumerate(visible_entries):
-            entry = card_entry.raw_entry
-            is_active = (
-                projected_active_car_number is not None
-                and card_entry.source_kind != "My Cars"
-                and (
-                    (card_entry.car_number is not None and int(card_entry.car_number) == int(projected_active_car_number))
-                    or int(card_entry.parts_slot) in projected_active_parts_slots
-                )
-            )
-            card = QFrame()
-            card.setObjectName("partsCard")
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            card.setMinimumWidth(360)
-            card.setProperty("changed", self._parts_card_changed(card_entry.parts_slot))
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            card_layout.setSpacing(6)
+    def _build_parts_card(self, vm: PartsCardVm) -> QWidget:
+        card_entry = vm.card_entry
+        card = QFrame()
+        card.setObjectName("partsCard")
+        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        card.setMinimumWidth(360)
+        card.setProperty("changed", vm.changed)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(14, 12, 14, 12)
+        card_layout.setSpacing(6)
 
-            header_row = QHBoxLayout()
-            header_row.setSpacing(8)
-            if card_entry.source_kind == "Career" and card_entry.career_slot is not None:
-                slot_text = f"Career Slot {card_entry.career_slot + 1}"
-            elif card_entry.car_number is not None:
-                slot_text = f"Car #{card_entry.car_number:02X}"
+        header_row = QHBoxLayout()
+        header_row.setSpacing(8)
+        if card_entry.source_kind == "Career" and card_entry.career_slot is not None:
+            slot_text = f"Career Slot {card_entry.career_slot + 1}"
+        elif card_entry.car_number is not None:
+            slot_text = f"Car #{card_entry.car_number:02X}"
+        else:
+            slot_text = f"Parts Slot {card_entry.parts_slot}"
+        header_row.addWidget(self._make_stat_badge(slot_text, "garageCardSlot"), 0, Qt.AlignLeft)
+        header_row.addStretch(1)
+        header_row.addWidget(self._make_garage_source_badge(card_entry.source_kind), 0, Qt.AlignRight)
+        if card_entry.pink_slip:
+            header_row.addWidget(self._make_garage_source_badge("Pink Slip"), 0, Qt.AlignRight)
+        if vm.is_active:
+            header_row.addWidget(self._make_active_car_badge(), 0, Qt.AlignRight)
+        card_layout.addLayout(header_row)
+
+        card_layout.addWidget(self._make_stat_badge(card_entry.display_name, "garageCardMeta"), 0, Qt.AlignLeft)
+
+        if vm.statuses:
+            status_row = QHBoxLayout()
+            status_row.setSpacing(8)
+            for text in vm.statuses:
+                status_row.addWidget(self._make_tuning_status_badge(text), 0, Qt.AlignLeft)
+            status_row.addStretch(1)
+            card_layout.addLayout(status_row)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        for text, handler in [
+            ("Max Performance", self.on_tuning_max_performance),
+            ("Max Junkman", self.on_tuning_max_junkman),
+            ("Stock Build", self.on_tuning_stock_build),
+            ("Clear Junkman", self.on_tuning_clear_junkman),
+        ]:
+            btn = QPushButton(text)
+            btn.setObjectName("partsBulkBtn")
+            btn.setEnabled(vm.limits is not None)
+            btn.clicked.connect(lambda _, slot=card_entry.parts_slot, fn=handler: fn(slot))
+            action_row.addWidget(btn)
+        action_row.addStretch(1)
+        card_layout.addLayout(action_row)
+
+        meta_row = QHBoxLayout()
+        meta_row.setSpacing(8)
+        meta_row.addWidget(self._make_stat_badge(f"Parts Slot {card_entry.parts_slot}"), 0, Qt.AlignLeft)
+        meta_row.addWidget(self._make_stat_badge(f"Block 0x{card_entry.block_abs_off:05X}"), 0, Qt.AlignLeft)
+        if card_entry.source_kind == "My Cars" and card_entry.career_slot is not None:
+            meta_row.addWidget(self._make_stat_badge(f"Career Slot {card_entry.career_slot + 1}"), 0, Qt.AlignLeft)
+        meta_row.addStretch(1)
+        card_layout.addLayout(meta_row)
+
+        if vm.limits is None:
+            note = QLabel("No confirmed tuning limits for this model yet. Safe mode keeps this card read-only.")
+            note.setObjectName("partsCardNote")
+            note.setWordWrap(True)
+            card_layout.addWidget(note)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setObjectName("garageCardSep")
+        card_layout.addWidget(sep)
+        perf_label = QLabel("Performance")
+        perf_label.setObjectName("garageCardFieldLabel")
+        perf_label.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(perf_label)
+        self._add_parts_perf_grid(card_layout, vm)
+        junkman_label = QLabel("Junkman")
+        junkman_label.setObjectName("garageCardFieldLabel")
+        junkman_label.setAlignment(Qt.AlignCenter)
+        card_layout.addWidget(junkman_label)
+        self._add_parts_junkman_section(card_layout, vm)
+
+        if self.show_parts_diagnostics:
+            diag_sep = QFrame()
+            diag_sep.setFrameShape(QFrame.HLine)
+            diag_sep.setObjectName("garageCardSep")
+            card_layout.addWidget(diag_sep)
+            diag_label = QLabel("Diagnostics")
+            diag_label.setObjectName("garageCardFieldLabel")
+            diag_label.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(diag_label)
+            card_layout.addWidget(self._make_stat_badge(f"Mask 0x{vm.mask:02X}"), 0, Qt.AlignLeft)
+            if card_entry.marker is not None:
+                card_layout.addWidget(self._make_stat_badge(f"Marker {self._format_parts_raw(card_entry.marker)}"), 0, Qt.AlignLeft)
+            if card_entry.confirmed_raw is not None:
+                raw_label = QLabel("Confirmed Slice (+0x118..+0x137)")
+                raw_label.setObjectName("partsCardNote")
+                raw_label.setAlignment(Qt.AlignCenter)
+                card_layout.addWidget(raw_label)
+                raw_value = QLabel(self._format_parts_raw(card_entry.confirmed_raw))
+                raw_value.setObjectName("partsCardRaw")
+                raw_value.setAlignment(Qt.AlignCenter)
+                raw_value.setWordWrap(True)
+                raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                card_layout.addWidget(raw_value)
             else:
-                slot_text = f"Parts Slot {card_entry.parts_slot}"
-            header_row.addWidget(self._make_stat_badge(slot_text, "garageCardSlot"), 0, Qt.AlignLeft)
-            header_row.addStretch(1)
-            header_row.addWidget(self._make_garage_source_badge(card_entry.source_kind), 0, Qt.AlignRight)
-            if card_entry.pink_slip:
-                header_row.addWidget(self._make_garage_source_badge("Pink Slip"), 0, Qt.AlignRight)
-            if is_active:
-                header_row.addWidget(self._make_active_car_badge(), 0, Qt.AlignRight)
-            card_layout.addLayout(header_row)
-
-            card_layout.addWidget(self._make_stat_badge(card_entry.display_name, "garageCardMeta"), 0, Qt.AlignLeft)
-
-            statuses = self._parts_status_labels(entry)
-            if statuses:
-                status_row = QHBoxLayout()
-                status_row.setSpacing(8)
-                for text in statuses:
-                    status_row.addWidget(self._make_tuning_status_badge(text), 0, Qt.AlignLeft)
-                status_row.addStretch(1)
-                card_layout.addLayout(status_row)
-
-            limits = self._parts_limits(entry)
-            action_row = QHBoxLayout()
-            action_row.setSpacing(8)
-            for text, handler in [("Max Performance", self.on_tuning_max_performance), ("Max Junkman", self.on_tuning_max_junkman), ("Stock Build", self.on_tuning_stock_build), ("Clear Junkman", self.on_tuning_clear_junkman)]:
-                btn = QPushButton(text)
-                btn.setObjectName("partsBulkBtn")
-                btn.setEnabled(limits is not None)
-                btn.clicked.connect(lambda _, slot=card_entry.parts_slot, fn=handler: fn(slot))
-                action_row.addWidget(btn)
-            action_row.addStretch(1)
-            card_layout.addLayout(action_row)
-
-            meta_row = QHBoxLayout()
-            meta_row.setSpacing(8)
-            meta_row.addWidget(self._make_stat_badge(f"Parts Slot {card_entry.parts_slot}"), 0, Qt.AlignLeft)
-            meta_row.addWidget(self._make_stat_badge(f"Block 0x{card_entry.block_abs_off:05X}"), 0, Qt.AlignLeft)
-            if card_entry.source_kind == "My Cars" and card_entry.career_slot is not None:
-                meta_row.addWidget(self._make_stat_badge(f"Career Slot {card_entry.career_slot + 1}"), 0, Qt.AlignLeft)
-            meta_row.addStretch(1)
-            card_layout.addLayout(meta_row)
-
-            if limits is None:
-                note = QLabel("No confirmed tuning limits for this model yet. Safe mode keeps this card read-only.")
+                note = QLabel("This source type does not expose a confirmed raw diagnostic slice.")
                 note.setObjectName("partsCardNote")
                 note.setWordWrap(True)
                 card_layout.addWidget(note)
 
-            sep = QFrame()
-            sep.setFrameShape(QFrame.HLine)
-            sep.setObjectName("garageCardSep")
-            card_layout.addWidget(sep)
-            perf_label = QLabel("Performance")
-            perf_label.setObjectName("garageCardFieldLabel")
-            perf_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(perf_label)
-            self._add_parts_perf_grid(card_layout, entry)
-            junkman_label = QLabel("Junkman")
-            junkman_label.setObjectName("garageCardFieldLabel")
-            junkman_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(junkman_label)
-            self._add_parts_junkman_section(card_layout, entry)
+        self._parts_card_widgets[card_entry.parts_slot] = card
+        refresh_widget_style(card)
+        return card
 
-            if self.show_parts_diagnostics:
-                diag_sep = QFrame()
-                diag_sep.setFrameShape(QFrame.HLine)
-                diag_sep.setObjectName("garageCardSep")
-                card_layout.addWidget(diag_sep)
-                diag_label = QLabel("Diagnostics")
-                diag_label.setObjectName("garageCardFieldLabel")
-                diag_label.setAlignment(Qt.AlignCenter)
-                card_layout.addWidget(diag_label)
-                card_layout.addWidget(self._make_stat_badge(f"Mask 0x{self._current_parts_masks().get(card_entry.parts_slot, card_entry.junkman_mask):02X}"), 0, Qt.AlignLeft)
-                if card_entry.marker is not None:
-                    card_layout.addWidget(self._make_stat_badge(f"Marker {self._format_parts_raw(card_entry.marker)}"), 0, Qt.AlignLeft)
-                if card_entry.confirmed_raw is not None:
-                    raw_label = QLabel("Confirmed Slice (+0x118..+0x137)")
-                    raw_label.setObjectName("partsCardNote")
-                    raw_label.setAlignment(Qt.AlignCenter)
-                    card_layout.addWidget(raw_label)
-                    raw_value = QLabel(self._format_parts_raw(card_entry.confirmed_raw))
-                    raw_value.setObjectName("partsCardRaw")
-                    raw_value.setAlignment(Qt.AlignCenter)
-                    raw_value.setWordWrap(True)
-                    raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                    card_layout.addWidget(raw_value)
-                else:
-                    note = QLabel("This source type does not expose a confirmed raw diagnostic slice.")
-                    note.setObjectName("partsCardNote")
-                    note.setWordWrap(True)
-                    card_layout.addWidget(note)
+    def _rebuild_parts_cards(self, *, animate: bool = False, reset_scroll: bool = False) -> None:
+        self._parts_card_widgets = {}
+        columns = max(1, self._detect_parts_card_columns())
+        self._parts_slot_columns = columns
+        self._parts_render_controller.schedule_render(
+            self._parts_card_view_models(),
+            build_widget=self._build_parts_card,
+            columns=columns,
+            empty_widget_factory=self._parts_empty_widget,
+            animate=animate,
+            reset_scroll=reset_scroll,
+        )
+        self._parts_cards_dirty = False
 
-            self.parts_cards_layout.addWidget(card, idx // columns, idx % columns)
-            self._parts_card_widgets[card_entry.parts_slot] = card
-        for col in range(columns):
-            self.parts_cards_layout.setColumnStretch(col, 1)
-
-    def _refresh_parts_page(self) -> None:
+    def _refresh_parts_page(self, reason: str = "data_change") -> None:
         loaded = self.savefile is not None
         if hasattr(self, "chk_show_parts_diagnostics"):
             self.chk_show_parts_diagnostics.blockSignals(True)
@@ -543,15 +610,36 @@ class PartsMixin:
             current = getattr(self, "tuning_filter", "All")
             for label, button in self.tuning_filter_buttons.items():
                 button.setChecked(label == current)
-        self._rebuild_parts_cards()
+        if not self._parts_page_visible():
+            self._mark_parts_cards_dirty()
+            return
+
+        columns = max(1, self._detect_parts_card_columns())
+        self._parts_slot_columns = columns
+        if (
+            reason in {"page_enter", "reflow"}
+            and not self._parts_cards_dirty
+            and self._parts_render_controller.has_rendered_content()
+        ):
+            self._parts_render_controller.reflow(columns)
+            return
+
+        self._rebuild_parts_cards(
+            animate=reason in {"page_enter", "filter_change"},
+            reset_scroll=reason in {"search_change", "filter_change"},
+        )
 
     def on_parts_search_changed(self) -> None:
-        self._refresh_parts_page()
+        self._mark_parts_cards_dirty()
+        if hasattr(self, "_parts_search_timer"):
+            self._parts_search_timer.start(150)
 
     def on_toggle_parts_diagnostics(self) -> None:
         self.show_parts_diagnostics = self.chk_show_parts_diagnostics.isChecked()
-        self._refresh_parts_page()
+        self._mark_parts_cards_dirty()
+        self._refresh_parts_page(reason="data_change")
 
     def _select_tuning_filter(self, source: str) -> None:
         self.tuning_filter = source
-        self._refresh_parts_page()
+        self._mark_parts_cards_dirty()
+        self._refresh_parts_page(reason="filter_change")
