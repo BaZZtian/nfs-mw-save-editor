@@ -14,16 +14,83 @@ class ThemePreset:
     accent: str
     background: str
     foreground: str
+    tokens: dict[str, str] | None = None
 
 
-DEFAULT_THEME_NAME = "Codex"
+DEFAULT_THEME_NAME = "Blueprint"
 _SETTINGS_FILENAME = "ui_settings.json"
 
 THEME_PRESETS: dict[str, ThemePreset] = {
-    "Codex": ThemePreset("Codex", "#0169CC", "#111111", "#FCFCFC"),
-    "Absolutely": ThemePreset("Absolutely", "#CC7D5E", "#2D2D2B", "#F9F9F7"),
     "Ayu": ThemePreset("Ayu", "#E6B450", "#0B0E14", "#BFBDB6"),
+    "Blueprint": ThemePreset(
+        "Blueprint",
+        "#4A6B94",
+        "#0B0F15",
+        "#EAF0FA",
+        tokens={
+            "ACCENT": "#4A6B94",
+            "ACCENT_BRIGHT": "#6F93C4",
+            "ACCENT_SOFT": "#1A2536",
+            "BG": "#0B0F15",
+            "BG_PANEL": "#111828",
+            "BG_CARD": "#131C2C",
+            "TEXT": "#EAF0FA",
+            "MUTED": "#94A4BC",
+            "BORDER": "#27344A",
+            "BG_INPUT": "#0F1524",
+            "BG_BUTTON": "#141B2B",
+            "BG_BUTTON_HOVER": "#1A2436",
+            "BG_BUTTON_PRESS": "#121A28",
+            "BG_NAV_ACTIVE": "#1B2740",
+            "BG_NAV_HOVER": "#162133",
+            "BORDER_NAV_ACTIVE": "#5878A3",
+            "TEXT_NAV_ACTIVE": "#F3F7FF",
+            "BG_BULK_BTN": "#152033",
+            "BG_BULK_HOVER": "#1B2A42",
+            "BG_DISABLED": "#111827",
+            "CARD_HOVER_BG": "#182338",
+            "CARD_HOVER_BORDER": "#3A5274",
+            "CARD_CHANGED_BORDER": "#4A678E",
+            "CARD_CHANGED_HOVER_BORDER": "#5E80AF",
+            "CARD_CHANGED_BG": "rgba(74, 107, 148, 0.12)",
+            "CARD_CHANGED_HOVER_BG": "rgba(111, 147, 196, 0.16)",
+            "DISABLED_TEXT": "#6D7686",
+            "DISABLED_BORDER": "#333C4B",
+            "MUTED_DARK": "#6D7F98",
+            "TOAST_SUCCESS_BG": "rgba(34, 84, 61, 0.92)",
+            "TOAST_SUCCESS_BORDER": "#2D7A54",
+            "TOAST_ERROR_BG": "rgba(120, 30, 30, 0.94)",
+            "TOAST_ERROR_BORDER": "#D44444",
+            "JUNKMAN_BG": "rgba(166, 227, 106, 0.14)",
+            "JUNKMAN_BORDER": "#5E8F2E",
+            "JUNKMAN_TEXT": "#A6E36A",
+            "MAXED_BG": "rgba(232, 106, 95, 0.14)",
+            "MAXED_BORDER": "#A64A42",
+            "MAXED_TEXT": "#E86A5F",
+            "LEVEL_SEG_LOW": "#3A5A82",
+            "LEVEL_SEG_HIGH": "#5E80AF",
+            "CAREER_SOURCE": "#7FA8E8",
+            "CAREER_SOURCE_BORDER": "#4F73A8",
+            "CAREER_SOURCE_BG": "rgba(79, 115, 168, 0.14)",
+            "MY_CARS_SOURCE": "#B7A4F5",
+            "MY_CARS_SOURCE_BORDER": "#6E5BA8",
+            "MY_CARS_SOURCE_BG": "rgba(110, 91, 168, 0.14)",
+            "GOLD": "#F08BB4",
+            "GOLD_BORDER": "#B85B86",
+            "GOLD_BG": "rgba(240, 139, 180, 0.14)",
+            "ACTIVE_CAR": "#74D39A",
+            "ACTIVE_CAR_BORDER": "#3E8A5D",
+            "ACTIVE_CAR_BG": "rgba(62, 138, 93, 0.14)",
+            "RADIUS_SM": "4px",
+            "RADIUS_MD": "8px",
+            "RADIUS_LG": "10px",
+            "RADIUS_XL": "12px",
+            "RADIUS_PILL": "14px",
+        },
+    ),
     "Catppuccin": ThemePreset("Catppuccin", "#CBA6F7", "#1E1E2E", "#CDD6F4"),
+    "Claude": ThemePreset("Claude", "#CC7D5E", "#2D2D2B", "#F9F9F7"),
+    "Codex": ThemePreset("Codex", "#0169CC", "#111111", "#FCFCFC"),
     "Dracula": ThemePreset("Dracula", "#FF79C6", "#282A36", "#F8F8F2"),
     "Everforest": ThemePreset("Everforest", "#A7C080", "#2D353B", "#D3C6AA"),
     "GitHub": ThemePreset("GitHub", "#1F6FEB", "#0D1117", "#E6EDF3"),
@@ -130,6 +197,9 @@ def save_theme_name(theme_name: str) -> str:
 
 
 def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
+    if preset.tokens is not None:
+        return dict(preset.tokens)
+
     accent = preset.accent
     bg = preset.background
     text = preset.foreground
@@ -149,6 +219,8 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
         "BG_BUTTON_PRESS": _mix(bg, text, 0.02),
         "BG_NAV_ACTIVE": _mix(bg, accent, 0.18),
         "BG_NAV_HOVER": _mix(bg, text, 0.08),
+        "BORDER_NAV_ACTIVE": _mix(accent, text, 0.12),
+        "TEXT_NAV_ACTIVE": _mix(text, accent, 0.06),
         "BG_BULK_BTN": _mix(bg, accent, 0.12),
         "BG_BULK_HOVER": _mix(bg, accent, 0.18),
         "BG_DISABLED": _mix(bg, text, 0.04),
@@ -248,15 +320,17 @@ QPushButton:checked {{
     border-color: {ACCENT_BRIGHT};
 }}
 QPushButton#navButton {{
+    background: transparent;
     text-align: left;
-    padding: 8px 12px 8px 14px;
-    border-left: 3px solid transparent;
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    border-radius: 10px;
     min-height: 36px;
 }}
 QPushButton#navButton:checked {{
     background: {BG_NAV_ACTIVE};
-    border-left: 3px solid {ACCENT_BRIGHT};
-    color: {TEXT};
+    border: 1px solid {BORDER_NAV_ACTIVE};
+    color: {TEXT_NAV_ACTIVE};
 }}
 QPushButton#navButton:hover {{
     background: {BG_NAV_HOVER};
