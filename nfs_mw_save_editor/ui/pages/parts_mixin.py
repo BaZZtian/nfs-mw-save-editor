@@ -12,7 +12,7 @@ from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits
 from ui.pages.constants import PARTS_TILE_MIN_WIDTH
-from ui.rendering import ChunkedGridController, refresh_widget_style
+from ui.rendering import ViewportLazyGridController, refresh_widget_style
 from ui.widgets import WantSpinBox, build_perf_level_row
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ class PartsMixin:
         self._parts_card_handles: Dict[int, PartsCardHandle] = {}
         self._parts_visible_order: List[int] = []
         self._parts_live_vm_map: Dict[int, PartsCardVm] = {}
-        self._parts_render_controller = ChunkedGridController(
+        self._parts_render_controller = ViewportLazyGridController(
             self,
             name="Tuning",
             layout=self.parts_cards_layout,

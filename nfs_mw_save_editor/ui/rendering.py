@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from math import ceil
 from typing import Any, Optional
 
@@ -561,6 +562,529 @@ class ChunkedGridController(QObject):
             if previous_sizes.get(idx) != (shell.width(), shell.height()):
                 resized += 1
         return resized
+
+    def _suspend_updates(self) -> tuple[bool, bool]:
+        parent_widget = self._layout.parentWidget()
+        viewport = self._scroll_area.viewport()
+        parent_enabled = True if parent_widget is None else parent_widget.updatesEnabled()
+        viewport_enabled = True if viewport is None else viewport.updatesEnabled()
+        if parent_widget is not None:
+            parent_widget.setUpdatesEnabled(False)
+        if viewport is not None:
+            viewport.setUpdatesEnabled(False)
+        return parent_enabled, viewport_enabled
+
+    def _restore_updates(self, parent_enabled: bool, viewport_enabled: bool) -> None:
+        parent_widget = self._layout.parentWidget()
+        viewport = self._scroll_area.viewport()
+        if parent_widget is not None:
+            parent_widget.setUpdatesEnabled(parent_enabled)
+            parent_widget.updateGeometry()
+            parent_widget.update()
+        if viewport is not None:
+            viewport.setUpdatesEnabled(viewport_enabled)
+            viewport.update()
+
+
+@dataclass
+class LazyGridRowState:
+    row_index: int
+    items: list[Any]
+    reserved_height: int
+    placeholder: Optional[QWidget] = None
+    shells: list[AnimatedCardShell] = field(default_factory=list)
+    realized: bool = False
+
+    def anchor_widget(self) -> Optional[QWidget]:
+        if self.realized and self.shells:
+            return self.shells[0]
+        return self.placeholder
+
+
+class ViewportLazyGridController(QObject):
+    """Viewport-first row-aware renderer for large card grids."""
+
+    def __init__(
+        self,
+        parent: QObject,
+        *,
+        name: str,
+        layout: QGridLayout,
+        scroll_area: QScrollArea,
+        forward_buffer_rows: int = 2,
+        backward_buffer_rows: int = 1,
+        idle_restart_ms: int = 120,
+        stagger_ms: int = 24,
+        max_animated_cards: int = 12,
+        log: Optional[logging.Logger] = None,
+    ):
+        super().__init__(parent)
+        self._name = str(name)
+        self._layout = layout
+        self._scroll_area = scroll_area
+        self._forward_buffer_rows = max(0, int(forward_buffer_rows))
+        self._backward_buffer_rows = max(0, int(backward_buffer_rows))
+        self._idle_restart_ms = max(0, int(idle_restart_ms))
+        self._stagger_ms = max(0, int(stagger_ms))
+        self._max_animated_cards = max(0, int(max_animated_cards))
+        self._log = log or logger
+
+        self._generation = 0
+        self._columns = 1
+        self._last_columns = 0
+        self._items: list[Any] = []
+        self._rows: list[LazyGridRowState] = []
+        self._build_widget: Optional[Callable[[Any], QWidget]] = None
+        self._empty_widget_factory: Optional[Callable[[int], QWidget]] = None
+        self._empty_widget: Optional[QWidget] = None
+        self._animate = False
+        self._rendering = False
+        self._render_elapsed: Optional[QElapsedTimer] = None
+        self._placeholder_row_height = 0
+        self._realized_shell_count = 0
+        self._render_start_viewport_width = 0
+        self._eval_scheduled = False
+        self._idle_token = 0
+        self._protected_range: tuple[int, int] = (0, -1)
+
+        self._idle_restart_timer = QTimer(self)
+        self._idle_restart_timer.setSingleShot(True)
+        self._idle_restart_timer.timeout.connect(self._start_idle_prefetch)
+
+        scrollbar = self._scroll_area.verticalScrollBar()
+        if scrollbar is not None:
+            scrollbar.valueChanged.connect(self._on_scrollbar_changed)
+            scrollbar.rangeChanged.connect(self._on_scrollbar_range_changed)
+
+    @property
+    def is_rendering(self) -> bool:
+        return self._rendering
+
+    def has_rendered_content(self) -> bool:
+        return bool(self._rows) or self._empty_widget is not None
+
+    def cancel(self) -> None:
+        self._generation += 1
+        self._rendering = False
+        self._eval_scheduled = False
+        self._idle_token += 1
+        self._idle_restart_timer.stop()
+
+    def clear(self) -> None:
+        self.cancel()
+        self._items = []
+        self._rows = []
+        self._build_widget = None
+        self._empty_widget_factory = None
+        self._empty_widget = None
+        self._render_elapsed = None
+        self._placeholder_row_height = 0
+        self._realized_shell_count = 0
+        self._render_start_viewport_width = 0
+        self._protected_range = (0, -1)
+        self._clear_layout(delete_widgets=True)
+
+    def schedule_render(
+        self,
+        items: Sequence[Any],
+        *,
+        build_widget: Callable[[Any], QWidget],
+        columns: int,
+        empty_widget_factory: Optional[Callable[[int], QWidget]] = None,
+        animate: bool,
+        reset_scroll: bool,
+    ) -> None:
+        self.cancel()
+        scrollbar = self._scroll_area.verticalScrollBar()
+        restore_scroll = 0
+        if scrollbar is not None and not reset_scroll:
+            restore_scroll = scrollbar.value()
+
+        self._items = list(items)
+        self._build_widget = build_widget
+        self._empty_widget_factory = empty_widget_factory
+        self._empty_widget = None
+        self._columns = max(1, int(columns or 1))
+        self._animate = bool(animate)
+        self._render_elapsed = QElapsedTimer()
+        self._render_elapsed.start()
+        self._placeholder_row_height = 0
+        self._realized_shell_count = 0
+        self._render_start_viewport_width = self._viewport_width()
+        self._protected_range = (0, -1)
+
+        self._clear_layout(delete_widgets=True)
+        self._configure_columns(self._columns)
+
+        if not self._items:
+            self._rendering = False
+            if empty_widget_factory is not None:
+                self._empty_widget = empty_widget_factory(self._columns)
+                self._layout.addWidget(self._empty_widget, 0, 0, 1, self._columns)
+            self._log.debug("%s lazy render finished immediately (empty state)", self._name)
+            return
+
+        probe_height = self._build_probe_row_height(self._items[: self._columns])
+        self._placeholder_row_height = max(1, probe_height)
+        self._rows = [
+            LazyGridRowState(
+                row_index=row_index,
+                items=list(self._items[row_index * self._columns:(row_index + 1) * self._columns]),
+                reserved_height=self._placeholder_row_height,
+            )
+            for row_index in range(ceil(len(self._items) / self._columns))
+        ]
+        self._rendering = True
+        self._log.debug(
+            "%s lazy render start: %d item(s), %d row(s), viewport=%d px, seed row=%d px",
+            self._name,
+            len(self._items),
+            len(self._rows),
+            self._render_start_viewport_width,
+            self._placeholder_row_height,
+        )
+        self._commit_placeholders()
+
+        if scrollbar is not None:
+            scrollbar.setValue(0 if reset_scroll else restore_scroll)
+
+        self._evaluate_visible_rows(self._generation)
+        self._schedule_idle_restart(immediate=True)
+
+    def reflow(self, columns: int) -> None:
+        new_columns = max(1, int(columns or 1))
+        if new_columns == self._columns:
+            return
+        self._columns = new_columns
+        self._log.debug("%s lazy reflow: regroup rows for %d column(s)", self._name, self._columns)
+        self.schedule_render(
+            self._items,
+            build_widget=self._build_widget or (lambda _: QWidget()),
+            columns=self._columns,
+            empty_widget_factory=self._empty_widget_factory,
+            animate=False,
+            reset_scroll=False,
+        )
+
+    def _build_probe_row_height(self, row_items: Sequence[Any]) -> int:
+        shells = self._build_row_shells(row_items)
+        height = self._estimate_row_height(shells)
+        for shell in shells:
+            shell.clear_animation()
+            shell.deleteLater()
+        return height
+
+    def _build_row_shells(self, row_items: Sequence[Any]) -> list[AnimatedCardShell]:
+        if self._build_widget is None:
+            return []
+        shells: list[AnimatedCardShell] = []
+        for item in row_items:
+            widget = self._build_widget(item)
+            shell = AnimatedCardShell()
+            shell.set_content(widget)
+            shells.append(shell)
+        return shells
+
+    def _estimate_row_height(self, shells: Sequence[AnimatedCardShell]) -> int:
+        if not shells:
+            return max(1, self._placeholder_row_height)
+        return max(
+            max(shell.sizeHint().height(), shell.minimumSizeHint().height(), 1)
+            for shell in shells
+        )
+
+    def _commit_placeholders(self) -> None:
+        restore_parent, restore_viewport = self._suspend_updates()
+        try:
+            for row in self._rows:
+                placeholder = self._create_placeholder(row.reserved_height)
+                row.placeholder = placeholder
+                self._layout.addWidget(placeholder, row.row_index, 0, 1, self._columns)
+            self._layout.activate()
+            parent_widget = self._layout.parentWidget()
+            if parent_widget is not None:
+                parent_widget.updateGeometry()
+        finally:
+            self._restore_updates(restore_parent, restore_viewport)
+
+    def _create_placeholder(self, height: int) -> QWidget:
+        placeholder = QWidget()
+        placeholder.setObjectName("lazyRowPlaceholder")
+        placeholder.setFixedHeight(max(1, int(height)))
+        return placeholder
+
+    def _on_scrollbar_changed(self, _value: int) -> None:
+        if not self._rendering:
+            return
+        self._idle_token += 1
+        self._schedule_visible_eval()
+        self._schedule_idle_restart(immediate=False)
+
+    def _on_scrollbar_range_changed(self, _minimum: int, _maximum: int) -> None:
+        if not self._rendering:
+            return
+        self._schedule_visible_eval()
+
+    def _schedule_visible_eval(self) -> None:
+        if self._eval_scheduled:
+            return
+        self._eval_scheduled = True
+        generation = self._generation
+        QTimer.singleShot(0, lambda gen=generation: self._run_visible_eval(gen))
+
+    def _run_visible_eval(self, generation: int) -> None:
+        self._eval_scheduled = False
+        self._evaluate_visible_rows(generation)
+
+    def _evaluate_visible_rows(self, generation: int) -> None:
+        if generation != self._generation or not self._rendering:
+            return
+        visible_start, visible_end = self._visible_row_range()
+        preload_start = max(0, visible_start - self._backward_buffer_rows)
+        preload_end = min(len(self._rows) - 1, visible_end + self._forward_buffer_rows)
+        self._protected_range = (preload_start, preload_end)
+        target_rows = [
+            row_index
+            for row_index in range(preload_start, preload_end + 1)
+            if not self._rows[row_index].realized
+        ]
+        if target_rows:
+            self._realize_rows(target_rows, reason="visible")
+        else:
+            self._log.debug(
+                "%s lazy visible band: rows %d-%d already realized (%d/%d)",
+                self._name,
+                preload_start,
+                preload_end,
+                sum(1 for row in self._rows if row.realized),
+                len(self._rows),
+            )
+        self._finish_if_complete()
+
+    def _visible_row_range(self) -> tuple[int, int]:
+        if not self._rows:
+            return (0, -1)
+        scrollbar = self._scroll_area.verticalScrollBar()
+        viewport = self._scroll_area.viewport()
+        if scrollbar is None or viewport is None:
+            return (0, min(len(self._rows) - 1, 0))
+        top = scrollbar.value()
+        bottom = top + max(1, viewport.height())
+        visible: list[int] = []
+        for row in self._rows:
+            row_top, row_bottom = self._row_bounds(row)
+            if row_bottom >= top and row_top <= bottom:
+                visible.append(row.row_index)
+        if visible:
+            return (visible[0], visible[-1])
+        stride = max(1, self._placeholder_row_height + max(0, self._layout.verticalSpacing()))
+        start = max(0, min(len(self._rows) - 1, top // stride))
+        count = max(1, ceil(max(1, viewport.height()) / stride))
+        end = min(len(self._rows) - 1, start + count)
+        return (start, end)
+
+    def _row_bounds(self, row: LazyGridRowState) -> tuple[int, int]:
+        if row.realized and row.shells:
+            top = min(shell.geometry().top() for shell in row.shells)
+            bottom = max(shell.geometry().bottom() for shell in row.shells)
+            if bottom >= top:
+                return (top, bottom)
+        anchor = row.anchor_widget()
+        if anchor is not None:
+            geom = anchor.geometry()
+            if geom.height() > 0:
+                return (geom.top(), geom.bottom())
+        estimated_top = row.row_index * (self._placeholder_row_height + max(0, self._layout.verticalSpacing()))
+        estimated_bottom = estimated_top + max(1, row.reserved_height)
+        return (estimated_top, estimated_bottom)
+
+    def _realize_rows(self, row_indices: Sequence[int], *, reason: str) -> None:
+        pending = [self._rows[row_index] for row_index in row_indices if not self._rows[row_index].realized]
+        if not pending:
+            return
+        build_timer = QElapsedTimer()
+        build_timer.start()
+        built_rows: list[tuple[LazyGridRowState, list[AnimatedCardShell]]] = []
+        for row in pending:
+            built_rows.append((row, self._build_row_shells(row.items)))
+        build_ms = build_timer.elapsed()
+
+        commit_timer = QElapsedTimer()
+        commit_timer.start()
+        restore_parent, restore_viewport = self._suspend_updates()
+        try:
+            for row, shells in built_rows:
+                if row.placeholder is not None:
+                    self._remove_widget_from_layout(row.placeholder)
+                    row.placeholder.deleteLater()
+                    row.placeholder = None
+                row.shells = shells
+                row.realized = True
+                for col, shell in enumerate(shells):
+                    self._layout.addWidget(shell, row.row_index, col)
+            self._layout.activate()
+            parent_widget = self._layout.parentWidget()
+            if parent_widget is not None:
+                parent_widget.updateGeometry()
+        finally:
+            self._restore_updates(restore_parent, restore_viewport)
+        commit_ms = commit_timer.elapsed()
+
+        previous_height = self._placeholder_row_height
+        max_row_height = previous_height
+        for row, shells in built_rows:
+            row_height = max(self._estimate_row_height(shells), self._measured_row_height(row))
+            row.reserved_height = max(row.reserved_height, row_height)
+            max_row_height = max(max_row_height, row.reserved_height)
+        if max_row_height > previous_height:
+            self._placeholder_row_height = max_row_height
+            self._update_placeholder_heights_outside_protected()
+
+        if self._animate:
+            for row, shells in built_rows:
+                for shell in shells:
+                    if self._realized_shell_count >= self._max_animated_cards:
+                        break
+                    shell.queue_reveal(delay_ms=self._realized_shell_count * self._stagger_ms)
+                    self._realized_shell_count += 1
+                else:
+                    continue
+                break
+
+        self._log.debug(
+            "%s lazy %s swap: realized row(s) %s in %d ms build + %d ms commit (%d/%d rows)",
+            self._name,
+            reason,
+            ",".join(str(row.row_index) for row, _ in built_rows),
+            build_ms,
+            commit_ms,
+            sum(1 for row in self._rows if row.realized),
+            len(self._rows),
+        )
+
+    def _measured_row_height(self, row: LazyGridRowState) -> int:
+        if row.realized and row.shells:
+            heights = [shell.geometry().height() for shell in row.shells if shell.geometry().height() > 0]
+            if heights:
+                return max(heights)
+        anchor = row.anchor_widget()
+        if anchor is not None and anchor.geometry().height() > 0:
+            return anchor.geometry().height()
+        return row.reserved_height
+
+    def _update_placeholder_heights_outside_protected(self) -> None:
+        protected_start, protected_end = self._protected_range
+        updated = 0
+        restore_parent, restore_viewport = self._suspend_updates()
+        try:
+            for row in self._rows:
+                if row.realized or row.placeholder is None:
+                    continue
+                if protected_start <= row.row_index <= protected_end:
+                    continue
+                if row.reserved_height < self._placeholder_row_height:
+                    row.reserved_height = self._placeholder_row_height
+                    row.placeholder.setFixedHeight(self._placeholder_row_height)
+                    updated += 1
+            if updated:
+                self._layout.activate()
+                parent_widget = self._layout.parentWidget()
+                if parent_widget is not None:
+                    parent_widget.updateGeometry()
+        finally:
+            self._restore_updates(restore_parent, restore_viewport)
+        if updated:
+            self._log.debug(
+                "%s lazy placeholder grow: %d row(s) updated to %d px outside band %d-%d",
+                self._name,
+                updated,
+                self._placeholder_row_height,
+                protected_start,
+                protected_end,
+            )
+
+    def _start_idle_prefetch(self) -> None:
+        if not self._rendering:
+            return
+        generation = self._generation
+        idle_token = self._idle_token
+        QTimer.singleShot(0, lambda gen=generation, token=idle_token: self._idle_prefetch_step(gen, token))
+
+    def _idle_prefetch_step(self, generation: int, idle_token: int) -> None:
+        if generation != self._generation or idle_token != self._idle_token or not self._rendering:
+            return
+        protected_start, protected_end = self._protected_range
+        target = next(
+            (
+                row.row_index
+                for row in self._rows
+                if not row.realized and row.row_index > protected_end
+            ),
+            None,
+        )
+        if target is None:
+            target = next((row.row_index for row in self._rows if not row.realized), None)
+        if target is None:
+            self._finish_if_complete()
+            return
+        self._realize_rows([target], reason="idle")
+        self._finish_if_complete()
+        if self._rendering and idle_token == self._idle_token:
+            QTimer.singleShot(0, lambda gen=generation, token=idle_token: self._idle_prefetch_step(gen, token))
+
+    def _schedule_idle_restart(self, *, immediate: bool) -> None:
+        if not self._rendering:
+            return
+        self._idle_restart_timer.stop()
+        self._idle_restart_timer.start(0 if immediate else self._idle_restart_ms)
+
+    def _finish_if_complete(self) -> None:
+        if not self._rendering:
+            return
+        if any(not row.realized for row in self._rows):
+            return
+        self._rendering = False
+        self._idle_restart_timer.stop()
+        total_ms = self._render_elapsed.elapsed() if self._render_elapsed is not None else 0
+        self._log.debug(
+            "%s lazy render finish: %d row(s), %d item(s) in %d ms",
+            self._name,
+            len(self._rows),
+            len(self._items),
+            total_ms,
+        )
+
+    def _remove_widget_from_layout(self, widget: QWidget) -> None:
+        for index in range(self._layout.count()):
+            item = self._layout.itemAt(index)
+            if item is not None and item.widget() is widget:
+                self._layout.takeAt(index)
+                return
+
+    def _clear_layout(self, *, delete_widgets: bool) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget is None:
+                continue
+            if delete_widgets:
+                if isinstance(widget, AnimatedCardShell):
+                    widget.clear_animation()
+                widget.deleteLater()
+
+    def _configure_columns(self, columns: int) -> None:
+        for col in range(max(self._last_columns, columns)):
+            self._layout.setColumnStretch(col, 0)
+            self._layout.setColumnMinimumWidth(col, 0)
+        for col in range(columns):
+            self._layout.setColumnStretch(col, 1)
+        self._last_columns = columns
+
+    def _viewport_width(self) -> int:
+        viewport = self._scroll_area.viewport()
+        if viewport is None:
+            return 0
+        return viewport.width()
 
     def _suspend_updates(self) -> tuple[bool, bool]:
         parent_widget = self._layout.parentWidget()
