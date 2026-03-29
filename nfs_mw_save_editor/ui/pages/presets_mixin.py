@@ -150,6 +150,7 @@ class PresetsMixin:
         self.snapshot_library_scroll.setObjectName("cardScroll")
         self.snapshot_library_scroll.setWidgetResizable(True)
         self.snapshot_library_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.snapshot_library_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.snapshot_library_scroll.setWidget(self.snapshot_library_cards)
         self.presets_stack.addWidget(self.snapshot_library_scroll)
 
@@ -165,6 +166,7 @@ class PresetsMixin:
         self.snapshot_cards_scroll.setObjectName("cardScroll")
         self.snapshot_cards_scroll.setWidgetResizable(True)
         self.snapshot_cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.snapshot_cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.snapshot_cards_scroll.setWidget(self.snapshot_cards)
         self.presets_stack.addWidget(self.snapshot_cards_scroll)
 

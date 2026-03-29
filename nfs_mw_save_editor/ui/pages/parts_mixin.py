@@ -123,6 +123,7 @@ class PartsMixin:
         self.parts_cards_scroll.setObjectName("cardScroll")
         self.parts_cards_scroll.setWidgetResizable(True)
         self.parts_cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.parts_cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.parts_cards_scroll.setWidget(self.parts_cards)
         layout.addWidget(self.parts_cards_scroll, 1)
 
@@ -654,7 +655,6 @@ class PartsMixin:
                 btn.setProperty("active", enabled)
                 if reason:
                     btn.setToolTip(reason)
-                    blocked.append(f"{cat}: {reason}")
                 btn.clicked.connect(
                     lambda checked, slot=card_entry.parts_slot, category=cat: self.on_parts_junkman_toggled(slot, category, checked)
                 )

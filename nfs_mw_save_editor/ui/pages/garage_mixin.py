@@ -157,6 +157,7 @@ class GarageMixin:
         self.garage_cards_scroll.setObjectName("cardScroll")
         self.garage_cards_scroll.setWidgetResizable(True)
         self.garage_cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.garage_cards_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.garage_cards_scroll.setWidget(self.garage_cards)
         layout.addWidget(self.garage_cards_scroll, 1)
 
