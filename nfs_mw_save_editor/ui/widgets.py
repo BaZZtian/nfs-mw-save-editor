@@ -385,7 +385,7 @@ class ApplyConfirmDialog(QDialog):
         detail_sections: list[tuple[str, list[str]]],
     ):
         super().__init__(parent)
-        self.setWindowTitle("Apply changes?")
+        self.setWindowTitle("Review staged changes")
         self.setModal(True)
         self.setSizeGripEnabled(True)
         self._base_width = 760
@@ -394,7 +394,7 @@ class ApplyConfirmDialog(QDialog):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(10)
 
-        title = QLabel("Apply changes to loaded save (memory only)?")
+        title = QLabel("Apply staged changes to the open save?")
         title.setObjectName("sectionLabel")
         root.addWidget(title)
 
@@ -405,7 +405,7 @@ class ApplyConfirmDialog(QDialog):
 
         detail_count = sum(len(lines) for _, lines in detail_sections)
         self.details_toggle = QToolButton()
-        self.details_toggle.setText(f"Show Details ({detail_count})")
+        self.details_toggle.setText(f"Show details ({detail_count})")
         self.details_toggle.setCheckable(True)
         self.details_toggle.setChecked(False)
         self.details_toggle.toggled.connect(self._on_toggle_details)
@@ -445,7 +445,7 @@ class ApplyConfirmDialog(QDialog):
         return "\n\n".join(chunks)
 
     def _on_toggle_details(self, checked: bool) -> None:
-        self.details_toggle.setText("Hide Details" if checked else f"Show Details ({self._detail_line_count()})")
+        self.details_toggle.setText("Hide details" if checked else f"Show details ({self._detail_line_count()})")
         self.details_edit.setVisible(checked)
         layout = self.layout()
         if layout is not None:

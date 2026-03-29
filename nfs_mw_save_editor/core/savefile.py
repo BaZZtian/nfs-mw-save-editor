@@ -100,6 +100,7 @@ class SaveFile:
     EMPTY_PARTS_BLOCK_HEAD_FILL = 0xFF
     EMPTY_PARTS_BLOCK_ZERO_TAIL_OFFSET = 0x190
     EMPTY_PARTS_BLOCK_MARKER = b"\xFF\xCD\xCD\xCD"
+    BOUNDARY_PARTS_SLOT_BLOCKED_REASON = "Boundary parts slot is reserved until validated"
     PRIMARY_VISUAL_FIELDS: Tuple[Tuple[str, int, int], ...] = (
         ("Body Kit", 0x02E, 1),
         ("Spoiler", 0x058, 2),
@@ -587,6 +588,12 @@ class SaveFile:
         count = (self.GARAGE_BASE_OFFSET - self.PARTS_BLOCK_BASE_OFFSET) // self.PARTS_BLOCK_SIZE
         return range(self.PARTS_BLOCK_SLOT_BASE, self.PARTS_BLOCK_SLOT_BASE + count)
 
+    def _boundary_parts_slot(self) -> Optional[int]:
+        slots = self._parts_slot_numbers()
+        if slots.start >= slots.stop:
+            return None
+        return slots.stop - 1
+
     def _is_blank_parts_block(self, raw_block: bytes) -> bool:
         if len(raw_block) != self.PARTS_BLOCK_SIZE:
             return False
@@ -608,6 +615,7 @@ class SaveFile:
     ) -> List[PartsSlotStatus]:
         reserved = {int(value) for value in (reserved_parts_slots or set())}
         referenced_slots = {record.parts_slot for record in self.get_owned_car_records()}
+        boundary_slot = self._boundary_parts_slot()
         statuses: List[PartsSlotStatus] = []
         for slot in self._parts_slot_numbers():
             abs_off = self._parts_block_abs_off(slot)
@@ -621,7 +629,10 @@ class SaveFile:
             elif slot in reserved:
                 blocked_reason = "Reserved by staged injector"
             elif self._is_blank_parts_block(raw_block):
-                reusable = True
+                if slot == boundary_slot:
+                    blocked_reason = self.BOUNDARY_PARTS_SLOT_BLOCKED_REASON
+                else:
+                    reusable = True
             else:
                 blocked_reason = "Non-empty parts block"
             statuses.append(
@@ -635,6 +646,13 @@ class SaveFile:
                 )
             )
         return statuses
+
+    def _parts_allocation_refusal(self, statuses: List[PartsSlotStatus]) -> str:
+        if any(status.reusable for status in statuses):
+            return "No validated empty parts slots available"
+        if any(status.blocked_reason == self.BOUNDARY_PARTS_SLOT_BLOCKED_REASON for status in statuses):
+            return self.BOUNDARY_PARTS_SLOT_BLOCKED_REASON
+        return "No validated empty parts slots available"
 
     def get_career_slot_statuses(
         self,
@@ -975,6 +993,98 @@ class SaveFile:
         return bytes.fromhex(str(hex_text).replace("\n", " ").strip())
 
     @classmethod
+    def load_snapshot_library_entry(
+        cls,
+        path: str | Path,
+        *,
+        library_root: str | Path | None = None,
+    ) -> SnapshotLibraryEntry:
+        resolved_path = Path(path).resolve()
+        payload = json.loads(resolved_path.read_text(encoding="utf-8"))
+        if payload.get("kind") not in (cls.SNAPSHOT_KIND, cls.LEGACY_SNAPSHOT_KIND):
+            raise ValueError(
+                f"{resolved_path} is not a {cls.SNAPSHOT_KIND} or {cls.LEGACY_SNAPSHOT_KIND} file"
+            )
+        block = cls._hex_to_bytes(payload["primary_build_block"]["normalized_hex"])
+        if len(block) != cls.PARTS_BLOCK_SIZE:
+            raise ValueError(f"{resolved_path} has invalid normalized primary block size {len(block)}")
+        template = payload["primary_owned_record_template"]
+        signature = cls._hex_to_bytes(template["signature_hex"])
+        if len(signature) != cls.CAREER_VEHICLE_SIGNATURE_SIZE:
+            raise ValueError(f"{resolved_path} has invalid signature length {len(signature)}")
+        library_base = Path(library_root).resolve() if library_root is not None else cls.default_snapshot_library_root().resolve()
+        relative_parent = resolved_path.parent.relative_to(library_base) if resolved_path.parent != library_base else Path(".")
+        bucket = "Bonus" if "bonus_cars" in {part.lower() for part in relative_parent.parts} else "Main"
+        performance = tuple(
+            (str(name), int(value))
+            for name, value in payload.get("primary_build_block", {}).get("performance_levels", {}).items()
+        )
+        visuals = tuple(
+            (str(name), str(value))
+            for name, value in payload.get("primary_build_block", {}).get("primary_visual_fields", {}).items()
+        )
+        sidecar_payload = payload.get("optional_visual_sidecar")
+        sidecar_entry: Optional[SnapshotVisualSidecarEntry] = None
+        if sidecar_payload is not None:
+            sidecar_block = cls._hex_to_bytes(sidecar_payload["normalized_sidecar_build_block_hex"])
+            if len(sidecar_block) != cls.PARTS_BLOCK_SIZE:
+                raise ValueError(f"{resolved_path} has invalid normalized sidecar block size {len(sidecar_block)}")
+            sidecar_signature = cls._hex_to_bytes(sidecar_payload["owned_record_signature_clone_hex"])
+            if len(sidecar_signature) != cls.CAREER_VEHICLE_SIGNATURE_SIZE:
+                raise ValueError(f"{resolved_path} has invalid sidecar signature length {len(sidecar_signature)}")
+            sidecar_marker = cls._hex_to_bytes(sidecar_payload["sidecar_marker_hex"])
+            if len(sidecar_marker) != 4:
+                raise ValueError(f"{resolved_path} has invalid sidecar marker length {len(sidecar_marker)}")
+            sidecar_entry = SnapshotVisualSidecarEntry(
+                owned_record_signature_clone=sidecar_signature,
+                owned_record_location_bits=int(sidecar_payload["owned_record_location_bits"]),
+                owned_record_misc_bits=int(sidecar_payload["owned_record_misc_bits"]),
+                sidecar_parts_slot_offset=int(sidecar_payload["sidecar_parts_slot_offset"]),
+                normalized_sidecar_build_block=sidecar_block,
+                sidecar_marker=sidecar_marker,
+            )
+        return SnapshotLibraryEntry(
+            snapshot_id=str(resolved_path).lower(),
+            json_path=resolved_path,
+            library_bucket=bucket,
+            file_label=resolved_path.stem,
+            display_name=str(payload.get("display_name") or resolved_path.stem),
+            source_file=str(payload.get("source_file") or ""),
+            source_kind=str(payload.get("source_kind") or "Unknown"),
+            primary_owned_record_template=OwnedCarTemplate(
+                car_number=int(template["car_number"]),
+                signature=signature,
+                location_bits=int(template["location_bits"]),
+                misc_bits=int(template["misc_bits"]),
+                source_kind=str(template.get("source_kind") or payload.get("source_kind") or "Unknown"),
+            ),
+            normalized_primary_build_block=block,
+            performance_levels=performance,
+            primary_visual_fields=visuals,
+            requires_unresolved_global_visual_state=bool(payload.get("requires_unresolved_global_visual_state")),
+            has_visual_sidecar=sidecar_entry is not None,
+            optional_visual_sidecar=sidecar_entry,
+            global_visual_table_uniform_value=(
+                None
+                if payload.get("global_visual_table", {}).get("uniform_value") is None
+                else int(payload["global_visual_table"]["uniform_value"])
+            ),
+            global_visual_table_mode_offset=int(
+                payload.get("global_visual_table", {}).get("mode_offset", cls.VISUAL_TABLE_MODE_OFFSET)
+            ),
+            global_visual_table_mode_uniform_value=(
+                None
+                if payload.get("global_visual_table", {}).get("mode_uniform_value") is None
+                else int(payload["global_visual_table"]["mode_uniform_value"])
+            ),
+            global_visual_table_mode_tail_value=(
+                None
+                if payload.get("global_visual_table", {}).get("mode_tail_value") is None
+                else int(payload["global_visual_table"]["mode_tail_value"])
+            ),
+        )
+
+    @classmethod
     def load_snapshot_library(cls, root: str | Path | None = None) -> List[SnapshotLibraryEntry]:
         library_root = Path(root) if root is not None else cls.default_snapshot_library_root()
         if not library_root.exists():
@@ -990,89 +1100,7 @@ class SaveFile:
             for path in library_root.rglob(pattern)
         }
         for path in sorted(snapshot_paths):
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if payload.get("kind") not in (cls.SNAPSHOT_KIND, cls.LEGACY_SNAPSHOT_KIND):
-                raise ValueError(
-                    f"{path} is not a {cls.SNAPSHOT_KIND} or {cls.LEGACY_SNAPSHOT_KIND} file"
-                )
-            block = cls._hex_to_bytes(payload["primary_build_block"]["normalized_hex"])
-            if len(block) != cls.PARTS_BLOCK_SIZE:
-                raise ValueError(f"{path} has invalid normalized primary block size {len(block)}")
-            template = payload["primary_owned_record_template"]
-            signature = cls._hex_to_bytes(template["signature_hex"])
-            if len(signature) != cls.CAREER_VEHICLE_SIGNATURE_SIZE:
-                raise ValueError(f"{path} has invalid signature length {len(signature)}")
-            relative_parent = path.parent.relative_to(library_root) if path.parent != library_root else Path(".")
-            bucket = "Bonus" if "bonus_cars" in {part.lower() for part in relative_parent.parts} else "Main"
-            performance = tuple(
-                (str(name), int(value))
-                for name, value in payload.get("primary_build_block", {}).get("performance_levels", {}).items()
-            )
-            visuals = tuple(
-                (str(name), str(value))
-                for name, value in payload.get("primary_build_block", {}).get("primary_visual_fields", {}).items()
-            )
-            sidecar_payload = payload.get("optional_visual_sidecar")
-            sidecar_entry: Optional[SnapshotVisualSidecarEntry] = None
-            if sidecar_payload is not None:
-                sidecar_block = cls._hex_to_bytes(sidecar_payload["normalized_sidecar_build_block_hex"])
-                if len(sidecar_block) != cls.PARTS_BLOCK_SIZE:
-                    raise ValueError(f"{path} has invalid normalized sidecar block size {len(sidecar_block)}")
-                sidecar_signature = cls._hex_to_bytes(sidecar_payload["owned_record_signature_clone_hex"])
-                if len(sidecar_signature) != cls.CAREER_VEHICLE_SIGNATURE_SIZE:
-                    raise ValueError(f"{path} has invalid sidecar signature length {len(sidecar_signature)}")
-                sidecar_marker = cls._hex_to_bytes(sidecar_payload["sidecar_marker_hex"])
-                if len(sidecar_marker) != 4:
-                    raise ValueError(f"{path} has invalid sidecar marker length {len(sidecar_marker)}")
-                sidecar_entry = SnapshotVisualSidecarEntry(
-                    owned_record_signature_clone=sidecar_signature,
-                    owned_record_location_bits=int(sidecar_payload["owned_record_location_bits"]),
-                    owned_record_misc_bits=int(sidecar_payload["owned_record_misc_bits"]),
-                    sidecar_parts_slot_offset=int(sidecar_payload["sidecar_parts_slot_offset"]),
-                    normalized_sidecar_build_block=sidecar_block,
-                    sidecar_marker=sidecar_marker,
-                )
-            entry = SnapshotLibraryEntry(
-                snapshot_id=str(path.resolve()).lower(),
-                json_path=path.resolve(),
-                library_bucket=bucket,
-                file_label=path.stem,
-                display_name=str(payload.get("display_name") or path.stem),
-                source_file=str(payload.get("source_file") or ""),
-                source_kind=str(payload.get("source_kind") or "Unknown"),
-                primary_owned_record_template=OwnedCarTemplate(
-                    car_number=int(template["car_number"]),
-                    signature=signature,
-                    location_bits=int(template["location_bits"]),
-                    misc_bits=int(template["misc_bits"]),
-                    source_kind=str(template.get("source_kind") or payload.get("source_kind") or "Unknown"),
-                ),
-                normalized_primary_build_block=block,
-                performance_levels=performance,
-                primary_visual_fields=visuals,
-                requires_unresolved_global_visual_state=bool(payload.get("requires_unresolved_global_visual_state")),
-                has_visual_sidecar=sidecar_entry is not None,
-                optional_visual_sidecar=sidecar_entry,
-                global_visual_table_uniform_value=(
-                    None
-                    if payload.get("global_visual_table", {}).get("uniform_value") is None
-                    else int(payload["global_visual_table"]["uniform_value"])
-                ),
-                global_visual_table_mode_offset=int(
-                    payload.get("global_visual_table", {}).get("mode_offset", cls.VISUAL_TABLE_MODE_OFFSET)
-                ),
-                global_visual_table_mode_uniform_value=(
-                    None
-                    if payload.get("global_visual_table", {}).get("mode_uniform_value") is None
-                    else int(payload["global_visual_table"]["mode_uniform_value"])
-                ),
-                global_visual_table_mode_tail_value=(
-                    None
-                    if payload.get("global_visual_table", {}).get("mode_tail_value") is None
-                    else int(payload["global_visual_table"]["mode_tail_value"])
-                ),
-            )
-            entries.append(entry)
+            entries.append(cls.load_snapshot_library_entry(path, library_root=library_root))
         return sorted(entries, key=lambda item: (0 if item.library_bucket == "Main" else 1, item.display_name.lower(), item.file_label.lower()))
 
     def _write_owned_car_record(
@@ -1223,7 +1251,7 @@ class SaveFile:
                         refusal = (
                             "No adjacent empty parts slot for sidecar"
                             if saw_primary_parts else
-                            "No validated empty parts slots available"
+                            self._parts_allocation_refusal(parts_candidates)
                         )
                     else:
                         target_parts_slot = primary_parts.parts_slot
@@ -1231,7 +1259,7 @@ class SaveFile:
                 else:
                     reusable_parts = [slot for slot in parts_candidates if slot.reusable]
                     if not reusable_parts:
-                        refusal = "No validated empty parts slots available"
+                        refusal = self._parts_allocation_refusal(parts_candidates)
                     else:
                         target_parts_slot = reusable_parts[0].parts_slot
 

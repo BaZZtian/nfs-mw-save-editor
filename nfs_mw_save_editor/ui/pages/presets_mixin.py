@@ -1,4 +1,4 @@
-"""Presets page: Junkman preset I/O, boss-car library injector, save snapshot export."""
+"""Presets page: token preset I/O, build-library injection, save snapshot export."""
 from __future__ import annotations
 
 import json
@@ -44,14 +44,14 @@ class PresetsMixin:
         preset_inner = QVBoxLayout(preset_frame)
         preset_inner.setContentsMargins(12, 8, 12, 8)
         preset_inner.setSpacing(6)
-        preset_title = QLabel("Junkman Presets")
+        preset_title = QLabel("Token Presets")
         preset_title.setObjectName("settingsGroupTitle")
         preset_inner.addWidget(preset_title)
         preset_row = QHBoxLayout()
         preset_row.setSpacing(8)
-        self.btn_load_preset = QPushButton("Import Preset")
-        self.btn_save_preset = QPushButton("Export Preset")
-        self.btn_export_have = QPushButton("Export Current")
+        self.btn_load_preset = QPushButton("Import Tokens")
+        self.btn_save_preset = QPushButton("Export Tokens")
+        self.btn_export_have = QPushButton("Export Current Tokens")
         self.btn_load_preset.clicked.connect(self.on_load_preset)
         self.btn_save_preset.clicked.connect(self.on_save_preset)
         self.btn_export_have.clicked.connect(self.on_export_have)
@@ -61,10 +61,10 @@ class PresetsMixin:
         preset_inner.addLayout(preset_row)
         layout.addWidget(preset_frame)
 
-        # ── 2. Boss Cars header + view toggle ─────────────────
+        # ── 2. Car Builds header + view toggle ─────────────────
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        boss_label = QLabel("Boss Cars")
+        boss_label = QLabel("Car Builds")
         boss_label.setObjectName("sectionLabel")
         header_row.addWidget(boss_label)
         header_row.addStretch(1)
@@ -98,7 +98,7 @@ class PresetsMixin:
             controls.addWidget(btn)
         self.snapshot_library_filter_buttons["All"].setChecked(True)
         self.presets_search = QLineEdit()
-        self.presets_search.setPlaceholderText("Search boss-car library...")
+        self.presets_search.setPlaceholderText("Search build library...")
         self.presets_search.textChanged.connect(self._on_presets_search_changed)
         controls.addWidget(self.presets_search, 1)
         layout.addLayout(controls)
@@ -153,7 +153,7 @@ class PresetsMixin:
             btn.setVisible(is_library)
         self.presets_stack.setCurrentIndex(0 if is_library else 1)
         self.presets_search.setPlaceholderText(
-            "Search boss-car library..." if is_library else "Search builds in current save...",
+            "Search build library..." if is_library else "Search builds in this save...",
         )
         self._refresh_presets_page()
 
@@ -220,7 +220,7 @@ class PresetsMixin:
         self._library_slot_columns = columns
 
         if self.snapshot_library_error:
-            label = QLabel(f"Snapshot library unavailable: {self.snapshot_library_error}")
+            label = QLabel(f"Build library unavailable: {self.snapshot_library_error}")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.snapshot_library_cards_layout.addWidget(label, 0, 0, 1, columns)
@@ -231,7 +231,7 @@ class PresetsMixin:
             label = QLabel(
                 f"No snapshot files found in {self.snapshot_library_root}."
                 if not self.snapshot_library
-                else "No snapshot library entries match the current search."
+                else "No build-library entries match the current search."
             )
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
@@ -279,15 +279,15 @@ class PresetsMixin:
 
             # Capability / warning badges
             if entry.has_visual_sidecar:
-                warn_badge = QLabel("Requires adjacent sidecar pair")
+                warn_badge = QLabel("Needs adjacent sidecar slots")
                 warn_badge.setObjectName("partsCardNote")
                 warn_badge.setWordWrap(True)
                 card_layout.addWidget(warn_badge)
             if entry.requires_unresolved_global_visual_state:
                 mode_text = (
-                    f"0x5577+{entry.global_visual_table_mode_offset:X} ignored in v1"
+                    f"Uses extra 0x5577+{entry.global_visual_table_mode_offset:X} visual state not replayed in this preview"
                     if entry.global_visual_table_mode_uniform_value is not None
-                    else "0x5577 global state ignored in v1"
+                    else "Uses extra 0x5577 visual state not replayed in this preview"
                 )
                 warn_badge = QLabel(mode_text)
                 warn_badge.setObjectName("partsCardNote")
@@ -342,14 +342,14 @@ class PresetsMixin:
             # Refusal line — visible reason when injection is blocked
             refusal_texts: List[str] = []
             if not self.savefile:
-                refusal_texts.append("Open a save to inject")
+                refusal_texts.append("Open a save to stage an injection")
             else:
                 if plan_my is not None and plan_my.refusal_reason and staged_mode != "my_cars":
-                    refusal_texts.append(f"My Cars: {plan_my.refusal_reason}")
+                    refusal_texts.append(f"My Cars blocked: {plan_my.refusal_reason}")
                 if plan_career is not None and plan_career.refusal_reason and staged_mode != "career":
-                    refusal_texts.append(f"Career: {plan_career.refusal_reason}")
+                    refusal_texts.append(f"Career blocked: {plan_career.refusal_reason}")
                 if staged_plan is not None and staged_plan.refusal_reason:
-                    refusal_texts.append(f"Staged plan blocked: {staged_plan.refusal_reason}")
+                    refusal_texts.append(f"Staged result blocked: {staged_plan.refusal_reason}")
             if refusal_texts:
                 refusal_label = QLabel(" | ".join(refusal_texts))
                 refusal_label.setObjectName("mutedLabel")
@@ -416,13 +416,13 @@ class PresetsMixin:
         self._snapshot_slot_columns = columns
 
         if not self.savefile:
-            label = QLabel("Open a save to inspect car build snapshots.")
+            label = QLabel("Open a save to inspect build snapshots from this save.")
             label.setObjectName("mutedLabel")
             self.snapshot_cards_layout.addWidget(label, 0, 0, 1, columns)
             return
 
         if self.snapshot_detection_error:
-            label = QLabel(f"Snapshot inspector unavailable: {self.snapshot_detection_error}")
+            label = QLabel(f"Build snapshot tools unavailable: {self.snapshot_detection_error}")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.snapshot_cards_layout.addWidget(label, 0, 0, 1, columns)
@@ -467,7 +467,7 @@ class PresetsMixin:
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
             mode_label = QLabel(
-                f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode "
+                f"0x5577+{snapshot.global_visual_table_mode_offset:X} visual mode: "
                 + (
                     f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
                     if snapshot.global_visual_table_mode_uniform_value is not None
@@ -555,18 +555,18 @@ class PresetsMixin:
 
     def on_stage_snapshot_injection(self, snapshot_id: str, target_mode: str) -> None:
         if not self.savefile:
-            QMessageBox.warning(self, "No save", "Open a save first.")
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
             return
         library_by_id = self._snapshot_library_by_id()
         entry = library_by_id.get(str(snapshot_id))
         if entry is None:
-            QMessageBox.warning(self, "Snapshot unavailable", "Could not resolve the selected boss-car snapshot.")
+            QMessageBox.warning(self, UI_TITLE_SNAPSHOT_UNAVAILABLE, "Could not resolve the selected library snapshot.")
             return
         plans, _, _, _ = self._current_snapshot_injection_plans(extra=(entry.snapshot_id, target_mode))
         plan = plans.get(entry.snapshot_id)
         if plan is None or plan.refusal_reason:
             reason = plan.refusal_reason if plan is not None else "Unknown injector planner failure"
-            QMessageBox.warning(self, "Injector blocked", reason)
+            QMessageBox.warning(self, UI_TITLE_BLOCKED, reason)
             return
         self.want_snapshot_injections[entry.snapshot_id] = str(target_mode)
         self._refresh_presets_page()
@@ -582,11 +582,11 @@ class PresetsMixin:
 
     def on_export_build_snapshot(self, abs_off: int) -> None:
         if not self.savefile:
-            QMessageBox.warning(self, "No save", "Open a save first.")
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
             return
         snapshot = next((item for item in self.build_snapshots if item.car_abs_off == abs_off), None)
         if snapshot is None:
-            QMessageBox.warning(self, "Snapshot unavailable", "Could not resolve the requested build snapshot.")
+            QMessageBox.warning(self, UI_TITLE_SNAPSHOT_UNAVAILABLE, "Could not resolve the requested build snapshot.")
             return
         default_name = (
             f"{self.savefile.SNAPSHOT_FILE_PREFIX}"

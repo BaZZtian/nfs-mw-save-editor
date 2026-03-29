@@ -34,7 +34,7 @@ class PartsMixin:
         layout = QVBoxLayout(w)
         layout.setContentsMargins(10, 6, 10, 8)
         layout.setSpacing(10)
-        hint = QLabel("Tune Career cars and My Cars builds in one place. Changes are staged until you Apply.")
+        hint = QLabel("Tune Career and My Cars builds in one place. Changes stay staged until you Apply.")
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -42,7 +42,7 @@ class PartsMixin:
         controls = QHBoxLayout()
         controls.setSpacing(8)
         self.parts_search = QLineEdit()
-        self.parts_search.setPlaceholderText("Search tuning by model name...")
+        self.parts_search.setPlaceholderText("Search cars by model name...")
         self.parts_search.textChanged.connect(self.on_parts_search_changed)
         controls.addWidget(self.parts_search, 1)
         self.chk_show_parts_diagnostics = QCheckBox("Show tuning diagnostics")
@@ -386,14 +386,14 @@ class PartsMixin:
             self.parts_cards_layout.addWidget(QLabel("Open a save to inspect and edit tuning builds."), 0, 0, 1, columns)
             return
         if self.parts_detection_error:
-            label = QLabel(f"Tuning unavailable: {self.parts_detection_error}")
+            label = QLabel(f"Tuning tools unavailable: {self.parts_detection_error}")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
             return
         visible_entries = self._tuning_card_entries()
         if not visible_entries:
-            label = QLabel("No tuning entries match the current search/filter.")
+            label = QLabel("No tuning entries match the current search or filter.")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.parts_cards_layout.addWidget(label, 0, 0, 1, columns)
@@ -478,7 +478,7 @@ class PartsMixin:
             card_layout.addLayout(meta_row)
 
             if limits is None:
-                note = QLabel("Read-only: no confirmed tuning cap mapping for this model.")
+                note = QLabel("No confirmed tuning limits for this model yet. Safe mode keeps this card read-only.")
                 note.setObjectName("partsCardNote")
                 note.setWordWrap(True)
                 card_layout.addWidget(note)
@@ -522,7 +522,7 @@ class PartsMixin:
                     raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
                     card_layout.addWidget(raw_value)
                 else:
-                    note = QLabel("No confirmed raw diagnostic slice is exposed for this source type.")
+                    note = QLabel("This source type does not expose a confirmed raw diagnostic slice.")
                     note.setObjectName("partsCardNote")
                     note.setWordWrap(True)
                     card_layout.addWidget(note)

@@ -67,8 +67,8 @@ class GarageMixin:
         layout.setSpacing(10)
 
         hint = QLabel(
-            "Move your cars between Career mode and My Cars. "
-            "Per-car bounty editing and pursuit stats live here."
+            "Move cars between Career and My Cars. "
+            "Edit bounty and pursuit stats here."
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
@@ -77,7 +77,7 @@ class GarageMixin:
         controls = QHBoxLayout()
         controls.setSpacing(8)
         self.garage_search = QLineEdit()
-        self.garage_search.setPlaceholderText("Search garage by model name...")
+        self.garage_search.setPlaceholderText("Search cars by model name...")
         self.garage_search.textChanged.connect(self.on_garage_search_changed)
         controls.addWidget(self.garage_search, 1)
         layout.addLayout(controls)
@@ -128,7 +128,7 @@ class GarageMixin:
         self.garage_cards_scroll.setWidget(self.garage_cards)
         layout.addWidget(self.garage_cards_scroll, 1)
 
-        self.garage_diag_label = self._section_label("Unlinked Pursuit Diagnostics")
+        self.garage_diag_label = self._section_label("Pursuit Diagnostics")
         layout.addWidget(self.garage_diag_label)
         self.garage_diag_text = QTextEdit()
         self.garage_diag_text.setReadOnly(True)
@@ -419,7 +419,14 @@ class GarageMixin:
     def _rebuild_garage_cards(self) -> None:
         if not hasattr(self, "garage_cards_layout"):
             return
+        previous_columns = max(
+            int(getattr(self, "_garage_slot_columns", 1) or 1),
+            int(self.garage_cards_layout.columnCount() or 0),
+        )
         self._clear_layout(self.garage_cards_layout)
+        for col in range(previous_columns):
+            self.garage_cards_layout.setColumnStretch(col, 0)
+            self.garage_cards_layout.setColumnMinimumWidth(col, 0)
         self.garage_card_edits = {}
         self.garage_card_current_labels = {}
         self._garage_card_widgets_page = {}
@@ -433,7 +440,7 @@ class GarageMixin:
             return
 
         if self.garage_detection_error:
-            label = QLabel(f"Garage manager disabled: {self.garage_detection_error}")
+            label = QLabel(f"Garage tools unavailable: {self.garage_detection_error}")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.garage_cards_layout.addWidget(label, 0, 0, 1, columns)
@@ -441,7 +448,7 @@ class GarageMixin:
 
         visible_slots = self._garage_card_entries()
         if not visible_slots:
-            label = QLabel("No garage cars match the current search/filter.")
+            label = QLabel("No cars match the current search or filter.")
             label.setObjectName("mutedLabel")
             label.setWordWrap(True)
             self.garage_cards_layout.addWidget(label, 0, 0, 1, columns)
@@ -526,7 +533,11 @@ class GarageMixin:
                 btn_my_cars.setEnabled(plans["my_cars"].refusal_reason is None)
                 btn_my_cars.setToolTip(
                     plans["my_cars"].refusal_reason
-                    or "Clear the linked pursuit stats, free that career slot, and move this car into My Cars."
+                    or (
+                        "Move this car to My Cars and free its linked Career slot."
+                        if slot.has_pursuit_link
+                        else "Move this car to My Cars."
+                    )
                 )
                 btn_my_cars.clicked.connect(lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "my_cars"))
                 action_row.addWidget(btn_my_cars)
@@ -536,7 +547,7 @@ class GarageMixin:
                 btn_career = QPushButton("Move to Career")
                 btn_career.setObjectName("partsBulkBtn")
                 btn_career.setEnabled(plans["career"].refusal_reason is None)
-                btn_career.setToolTip(plans["career"].refusal_reason or "Link this car to a validated empty career slot.")
+                btn_career.setToolTip(plans["career"].refusal_reason or "Move this car into the next validated Career slot.")
                 btn_career.clicked.connect(lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "career"))
                 action_row.addWidget(btn_career)
                 relevant_plans.append(plans["career"])
@@ -545,7 +556,7 @@ class GarageMixin:
 
             if plans["my_cars"].clears_pursuit_slot and plans["my_cars"].cleared_source_career_slot is not None:
                 release_note = QLabel(
-                    f"Move to My Cars will free Career Slot {plans['my_cars'].cleared_source_career_slot + 1}."
+                    f"Moving to My Cars frees Career Slot {plans['my_cars'].cleared_source_career_slot + 1}."
                 )
                 release_note.setObjectName("mutedLabel")
                 release_note.setWordWrap(True)
@@ -555,13 +566,13 @@ class GarageMixin:
                 and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
                 and not slot.has_pursuit_link
             ):
-                orphan_note = QLabel("No pursuit record")
+                orphan_note = QLabel("No pursuit record is linked to this car.")
                 orphan_note.setObjectName("mutedLabel")
                 orphan_note.setWordWrap(True)
                 card_layout.addWidget(orphan_note)
 
             if relevant_plans and all(plan.refusal_reason for plan in relevant_plans):
-                blocker = QLabel(next(plan.refusal_reason for plan in relevant_plans if plan.refusal_reason))
+                blocker = QLabel(f"Blocked: {next(plan.refusal_reason for plan in relevant_plans if plan.refusal_reason)}")
                 blocker.setObjectName("mutedLabel")
                 blocker.setWordWrap(True)
                 card_layout.addWidget(blocker)
@@ -680,12 +691,12 @@ class GarageMixin:
         if hasattr(self, "garage_diag_text"):
             entries = self._garage_unlinked_entries()
             if not entries:
-                self.garage_diag_text.setText("No unlinked pursuit-only records detected.")
+                self.garage_diag_text.setText("No unlinked pursuit records detected.")
             else:
                 lines = []
                 for slot in entries:
                     lines.append(
-                        f"Slot {slot.career_slot + 1}: bounty={slot.bounty}, escaped={slot.escaped}, busted={slot.busted}"
+                        f"Career Slot {slot.career_slot + 1}: bounty={slot.bounty}, escaped={slot.escaped}, busted={slot.busted}"
                     )
                 self.garage_diag_text.setText("\n".join(lines))
 
@@ -731,10 +742,10 @@ class GarageMixin:
                 allow_restore_to_nonvalidated_slot=allow_nonvalidated_restore,
             )
         except Exception as exc:
-            QMessageBox.warning(self, "Transfer unavailable", str(exc))
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, str(exc))
             return
         if plan.refusal_reason:
-            QMessageBox.warning(self, "Transfer blocked", plan.refusal_reason)
+            QMessageBox.warning(self, UI_TITLE_BLOCKED, plan.refusal_reason)
             return
         if self.want_owned_locations is None:
             self.want_owned_locations = dict(self.have_owned_locations)

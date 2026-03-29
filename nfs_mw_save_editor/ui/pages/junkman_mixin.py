@@ -1,4 +1,4 @@
-"""Junkman inventory page: catalog, card grid, apply, presets, junkman handlers."""
+"""Token inventory page: catalog, card grid, apply flow, presets, and handlers."""
 from __future__ import annotations
 
 import json
@@ -621,34 +621,34 @@ class JunkmanMixin:
                 injection_changes.append(f"{entry.display_name}: inject to {target_mode} -> {slot_text}{warn_text}")
         money_want = self.want_money if self.want_money is not None else self.have_money
         summary_lines = [
-            f"Token slots: total {total}, used {used}, free {free}, need {needed}, delta +{add} / -{remove}",
-            f"Unknown preserved: {unknown_preserved}",
+            f"Token slots: {total} total, {used} used, {free} free, {needed} needed, delta +{add} / -{remove}",
+            f"Unknown data preserved: {unknown_preserved}",
             f"Money: {self.have_money} -> {money_want}",
         ]
         if self.garage_detection_error:
             summary_lines.append(f"Garage: unavailable ({self.garage_detection_error})")
         else:
-            summary_lines.append(f"Total Bounty / Rating: {have_total_bounty} -> {want_total_bounty}")
-        summary_lines.append(f"Transfer changes: {len(transfer_changes)}")
+            summary_lines.append(f"Bounty / Rating: {have_total_bounty} -> {want_total_bounty}")
+        summary_lines.append(f"Garage transfers: {len(transfer_changes)}")
         summary_lines.append(f"Tuning changes: {len(parts_changes)}")
-        summary_lines.append(f"Snapshot injections: {len(injection_changes)}")
+        summary_lines.append(f"Preset injections: {len(injection_changes)}")
 
         detail_sections: List[tuple[str, List[str]]] = [
-            ("Profile changes", [f"Money: {self.have_money} -> {money_want}"]),
+            ("Profile", [f"Money: {self.have_money} -> {money_want}"]),
         ]
         if self.garage_detection_error:
             detail_sections[0][1].append(f"Garage unavailable: {self.garage_detection_error}")
         else:
-            detail_sections[0][1].append(f"Total Bounty / Rating: {have_total_bounty} -> {want_total_bounty}")
+            detail_sections[0][1].append(f"Bounty / Rating: {have_total_bounty} -> {want_total_bounty}")
             detail_sections[0][1].extend(slot_changes)
         if transfer_changes:
-            detail_sections.append(("Transfer changes", transfer_changes))
+            detail_sections.append(("Garage transfers", transfer_changes))
         if self.parts_detection_error:
-            detail_sections.append(("Tuning changes", [f"Unavailable: {self.parts_detection_error}"]))
+            detail_sections.append(("Tuning", [f"Unavailable: {self.parts_detection_error}"]))
         elif parts_changes:
-            detail_sections.append(("Tuning changes", parts_changes))
+            detail_sections.append(("Tuning", parts_changes))
         if injection_changes:
-            detail_sections.append(("Snapshot injections", injection_changes))
+            detail_sections.append(("Preset injections", injection_changes))
         return {
             "summary_lines": summary_lines,
             "detail_sections": detail_sections,
@@ -656,7 +656,7 @@ class JunkmanMixin:
 
     def on_apply_changes(self):
         if not self.savefile:
-            QMessageBox.warning(self, "No save", "Open a save first.")
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
             return
         want_full = self._build_want_full()
         unsafe_added = sorted(
@@ -677,12 +677,12 @@ class JunkmanMixin:
         cap = self._slot_capacity()
         if needed > cap:
             QMessageBox.warning(
-                self, "Not enough slots",
+                self, UI_TITLE_BLOCKED,
                 f"Need {needed} slots, have {cap}.\nReduce Want values or clear a category.",
             )
             return
         if not self.garage_detection_error and self._staged_career_vehicle_count() <= 0:
-            QMessageBox.warning(self, "Apply blocked", self._career_empty_block_reason())
+            QMessageBox.warning(self, UI_TITLE_BLOCKED, self._career_empty_block_reason())
             return
         summary = self._build_apply_summary(want_full)
         dialog = ApplyConfirmDialog(
@@ -771,11 +771,11 @@ class JunkmanMixin:
             self.refresh_state()
             ToastNotification.show_toast(self, "Changes applied in memory")
         except Exception as e:
-            QMessageBox.critical(self, "Apply failed", str(e))
+            QMessageBox.critical(self, UI_TITLE_APPLY_FAILED, str(e))
 
     def on_load_preset(self):
         if not self.savefile:
-            QMessageBox.warning(self, "No save", "Open a save first.")
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
             return
         path, _ = QFileDialog.getOpenFileName(self, "Load preset", str(Path.home()), "JSON (*.json)")
         if not path:
@@ -809,7 +809,7 @@ class JunkmanMixin:
 
     def on_save_preset(self):
         if not self.savefile:
-            QMessageBox.warning(self, "No save", "Open a save first.")
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "Save preset", str(Path.home() / "junkman_preset.json"), "JSON (*.json)"
@@ -822,7 +822,7 @@ class JunkmanMixin:
 
     def on_export_have(self):
         if not self.savefile:
-            QMessageBox.warning(self, "No save", "Open a save first.")
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "Export Have", str(Path.home() / "junkman_have.json"), "JSON (*.json)"
@@ -832,5 +832,4 @@ class JunkmanMixin:
         payload = {"counts": self.have_counts}
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         ToastNotification.show_toast(self, "Have exported")
-
 
