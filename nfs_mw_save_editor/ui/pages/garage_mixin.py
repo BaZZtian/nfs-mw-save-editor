@@ -55,6 +55,7 @@ class GarageCardHandle:
     card: QFrame
     slot_label: QLabel
     source_label: QLabel
+    pink_slip_badge: QLabel
     active_badge: QLabel
     name_label: QLabel
     parts_badge: QLabel
@@ -363,6 +364,9 @@ class GarageMixin:
                 if source == "Unknown":
                     if not source_kind.startswith("Unknown"):
                         continue
+                elif source == "Career":
+                    if source_kind not in ("Career", "Pink Slip"):
+                        continue
                 elif source_kind != source:
                     continue
             filtered.append(slot)
@@ -630,7 +634,13 @@ class GarageMixin:
         )
         handle.card.setProperty("changed", vm.changed)
         handle.slot_label.setText(slot_text)
-        self._apply_garage_source_badge(handle.source_label, slot.source_kind)
+        if slot.is_pink_slip:
+            self._apply_garage_source_badge(handle.source_label, "Career")
+            self._apply_garage_source_badge(handle.pink_slip_badge, "Pink Slip")
+            handle.pink_slip_badge.setVisible(True)
+        else:
+            self._apply_garage_source_badge(handle.source_label, slot.source_kind)
+            handle.pink_slip_badge.setVisible(False)
         handle.active_badge.setVisible(vm.is_active)
         handle.name_label.setText(slot.display_name)
         handle.parts_badge.setText(f"Parts Slot {slot.parts_slot}")
@@ -691,11 +701,14 @@ class GarageMixin:
         source_label = QLabel()
         source_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         source_label.setAlignment(Qt.AlignCenter)
+        pink_slip_badge = self._make_garage_source_badge("Pink Slip")
+        pink_slip_badge.setVisible(False)
         active_badge = self._make_active_car_badge()
         active_badge.setVisible(False)
         header_row.addWidget(slot_label, 0, Qt.AlignLeft)
         header_row.addStretch(1)
         header_row.addWidget(source_label, 0, Qt.AlignRight)
+        header_row.addWidget(pink_slip_badge, 0, Qt.AlignRight)
         header_row.addWidget(active_badge, 0, Qt.AlignRight)
         card_layout.addLayout(header_row)
 
@@ -805,6 +818,7 @@ class GarageMixin:
             card=card,
             slot_label=slot_label,
             source_label=source_label,
+            pink_slip_badge=pink_slip_badge,
             active_badge=active_badge,
             name_label=name_label,
             parts_badge=parts_badge,
