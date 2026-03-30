@@ -16,11 +16,15 @@ from PySide6.QtCore import (
     QPauseAnimation,
     QPropertyAnimation,
     QSequentialAnimationGroup,
+    Signal,
     QTimer,
 )
 from PySide6.QtWidgets import QGridLayout, QGraphicsOpacityEffect, QScrollArea, QWidget
 
 logger = logging.getLogger(__name__)
+
+_EVAL_MODE_NORMAL = "normal"
+_EVAL_MODE_FOLLOWUP = "followup_after_metrics"
 
 
 def refresh_widget_style(widget: QWidget) -> None:
@@ -34,6 +38,8 @@ def refresh_widget_style(widget: QWidget) -> None:
 
 class AnimatedCardShell(QWidget):
     """Layout-managed shell that animates one child widget into view."""
+
+    revealFinished = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -231,6 +237,7 @@ class AnimatedCardShell(QWidget):
         if self._animation_group is not None:
             self._animation_group.deleteLater()
             self._animation_group = None
+        self.revealFinished.emit()
 
 
 class ChunkedGridController(QObject):
@@ -644,8 +651,14 @@ class ViewportLazyGridController(QObject):
         self._realized_shell_count = 0
         self._render_start_viewport_width = 0
         self._eval_scheduled = False
+        self._pending_eval_mode: Optional[str] = None
+        self._initial_visible_eval_done = False
         self._idle_token = 0
         self._protected_range: tuple[int, int] = (0, -1)
+        self._row_extents: list[tuple[int, int]] = []
+        self._visible_reveal_blockers = 0
+        self._idle_restart_pending = False
+        self._pending_idle_immediate = True
 
         self._idle_restart_timer = QTimer(self)
         self._idle_restart_timer.setSingleShot(True)
@@ -667,8 +680,13 @@ class ViewportLazyGridController(QObject):
         self._generation += 1
         self._rendering = False
         self._eval_scheduled = False
+        self._pending_eval_mode = None
+        self._initial_visible_eval_done = False
         self._idle_token += 1
         self._idle_restart_timer.stop()
+        self._visible_reveal_blockers = 0
+        self._idle_restart_pending = False
+        self._pending_idle_immediate = True
 
     def clear(self) -> None:
         self.cancel()
@@ -682,6 +700,10 @@ class ViewportLazyGridController(QObject):
         self._realized_shell_count = 0
         self._render_start_viewport_width = 0
         self._protected_range = (0, -1)
+        self._row_extents = []
+        self._visible_reveal_blockers = 0
+        self._idle_restart_pending = False
+        self._pending_idle_immediate = True
         self._clear_layout(delete_widgets=True)
 
     def schedule_render(
@@ -712,6 +734,12 @@ class ViewportLazyGridController(QObject):
         self._realized_shell_count = 0
         self._render_start_viewport_width = self._viewport_width()
         self._protected_range = (0, -1)
+        self._row_extents = []
+        self._pending_eval_mode = None
+        self._initial_visible_eval_done = False
+        self._visible_reveal_blockers = 0
+        self._idle_restart_pending = False
+        self._pending_idle_immediate = True
 
         self._clear_layout(delete_widgets=True)
         self._configure_columns(self._columns)
@@ -734,6 +762,7 @@ class ViewportLazyGridController(QObject):
             )
             for row_index in range(ceil(len(self._items) / self._columns))
         ]
+        self._recompute_row_extents()
         self._rendering = True
         self._log.debug(
             "%s lazy render start: %d item(s), %d row(s), viewport=%d px, seed row=%d px",
@@ -748,8 +777,7 @@ class ViewportLazyGridController(QObject):
         if scrollbar is not None:
             scrollbar.setValue(0 if reset_scroll else restore_scroll)
 
-        self._evaluate_visible_rows(self._generation)
-        self._schedule_idle_restart(immediate=True)
+        self._schedule_visible_eval(mode=_EVAL_MODE_NORMAL)
 
     def reflow(self, columns: int) -> None:
         new_columns = max(1, int(columns or 1))
@@ -817,15 +845,23 @@ class ViewportLazyGridController(QObject):
         if not self._rendering:
             return
         self._idle_token += 1
-        self._schedule_visible_eval()
+        self._schedule_visible_eval(mode=_EVAL_MODE_NORMAL)
         self._schedule_idle_restart(immediate=False)
 
     def _on_scrollbar_range_changed(self, _minimum: int, _maximum: int) -> None:
         if not self._rendering:
             return
-        self._schedule_visible_eval()
+        self._schedule_visible_eval(mode=_EVAL_MODE_NORMAL)
 
-    def _schedule_visible_eval(self) -> None:
+    def _schedule_visible_eval(self, *, mode: str) -> None:
+        if not self._rendering:
+            return
+        if self._pending_eval_mode == _EVAL_MODE_NORMAL:
+            return
+        if self._pending_eval_mode == _EVAL_MODE_FOLLOWUP and mode == _EVAL_MODE_FOLLOWUP:
+            return
+        if self._pending_eval_mode is None or mode == _EVAL_MODE_NORMAL:
+            self._pending_eval_mode = mode
         if self._eval_scheduled:
             return
         self._eval_scheduled = True
@@ -834,67 +870,101 @@ class ViewportLazyGridController(QObject):
 
     def _run_visible_eval(self, generation: int) -> None:
         self._eval_scheduled = False
-        self._evaluate_visible_rows(generation)
+        mode = self._pending_eval_mode or _EVAL_MODE_NORMAL
+        self._pending_eval_mode = None
+        self._evaluate_visible_rows(generation, mode=mode)
 
-    def _evaluate_visible_rows(self, generation: int) -> None:
+    def _evaluate_visible_rows(self, generation: int, *, mode: str) -> None:
         if generation != self._generation or not self._rendering:
             return
-        visible_start, visible_end = self._visible_row_range()
-        preload_start = max(0, visible_start - self._backward_buffer_rows)
-        preload_end = min(len(self._rows) - 1, visible_end + self._forward_buffer_rows)
+        visible_start, visible_end, viewport_ready = self._visible_row_range()
+        if viewport_ready:
+            preload_start = max(0, visible_start - self._backward_buffer_rows)
+            preload_end = min(len(self._rows) - 1, visible_end + self._forward_buffer_rows)
+        else:
+            preload_start = visible_start
+            preload_end = visible_end
         self._protected_range = (preload_start, preload_end)
-        target_rows = [
-            row_index
-            for row_index in range(preload_start, preload_end + 1)
-            if not self._rows[row_index].realized
-        ]
+        if mode == _EVAL_MODE_FOLLOWUP:
+            target_range = range(visible_start, visible_end + 1)
+            reason = "followup"
+        else:
+            target_range = range(preload_start, preload_end + 1)
+            reason = "visible"
+        target_rows = [row_index for row_index in target_range if not self._rows[row_index].realized]
+        self._log.debug(
+            "%s lazy %s band: strict %d-%d, preload %d-%d, ready=%s (%d/%d rows)",
+            self._name,
+            mode,
+            visible_start,
+            visible_end,
+            preload_start,
+            preload_end,
+            viewport_ready,
+            sum(1 for row in self._rows if row.realized),
+            len(self._rows),
+        )
         if target_rows:
-            self._realize_rows(target_rows, reason="visible")
+            self._realize_rows(target_rows, reason=reason)
         else:
             self._log.debug(
-                "%s lazy visible band: rows %d-%d already realized (%d/%d)",
+                "%s lazy %s band: rows %d-%d already realized (%d/%d)",
                 self._name,
+                mode,
                 preload_start,
                 preload_end,
                 sum(1 for row in self._rows if row.realized),
                 len(self._rows),
             )
+        if mode == _EVAL_MODE_NORMAL:
+            if viewport_ready and not self._initial_visible_eval_done:
+                self._initial_visible_eval_done = True
+                self._schedule_idle_restart(immediate=True)
+            elif not viewport_ready:
+                self._schedule_visible_eval(mode=_EVAL_MODE_NORMAL)
         self._finish_if_complete()
 
-    def _visible_row_range(self) -> tuple[int, int]:
+    def _visible_row_range(self) -> tuple[int, int, bool]:
         if not self._rows:
-            return (0, -1)
+            return (0, -1, True)
         scrollbar = self._scroll_area.verticalScrollBar()
         viewport = self._scroll_area.viewport()
         if scrollbar is None or viewport is None:
-            return (0, min(len(self._rows) - 1, 0))
+            return (0, min(len(self._rows) - 1, 0), False)
+        viewport_height = viewport.height()
+        if viewport_height <= 0:
+            return (0, 0, False)
         top = scrollbar.value()
-        bottom = top + max(1, viewport.height())
-        visible: list[int] = []
+        bottom = top + viewport_height
+        start: Optional[int] = None
+        end: Optional[int] = None
         for row in self._rows:
             row_top, row_bottom = self._row_bounds(row)
-            if row_bottom >= top and row_top <= bottom:
-                visible.append(row.row_index)
-        if visible:
-            return (visible[0], visible[-1])
-        stride = max(1, self._placeholder_row_height + max(0, self._layout.verticalSpacing()))
-        start = max(0, min(len(self._rows) - 1, top // stride))
-        count = max(1, ceil(max(1, viewport.height()) / stride))
-        end = min(len(self._rows) - 1, start + count)
-        return (start, end)
+            if row_bottom > top and row_top < bottom:
+                if start is None:
+                    start = row.row_index
+                end = row.row_index
+            elif start is not None and row_top >= bottom:
+                break
+        if start is not None and end is not None:
+            return (start, end, True)
+        last_index = len(self._rows) - 1
+        fallback = 0
+        for row in self._rows:
+            row_top, row_bottom = self._row_bounds(row)
+            if row_bottom > top:
+                fallback = row.row_index
+                break
+            fallback = row.row_index
+        fallback = max(0, min(last_index, fallback))
+        return (fallback, fallback, True)
 
     def _row_bounds(self, row: LazyGridRowState) -> tuple[int, int]:
-        if row.realized and row.shells:
-            top = min(shell.geometry().top() for shell in row.shells)
-            bottom = max(shell.geometry().bottom() for shell in row.shells)
-            if bottom >= top:
-                return (top, bottom)
-        anchor = row.anchor_widget()
-        if anchor is not None:
-            geom = anchor.geometry()
-            if geom.height() > 0:
-                return (geom.top(), geom.bottom())
-        estimated_top = row.row_index * (self._placeholder_row_height + max(0, self._layout.verticalSpacing()))
+        if 0 <= row.row_index < len(self._row_extents):
+            return self._row_extents[row.row_index]
+        estimated_top = 0
+        if self._row_extents:
+            estimated_top = self._row_extents[-1][1] + max(0, self._layout.verticalSpacing())
         estimated_bottom = estimated_top + max(1, row.reserved_height)
         return (estimated_top, estimated_bottom)
 
@@ -932,19 +1002,30 @@ class ViewportLazyGridController(QObject):
 
         previous_height = self._placeholder_row_height
         max_row_height = previous_height
+        metrics_changed = False
         for row, shells in built_rows:
+            previous_reserved_height = row.reserved_height
             row_height = max(self._estimate_row_height(shells), self._measured_row_height(row))
             row.reserved_height = max(row.reserved_height, row_height)
+            if row.reserved_height != previous_reserved_height:
+                metrics_changed = True
             max_row_height = max(max_row_height, row.reserved_height)
         if max_row_height > previous_height:
             self._placeholder_row_height = max_row_height
+            metrics_changed = True
+        if metrics_changed:
+            self._recompute_row_extents()
             self._update_placeholder_heights_outside_protected()
+            self._schedule_visible_eval(mode=_EVAL_MODE_FOLLOWUP)
 
         if self._animate:
+            blocks_idle = reason in {"visible", "followup"}
             for row, shells in built_rows:
                 for shell in shells:
                     if self._realized_shell_count >= self._max_animated_cards:
                         break
+                    if blocks_idle:
+                        self._register_visible_reveal_blocker(shell)
                     shell.queue_reveal(delay_ms=self._realized_shell_count * self._stagger_ms)
                     self._realized_shell_count += 1
                 else:
@@ -994,6 +1075,7 @@ class ViewportLazyGridController(QObject):
         finally:
             self._restore_updates(restore_parent, restore_viewport)
         if updated:
+            self._recompute_row_extents()
             self._log.debug(
                 "%s lazy placeholder grow: %d row(s) updated to %d px outside band %d-%d",
                 self._name,
@@ -1023,7 +1105,14 @@ class ViewportLazyGridController(QObject):
             None,
         )
         if target is None:
-            target = next((row.row_index for row in self._rows if not row.realized), None)
+            target = next(
+                (
+                    row.row_index
+                    for row in reversed(self._rows)
+                    if not row.realized and row.row_index < protected_start
+                ),
+                None,
+            )
         if target is None:
             self._finish_if_complete()
             return
@@ -1035,6 +1124,60 @@ class ViewportLazyGridController(QObject):
     def _schedule_idle_restart(self, *, immediate: bool) -> None:
         if not self._rendering:
             return
+        if not self._initial_visible_eval_done:
+            return
+        if self._visible_reveal_blockers > 0:
+            self._idle_restart_timer.stop()
+            self._idle_restart_pending = True
+            self._pending_idle_immediate = self._pending_idle_immediate and immediate
+            self._log.debug(
+                "%s lazy idle deferred: %d reveal blocker(s), immediate=%s",
+                self._name,
+                self._visible_reveal_blockers,
+                self._pending_idle_immediate,
+            )
+            return
+        self._idle_restart_timer.stop()
+        self._idle_restart_timer.start(0 if immediate else self._idle_restart_ms)
+
+    def _recompute_row_extents(self) -> None:
+        spacing = max(0, self._layout.verticalSpacing())
+        self._row_extents = []
+        top = 0
+        for row in self._rows:
+            height = max(1, int(row.reserved_height))
+            bottom = top + height
+            self._row_extents.append((top, bottom))
+            top = bottom + spacing
+
+    def _register_visible_reveal_blocker(self, shell: AnimatedCardShell) -> None:
+        generation = self._generation
+        self._visible_reveal_blockers += 1
+        shell.revealFinished.connect(
+            lambda gen=generation: self._on_visible_reveal_finished(gen),
+        )
+
+    def _on_visible_reveal_finished(self, generation: int) -> None:
+        if generation != self._generation:
+            return
+        if self._visible_reveal_blockers <= 0:
+            return
+        self._visible_reveal_blockers -= 1
+        self._log.debug(
+            "%s lazy reveal blocker complete: %d remaining",
+            self._name,
+            self._visible_reveal_blockers,
+        )
+        if self._visible_reveal_blockers == 0:
+            self._flush_pending_idle_restart()
+
+    def _flush_pending_idle_restart(self) -> None:
+        if not self._idle_restart_pending or not self._rendering or not self._initial_visible_eval_done:
+            return
+        immediate = self._pending_idle_immediate
+        self._idle_restart_pending = False
+        self._pending_idle_immediate = True
+        self._log.debug("%s lazy idle resume after reveal batch: immediate=%s", self._name, immediate)
         self._idle_restart_timer.stop()
         self._idle_restart_timer.start(0 if immediate else self._idle_restart_ms)
 
