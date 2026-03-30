@@ -93,12 +93,12 @@ class AnimatedCardShell(QWidget):
 
     def sizeHint(self):
         if self._content is not None:
-            return self._content.sizeHint()
+            return self._content.sizeHint().expandedTo(self._content.minimumSize())
         return super().sizeHint()
 
     def minimumSizeHint(self):
         if self._content is not None:
-            return self._content.minimumSizeHint()
+            return self._content.minimumSizeHint().expandedTo(self._content.minimumSize())
         return super().minimumSizeHint()
 
     def play_reveal(

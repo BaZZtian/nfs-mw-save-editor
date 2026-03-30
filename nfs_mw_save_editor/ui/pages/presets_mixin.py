@@ -949,8 +949,6 @@ class PresetsMixin:
         utility_label.setObjectName("mutedLabel")
         utility_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         card_layout.addWidget(utility_label)
-
-        card.setMinimumHeight(card.sizeHint().height() + 4)
         self._snapshot_library_card_widgets[entry.snapshot_id] = card
         handle = SnapshotLibraryCardHandle(
             card=card,
@@ -964,6 +962,8 @@ class PresetsMixin:
         )
         self._snapshot_library_card_handles[entry.snapshot_id] = handle
         self._apply_snapshot_library_card_vm(handle, vm)
+        card.setMinimumHeight(card.sizeHint().height() + 4)
+        card.updateGeometry()
         refresh_widget_style(card)
         return card
 
@@ -1100,6 +1100,7 @@ class PresetsMixin:
         card.setToolTip("\n".join(tooltip_parts))
 
         card.setMinimumHeight(card.sizeHint().height() + 4)
+        card.updateGeometry()
         self._snapshot_card_widgets[snapshot.car_abs_off] = card
         refresh_widget_style(card)
         return card
