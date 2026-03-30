@@ -637,6 +637,7 @@ QToolButton {{
     padding: 8px 12px;
 }}
 QLabel#unsavedLabel {{
+    background: transparent;
     color: {STATUS_PENDING_FG};
     font-weight: 600;
     padding: 0px;
@@ -646,7 +647,7 @@ QLabel#unsavedLabel[pending="true"] {{
     border: 1px solid {STATUS_PENDING_BORDER};
     border-radius: {RADIUS_PILL};
     color: {STATUS_PENDING_FG};
-    padding: 4px 10px;
+    padding: 0px;
 }}
 QLabel#filePath {{
     color: {TEXT};

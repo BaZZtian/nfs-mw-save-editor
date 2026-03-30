@@ -253,6 +253,9 @@ class MainWindow(
         self.lbl_status.setObjectName("mutedLabel")
         self.lbl_unsaved = QLabel("")
         self.lbl_unsaved.setObjectName("unsavedLabel")
+        self.lbl_unsaved.setAlignment(Qt.AlignCenter)
+        self.lbl_unsaved.setContentsMargins(14, 5, 14, 5)
+        self.lbl_unsaved.setMinimumHeight(28)
         self.lbl_unsaved.setProperty("pending", False)
         self.lbl_unsaved.setVisible(False)
 
@@ -781,7 +784,7 @@ class MainWindow(
         enabled = self.savefile is not None
         self.btn_apply.setEnabled(enabled and pending)
         self.btn_reset_want.setEnabled(enabled)
-        self.lbl_unsaved.setText("\u25cf Unsaved changes" if pending else "")
+        self.lbl_unsaved.setText("Unsaved changes" if pending else "")
         self.lbl_unsaved.setProperty("pending", pending)
         self.lbl_unsaved.setVisible(pending)
         self.lbl_unsaved.style().unpolish(self.lbl_unsaved)
@@ -795,6 +798,7 @@ class MainWindow(
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        ToastNotification.reposition_active(self)
         self._update_header_path()
         if hasattr(self, "scroll") and hasattr(self, "cards_container"):
             prev = getattr(self, "_cards_per_row", DEFAULT_CARDS_PER_ROW)

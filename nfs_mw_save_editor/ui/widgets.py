@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, QPropertyAnimation, QTimer, QEasingCurve, Property, QRectF
+from PySide6.QtCore import Qt, QPropertyAnimation, QTimer, QEasingCurve, Property, QRectF, QPoint
 from PySide6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -335,8 +335,8 @@ class ToastNotification(QLabel):
         self.setGraphicsEffect(self._opacity)
 
         # position at top-right
-        px = parent.width() - self.width() - 16
-        self.move(px, -self.height())
+        start_pos = QPoint(parent.width() - self.width() - 16, -self.height())
+        self.move(start_pos)
         self.show()
         self.raise_()
 
@@ -344,9 +344,7 @@ class ToastNotification(QLabel):
         self._slide = QPropertyAnimation(self, b"pos", self)
         self._slide.setDuration(300)
         self._slide.setStartValue(self.pos())
-        offset = self._BASE_Y_OFFSET + len(ToastNotification._active) * self._STACK_SPACING
-        from PySide6.QtCore import QPoint
-        self._slide.setEndValue(QPoint(px, offset))
+        self._slide.setEndValue(self._target_pos(len(ToastNotification._active)))
         self._slide.setEasingCurve(QEasingCurve.OutCubic)
         self._slide.start()
 
@@ -366,7 +364,28 @@ class ToastNotification(QLabel):
     def _cleanup(self):
         if self in ToastNotification._active:
             ToastNotification._active.remove(self)
+            ToastNotification.reposition_active(self.parentWidget())
         self.deleteLater()
+
+    def _target_pos(self, index: int) -> QPoint:
+        parent = self.parentWidget()
+        if parent is None:
+            return self.pos()
+        px = parent.width() - self.width() - 16
+        py = self._BASE_Y_OFFSET + index * self._STACK_SPACING
+        return QPoint(px, py)
+
+    def reposition(self, index: int) -> None:
+        if hasattr(self, "_slide"):
+            self._slide.stop()
+        self.move(self._target_pos(index))
+        self.raise_()
+
+    @classmethod
+    def reposition_active(cls, parent: QWidget | None = None) -> None:
+        active = [toast for toast in cls._active if parent is None or toast.parentWidget() is parent]
+        for index, toast in enumerate(active):
+            toast.reposition(index)
 
     @staticmethod
     def show_toast(parent: QWidget, message: str, *, is_error: bool = False):
