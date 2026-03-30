@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
@@ -55,7 +54,7 @@ from ui.pages.presets_mixin import PresetsMixin
 from ui.pages.profile_mixin import ProfileMixin
 from ui.pages.settings_mixin import SettingsMixin
 from ui.theme import apply_theme, load_saved_theme_name, save_theme_name
-from ui.widgets import ToastNotification
+from ui.widgets import SplitTextProgressBar, ToastNotification
 
 logger = logging.getLogger(__name__)
 
@@ -342,7 +341,7 @@ class MainWindow(
         self.lbl_free.setObjectName("pillLabel")
 
         # Progress bar: unlocked tokens
-        self.progress_bar = QProgressBar()
+        self.progress_bar = SplitTextProgressBar()
         self.progress_bar.setObjectName("tokenProgress")
         self.progress_bar.setRange(0, PERF_TOTAL)
         self.progress_bar.setValue(0)

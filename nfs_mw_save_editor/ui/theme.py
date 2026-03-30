@@ -166,12 +166,13 @@ def _hue_degrees(color: str) -> float:
     return hue
 
 
-def _best_on_color(surface: str, primary: str, secondary: str, *, tie_delta: float = 0.05) -> str:
-    primary_contrast = _contrast_ratio(surface, primary)
-    secondary_contrast = _contrast_ratio(surface, secondary)
-    if secondary_contrast > primary_contrast + tie_delta:
-        return secondary
-    return primary
+def _saturation(color: str) -> float:
+    r, g, b = (channel / 255.0 for channel in _hex_to_rgb(color))
+    max_channel = max(r, g, b)
+    if max_channel == 0:
+        return 0.0
+    min_channel = min(r, g, b)
+    return (max_channel - min_channel) / max_channel
 
 
 def _accent_seed(
@@ -206,12 +207,13 @@ def _derive_status_family(
     }
 
 
-def _reference_first_text_on_accent(accent: str, dark_ink: str) -> str:
+def _brand_aware_text_on_accent(accent: str, dark_ink: str) -> str:
     luminance = _relative_luminance(accent)
     hue = _hue_degrees(accent)
-    if luminance >= 0.65:
+    saturation = _saturation(accent)
+    if luminance >= 0.72:
         return dark_ink
-    if luminance >= 0.48 and 35.0 <= hue <= 210.0:
+    if luminance >= 0.50 and 35.0 <= hue <= 210.0 and saturation >= 0.28:
         return dark_ink
     return "#FFFFFF"
 
@@ -421,12 +423,46 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
         }
 
     dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
-    tokens["TEXT_ON_ACCENT"] = _reference_first_text_on_accent(
+    tokens["TEXT_ON_ACCENT"] = _brand_aware_text_on_accent(
         tokens["ACCENT"],
         dark_on_accent,
     )
     tokens.update(_derive_semantic_status_tokens(tokens))
     return tokens
+
+
+def resolve_theme_tokens(theme_name: str | None = None) -> dict[str, str]:
+    resolved_name = theme_name
+    if resolved_name is None:
+        try:
+            from PySide6.QtWidgets import QApplication
+        except Exception:
+            app = None
+        else:
+            app = QApplication.instance()
+        if app is not None:
+            app_theme = app.property("themeName")
+            if isinstance(app_theme, str) and app_theme:
+                resolved_name = app_theme
+    preset = get_theme_preset(resolved_name or load_saved_theme_name())
+    return _build_style_tokens(preset)
+
+
+def _apply_theme_palette(app, tokens: dict[str, str]) -> None:
+    try:
+        from PySide6.QtGui import QColor, QPalette
+    except Exception:
+        return
+
+    palette = app.palette()
+    accent = QColor(tokens["ACCENT"])
+    highlight = QColor(tokens["BG_NAV_ACTIVE"])
+    highlighted_text = QColor(tokens["TEXT"])
+    for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+        palette.setColor(group, QPalette.ColorRole.Accent, accent)
+        palette.setColor(group, QPalette.ColorRole.Highlight, highlight)
+        palette.setColor(group, QPalette.ColorRole.HighlightedText, highlighted_text)
+    app.setPalette(palette)
 
 
 STYLE_TEMPLATE = """
@@ -634,7 +670,7 @@ QLineEdit, QSpinBox, QTextEdit, QPlainTextEdit {{
     border-radius: {RADIUS_MD};
     padding: 6px 8px;
     selection-background-color: {ACCENT};
-    selection-color: {TEXT};
+    selection-color: {TEXT_ON_ACCENT};
 }}
 QSpinBox::up-button, QSpinBox::down-button {{
     width: 16px;
@@ -749,17 +785,8 @@ QCheckBox::indicator:checked {{
 
 /* Progress Bar */
 QProgressBar#tokenProgress {{
-    background: {BORDER};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_MD};
-    text-align: center;
-    color: {TEXT};
     font-size: 10px;
     font-weight: 600;
-}}
-QProgressBar#tokenProgress::chunk {{
-    background: {ACCENT};
-    border-radius: {RADIUS_MD};
 }}
 
 /* Empty State Overlay */
@@ -1174,13 +1201,14 @@ QFrame#separator {{
 
 
 def build_stylesheet(theme_name: str | None = None) -> str:
-    preset = get_theme_preset(theme_name)
-    return STYLE_TEMPLATE.format_map(_build_style_tokens(preset))
+    return STYLE_TEMPLATE.format_map(resolve_theme_tokens(theme_name))
 
 
 def apply_theme(app, theme_name: str | None = None) -> str:
     """Apply the selected UI theme and return the resolved preset name."""
     preset = get_theme_preset(theme_name or load_saved_theme_name())
+    tokens = resolve_theme_tokens(preset.name)
     app.setProperty("themeName", preset.name)
-    app.setStyleSheet(build_stylesheet(preset.name))
+    _apply_theme_palette(app, tokens)
+    app.setStyleSheet(STYLE_TEMPLATE.format_map(tokens))
     return preset.name

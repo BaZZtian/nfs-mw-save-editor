@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, QPropertyAnimation, QTimer, QEasingCurve, Property, QRectF, QPoint
+from PySide6.QtCore import Qt, QEvent, QPropertyAnimation, QTimer, QEasingCurve, Property, QRectF, QPoint
 from PySide6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QSlider,
     QSizePolicy,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.icon_map import token_icon_path
+from ui.theme import resolve_theme_tokens
 
 
 def build_perf_level_row(name: str, level: int, max_level: Optional[int]) -> tuple[QWidget, QHBoxLayout]:
@@ -147,6 +149,65 @@ class WantSpinBox(QSpinBox):
 
     def wheelEvent(self, event):
         event.ignore()
+
+
+class SplitTextProgressBar(QProgressBar):
+    """Progress bar with split text rendering over filled and unfilled regions."""
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() in {
+            QEvent.StyleChange,
+            QEvent.PaletteChange,
+            QEvent.ApplicationPaletteChange,
+        }:
+            self.update()
+
+    def paintEvent(self, event) -> None:
+        _ = event
+        tokens = resolve_theme_tokens()
+        radius = float(tokens.get("RADIUS_MD", "8px").removesuffix("px") or 8.0)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        minimum = self.minimum()
+        maximum = self.maximum()
+        if maximum <= minimum:
+            fraction = 0.0
+        else:
+            fraction = (self.value() - minimum) / (maximum - minimum)
+            fraction = max(0.0, min(1.0, fraction))
+        fill_width = rect.width() * fraction
+        text = self.text()
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QColor(tokens["BORDER"]))
+        painter.setBrush(QColor(tokens["BORDER"]))
+        painter.drawRoundedRect(rect, radius, radius)
+
+        if fill_width > 0:
+            painter.save()
+            painter.setClipRect(QRectF(rect.x(), rect.y(), fill_width, rect.height()))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(tokens["ACCENT"]))
+            painter.drawRoundedRect(rect, radius, radius)
+            painter.restore()
+
+        if text:
+            text_rect = self.rect()
+            painter.setFont(self.font())
+            if fill_width < rect.width():
+                painter.save()
+                painter.setClipRect(QRectF(rect.x() + fill_width, rect.y(), rect.width() - fill_width, rect.height()))
+                painter.setPen(QColor(tokens["TEXT"]))
+                painter.drawText(text_rect, Qt.AlignCenter, text)
+                painter.restore()
+            if fill_width > 0:
+                painter.save()
+                painter.setClipRect(QRectF(rect.x(), rect.y(), fill_width, rect.height()))
+                painter.setPen(QColor(tokens["TEXT_ON_ACCENT"]))
+                painter.drawText(text_rect, Qt.AlignCenter, text)
+                painter.restore()
+        painter.end()
 
 
 class TokenCard(QWidget):
