@@ -131,6 +131,49 @@ def _rgba(color: str, alpha: float) -> str:
     return f"rgba({r}, {g}, {b}, {alpha:.2f})"
 
 
+def _relative_luminance(color: str) -> float:
+    def _channel(value: int) -> float:
+        normalized = value / 255.0
+        if normalized <= 0.03928:
+            return normalized / 12.92
+        return ((normalized + 0.055) / 1.055) ** 2.4
+
+    r, g, b = _hex_to_rgb(color)
+    return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
+
+
+def _contrast_ratio(color_a: str, color_b: str) -> float:
+    lum_a = _relative_luminance(color_a)
+    lum_b = _relative_luminance(color_b)
+    lighter = max(lum_a, lum_b)
+    darker = min(lum_a, lum_b)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _hue_degrees(color: str) -> float:
+    r, g, b = (channel / 255.0 for channel in _hex_to_rgb(color))
+    max_channel = max(r, g, b)
+    min_channel = min(r, g, b)
+    delta = max_channel - min_channel
+    if delta == 0:
+        return 0.0
+    if max_channel == r:
+        hue = 60.0 * (((g - b) / delta) % 6.0)
+    elif max_channel == g:
+        hue = 60.0 * (((b - r) / delta) + 2.0)
+    else:
+        hue = 60.0 * (((r - g) / delta) + 4.0)
+    return hue
+
+
+def _best_on_color(surface: str, primary: str, secondary: str, *, tie_delta: float = 0.05) -> str:
+    primary_contrast = _contrast_ratio(surface, primary)
+    secondary_contrast = _contrast_ratio(surface, secondary)
+    if secondary_contrast > primary_contrast + tie_delta:
+        return secondary
+    return primary
+
+
 def _accent_seed(
     accent: str,
     bg: str,
@@ -161,6 +204,16 @@ def _derive_status_family(
         "BORDER": _mix(bg, seed, border_mix),
         "FG": _mix(seed, text, text_mix),
     }
+
+
+def _reference_first_text_on_accent(accent: str, dark_ink: str) -> str:
+    luminance = _relative_luminance(accent)
+    hue = _hue_degrees(accent)
+    if luminance >= 0.65:
+        return dark_ink
+    if luminance >= 0.48 and 35.0 <= hue <= 210.0:
+        return dark_ink
+    return "#FFFFFF"
 
 
 def _derive_semantic_status_tokens(tokens: dict[str, str]) -> dict[str, str]:
@@ -367,6 +420,11 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
             "RADIUS_PILL": "14px",
         }
 
+    dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
+    tokens["TEXT_ON_ACCENT"] = _reference_first_text_on_accent(
+        tokens["ACCENT"],
+        dark_on_accent,
+    )
     tokens.update(_derive_semantic_status_tokens(tokens))
     return tokens
 
@@ -422,7 +480,7 @@ QPushButton:pressed {{ background-color: {BG_BUTTON_PRESS}; }}
 QPushButton:disabled {{ color: {DISABLED_TEXT}; border-color: {DISABLED_BORDER}; }}
 QPushButton:checked {{
     background: {ACCENT};
-    color: {TEXT};
+    color: {TEXT_ON_ACCENT};
     border-color: {ACCENT_BRIGHT};
 }}
 QPushButton#navButton {{
@@ -660,7 +718,7 @@ QMenu {{
 }}
 QMenu::item:selected {{
     background: {ACCENT};
-    color: {TEXT};
+    color: {TEXT_ON_ACCENT};
 }}
 QScrollBar:vertical {{
     background: {BG_PANEL};
