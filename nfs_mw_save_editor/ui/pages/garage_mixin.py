@@ -34,7 +34,7 @@ from core.models import (
 from core.savefile import SaveFile
 from resources import resource_path
 from ui.pages.constants import *
-from ui.rendering import ChunkedGridController, refresh_widget_style
+from ui.rendering import ViewportLazyGridController, refresh_widget_style
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +176,7 @@ class GarageMixin:
         self._garage_card_handles: Dict[int, GarageCardHandle] = {}
         self._garage_visible_order: List[int] = []
         self._garage_live_vm_map: Dict[int, GarageCardVm] = {}
-        self._garage_render_controller = ChunkedGridController(
+        self._garage_render_controller = ViewportLazyGridController(
             self,
             name="Garage",
             layout=self.garage_cards_layout,

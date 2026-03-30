@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 from core.models import FullCarBuildSnapshot, SnapshotInjectionPlan, SnapshotLibraryEntry
 from core.tuning_limits import get_model_tuning_limits
 from ui.pages.constants import *
-from ui.rendering import ChunkedGridController, refresh_widget_style
+from ui.rendering import ViewportLazyGridController, refresh_widget_style
 from ui.widgets import ToastNotification, build_perf_level_row
 
 logger = logging.getLogger(__name__)
@@ -177,13 +177,13 @@ class PresetsMixin:
         self._snapshot_library_card_handles: Dict[str, SnapshotLibraryCardHandle] = {}
         self._snapshot_library_visible_order: List[str] = []
         self._snapshot_library_live_vm_map: Dict[str, SnapshotLibraryCardVm] = {}
-        self._snapshot_library_render_controller = ChunkedGridController(
+        self._snapshot_library_render_controller = ViewportLazyGridController(
             self,
             name="PresetsLibrary",
             layout=self.snapshot_library_cards_layout,
             scroll_area=self.snapshot_library_scroll,
         )
-        self._snapshot_render_controller = ChunkedGridController(
+        self._snapshot_render_controller = ViewportLazyGridController(
             self,
             name="PresetsMySave",
             layout=self.snapshot_cards_layout,
