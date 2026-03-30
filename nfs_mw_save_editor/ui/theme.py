@@ -57,30 +57,8 @@ THEME_PRESETS: dict[str, ThemePreset] = {
             "DISABLED_TEXT": "#6D7686",
             "DISABLED_BORDER": "#333C4B",
             "MUTED_DARK": "#6D7F98",
-            "TOAST_SUCCESS_BG": "rgba(34, 84, 61, 0.92)",
-            "TOAST_SUCCESS_BORDER": "#2D7A54",
-            "TOAST_ERROR_BG": "rgba(120, 30, 30, 0.94)",
-            "TOAST_ERROR_BORDER": "#D44444",
-            "JUNKMAN_BG": "rgba(166, 227, 106, 0.14)",
-            "JUNKMAN_BORDER": "#5E8F2E",
-            "JUNKMAN_TEXT": "#A6E36A",
-            "MAXED_BG": "rgba(232, 106, 95, 0.14)",
-            "MAXED_BORDER": "#A64A42",
-            "MAXED_TEXT": "#E86A5F",
             "LEVEL_SEG_LOW": "#3A5A82",
             "LEVEL_SEG_HIGH": "#5E80AF",
-            "CAREER_SOURCE": "#7FA8E8",
-            "CAREER_SOURCE_BORDER": "#4F73A8",
-            "CAREER_SOURCE_BG": "rgba(79, 115, 168, 0.14)",
-            "MY_CARS_SOURCE": "#B7A4F5",
-            "MY_CARS_SOURCE_BORDER": "#6E5BA8",
-            "MY_CARS_SOURCE_BG": "rgba(110, 91, 168, 0.14)",
-            "GOLD": "#F08BB4",
-            "GOLD_BORDER": "#B85B86",
-            "GOLD_BG": "rgba(240, 139, 180, 0.14)",
-            "ACTIVE_CAR": "#74D39A",
-            "ACTIVE_CAR_BORDER": "#3E8A5D",
-            "ACTIVE_CAR_BG": "rgba(62, 138, 93, 0.14)",
             "RADIUS_SM": "4px",
             "RADIUS_MD": "8px",
             "RADIUS_LG": "10px",
@@ -153,6 +131,153 @@ def _rgba(color: str, alpha: float) -> str:
     return f"rgba({r}, {g}, {b}, {alpha:.2f})"
 
 
+def _accent_seed(
+    accent: str,
+    bg: str,
+    text: str,
+    *,
+    bg_pull: float = 0.0,
+    text_pull: float = 0.0,
+) -> str:
+    seed = accent
+    if bg_pull:
+        seed = _mix(seed, bg, bg_pull)
+    if text_pull:
+        seed = _mix(seed, text, text_pull)
+    return seed
+
+
+def _derive_status_family(
+    seed: str,
+    bg: str,
+    text: str,
+    *,
+    surface_mix: float = 0.15,
+    border_mix: float = 0.34,
+    text_mix: float = 0.46,
+) -> dict[str, str]:
+    return {
+        "BG": _mix(bg, seed, surface_mix),
+        "BORDER": _mix(bg, seed, border_mix),
+        "FG": _mix(seed, text, text_mix),
+    }
+
+
+def _derive_semantic_status_tokens(tokens: dict[str, str]) -> dict[str, str]:
+    accent = tokens["ACCENT"]
+    bg = tokens["BG"]
+    text = tokens["TEXT"]
+    neutral_seed = tokens.get("MUTED", _mix(text, bg, 0.38))
+
+    role_specs: dict[str, dict[str, str | float]] = {
+        "STATUS_INFO": {
+            "seed": _accent_seed(accent, bg, text, bg_pull=0.10, text_pull=0.04),
+            "surface_mix": 0.10,
+            "border_mix": 0.24,
+            "text_mix": 0.30,
+        },
+        "STATUS_ALT_INFO": {
+            "seed": _accent_seed(accent, bg, text, bg_pull=0.14, text_pull=0.02),
+            "surface_mix": 0.13,
+            "border_mix": 0.30,
+            "text_mix": 0.34,
+        },
+        "STATUS_REWARD": {
+            "seed": _accent_seed(accent, bg, text, text_pull=0.12),
+            "surface_mix": 0.18,
+            "border_mix": 0.46,
+            "text_mix": 0.56,
+        },
+        "STATUS_ACTIVE": {
+            "seed": _accent_seed(accent, bg, text, bg_pull=0.06, text_pull=0.08),
+            "surface_mix": 0.15,
+            "border_mix": 0.38,
+            "text_mix": 0.48,
+        },
+        "STATUS_SUCCESS": {
+            "seed": _accent_seed(accent, bg, text, bg_pull=0.04, text_pull=0.10),
+            "surface_mix": 0.17,
+            "border_mix": 0.40,
+            "text_mix": 0.52,
+        },
+        "STATUS_WARNING": {
+            "seed": _accent_seed(accent, bg, text, bg_pull=0.16),
+            "surface_mix": 0.18,
+            "border_mix": 0.38,
+            "text_mix": 0.34,
+        },
+        "STATUS_NEUTRAL": {
+            "seed": neutral_seed,
+            "surface_mix": 0.10,
+            "border_mix": 0.20,
+            "text_mix": 0.28,
+        },
+        "STATUS_PENDING": {
+            "seed": _accent_seed(accent, bg, text, text_pull=0.14),
+            "surface_mix": 0.19,
+            "border_mix": 0.44,
+            "text_mix": 0.56,
+        },
+    }
+
+    derived: dict[str, str] = {}
+    for prefix, spec in role_specs.items():
+        family = _derive_status_family(
+            spec["seed"],
+            bg,
+            text,
+            surface_mix=spec["surface_mix"],
+            border_mix=spec["border_mix"],
+            text_mix=spec["text_mix"],
+        )
+        for suffix, value in family.items():
+            derived[f"{prefix}_{suffix}"] = value
+
+    toast_success = _derive_status_family(
+        _accent_seed(accent, bg, text, text_pull=0.14),
+        bg,
+        text,
+        surface_mix=0.30,
+        border_mix=0.56,
+        text_mix=0.80,
+    )
+    toast_error = _derive_status_family(
+        "#E37878",
+        bg,
+        text,
+        surface_mix=0.28,
+        border_mix=0.54,
+        text_mix=0.80,
+    )
+    for suffix, value in toast_success.items():
+        derived[f"TOAST_SUCCESS_{suffix}"] = value
+    for suffix, value in toast_error.items():
+        derived[f"TOAST_ERROR_{suffix}"] = value
+
+    # Keep legacy semantic token names aligned with the new role-based families.
+    derived.update({
+        "JUNKMAN_BG": derived["STATUS_SUCCESS_BG"],
+        "JUNKMAN_BORDER": derived["STATUS_SUCCESS_BORDER"],
+        "JUNKMAN_TEXT": derived["STATUS_SUCCESS_FG"],
+        "MAXED_BG": derived["STATUS_WARNING_BG"],
+        "MAXED_BORDER": derived["STATUS_WARNING_BORDER"],
+        "MAXED_TEXT": derived["STATUS_WARNING_FG"],
+        "CAREER_SOURCE_BG": derived["STATUS_INFO_BG"],
+        "CAREER_SOURCE_BORDER": derived["STATUS_INFO_BORDER"],
+        "CAREER_SOURCE": derived["STATUS_INFO_FG"],
+        "MY_CARS_SOURCE_BG": derived["STATUS_ALT_INFO_BG"],
+        "MY_CARS_SOURCE_BORDER": derived["STATUS_ALT_INFO_BORDER"],
+        "MY_CARS_SOURCE": derived["STATUS_ALT_INFO_FG"],
+        "GOLD_BG": derived["STATUS_REWARD_BG"],
+        "GOLD_BORDER": derived["STATUS_REWARD_BORDER"],
+        "GOLD": derived["STATUS_REWARD_FG"],
+        "ACTIVE_CAR_BG": derived["STATUS_ACTIVE_BG"],
+        "ACTIVE_CAR_BORDER": derived["STATUS_ACTIVE_BORDER"],
+        "ACTIVE_CAR": derived["STATUS_ACTIVE_FG"],
+    })
+    return derived
+
+
 def _load_ui_settings() -> dict:
     path = _settings_path()
     if not path.exists():
@@ -198,71 +323,52 @@ def save_theme_name(theme_name: str) -> str:
 
 def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
     if preset.tokens is not None:
-        return dict(preset.tokens)
+        tokens = dict(preset.tokens)
+    else:
+        accent = preset.accent
+        bg = preset.background
+        text = preset.foreground
+        tokens = {
+            "ACCENT": accent,
+            "ACCENT_BRIGHT": _mix(accent, text, 0.18),
+            "ACCENT_SOFT": _mix(bg, accent, 0.25),
+            "BG": bg,
+            "BG_PANEL": _mix(bg, text, 0.05),
+            "BG_CARD": _mix(bg, text, 0.07),
+            "TEXT": text,
+            "MUTED": _mix(text, bg, 0.38),
+            "BORDER": _mix(bg, text, 0.16),
+            "BG_INPUT": _mix(bg, text, 0.03),
+            "BG_BUTTON": _mix(bg, text, 0.06),
+            "BG_BUTTON_HOVER": _mix(bg, text, 0.10),
+            "BG_BUTTON_PRESS": _mix(bg, text, 0.02),
+            "BG_NAV_ACTIVE": _mix(bg, accent, 0.18),
+            "BG_NAV_HOVER": _mix(bg, text, 0.08),
+            "BORDER_NAV_ACTIVE": _mix(accent, text, 0.12),
+            "TEXT_NAV_ACTIVE": _mix(text, accent, 0.06),
+            "BG_BULK_BTN": _mix(bg, accent, 0.12),
+            "BG_BULK_HOVER": _mix(bg, accent, 0.18),
+            "BG_DISABLED": _mix(bg, text, 0.04),
+            "CARD_HOVER_BG": _rgba(accent, 0.12),
+            "CARD_HOVER_BORDER": _mix(accent, text, 0.10),
+            "CARD_CHANGED_BORDER": _mix(accent, text, 0.06),
+            "CARD_CHANGED_HOVER_BORDER": _mix(accent, text, 0.18),
+            "CARD_CHANGED_BG": _rgba(accent, 0.12),
+            "CARD_CHANGED_HOVER_BG": _rgba(_mix(accent, text, 0.18), 0.16),
+            "DISABLED_TEXT": _mix(text, bg, 0.60),
+            "DISABLED_BORDER": _mix(bg, text, 0.10),
+            "MUTED_DARK": _mix(text, bg, 0.52),
+            "LEVEL_SEG_LOW": _mix(accent, bg, 0.35),
+            "LEVEL_SEG_HIGH": _mix(accent, text, 0.18),
+            "RADIUS_SM": "4px",
+            "RADIUS_MD": "8px",
+            "RADIUS_LG": "10px",
+            "RADIUS_XL": "12px",
+            "RADIUS_PILL": "14px",
+        }
 
-    accent = preset.accent
-    bg = preset.background
-    text = preset.foreground
-    return {
-        "ACCENT": accent,
-        "ACCENT_BRIGHT": _mix(accent, text, 0.18),
-        "ACCENT_SOFT": _mix(bg, accent, 0.25),
-        "BG": bg,
-        "BG_PANEL": _mix(bg, text, 0.05),
-        "BG_CARD": _mix(bg, text, 0.07),
-        "TEXT": text,
-        "MUTED": _mix(text, bg, 0.38),
-        "BORDER": _mix(bg, text, 0.16),
-        "BG_INPUT": _mix(bg, text, 0.03),
-        "BG_BUTTON": _mix(bg, text, 0.06),
-        "BG_BUTTON_HOVER": _mix(bg, text, 0.10),
-        "BG_BUTTON_PRESS": _mix(bg, text, 0.02),
-        "BG_NAV_ACTIVE": _mix(bg, accent, 0.18),
-        "BG_NAV_HOVER": _mix(bg, text, 0.08),
-        "BORDER_NAV_ACTIVE": _mix(accent, text, 0.12),
-        "TEXT_NAV_ACTIVE": _mix(text, accent, 0.06),
-        "BG_BULK_BTN": _mix(bg, accent, 0.12),
-        "BG_BULK_HOVER": _mix(bg, accent, 0.18),
-        "BG_DISABLED": _mix(bg, text, 0.04),
-        "CARD_HOVER_BG": _rgba(accent, 0.12),
-        "CARD_HOVER_BORDER": _mix(accent, text, 0.10),
-        "CARD_CHANGED_BORDER": _mix(accent, text, 0.06),
-        "CARD_CHANGED_HOVER_BORDER": _mix(accent, text, 0.18),
-        "CARD_CHANGED_BG": _rgba(accent, 0.12),
-        "CARD_CHANGED_HOVER_BG": _rgba(_mix(accent, text, 0.18), 0.16),
-        "DISABLED_TEXT": _mix(text, bg, 0.60),
-        "DISABLED_BORDER": _mix(bg, text, 0.10),
-        "MUTED_DARK": _mix(text, bg, 0.52),
-        "TOAST_SUCCESS_BG": "rgba(34, 84, 61, 0.92)",
-        "TOAST_SUCCESS_BORDER": "#2D7A54",
-        "TOAST_ERROR_BG": "rgba(120, 30, 30, 0.94)",
-        "TOAST_ERROR_BORDER": "#D44444",
-        "JUNKMAN_BG": "rgba(166, 227, 106, 0.14)",
-        "JUNKMAN_BORDER": "#5E8F2E",
-        "JUNKMAN_TEXT": "#A6E36A",
-        "MAXED_BG": "rgba(232, 106, 95, 0.14)",
-        "MAXED_BORDER": "#A64A42",
-        "MAXED_TEXT": "#E86A5F",
-        "LEVEL_SEG_LOW": _mix(accent, bg, 0.35),
-        "LEVEL_SEG_HIGH": _mix(accent, text, 0.18),
-        "CAREER_SOURCE": "#7FA8E8",
-        "CAREER_SOURCE_BORDER": "#4F73A8",
-        "CAREER_SOURCE_BG": "rgba(79, 115, 168, 0.14)",
-        "MY_CARS_SOURCE": "#B7A4F5",
-        "MY_CARS_SOURCE_BORDER": "#6E5BA8",
-        "MY_CARS_SOURCE_BG": "rgba(110, 91, 168, 0.14)",
-        "GOLD": "#F08BB4",
-        "GOLD_BORDER": "#B85B86",
-        "GOLD_BG": "rgba(240, 139, 180, 0.14)",
-        "ACTIVE_CAR": "#74D39A",
-        "ACTIVE_CAR_BORDER": "#3E8A5D",
-        "ACTIVE_CAR_BG": "rgba(62, 138, 93, 0.14)",
-        "RADIUS_SM": "4px",
-        "RADIUS_MD": "8px",
-        "RADIUS_LG": "10px",
-        "RADIUS_XL": "12px",
-        "RADIUS_PILL": "14px",
-    }
+    tokens.update(_derive_semantic_status_tokens(tokens))
+    return tokens
 
 
 STYLE_TEMPLATE = """
@@ -294,9 +400,9 @@ QFrame#sectionLine {{
     max-height: 1px;
 }}
 QLabel#pillLabel {{
-    background: {ACCENT_SOFT};
-    color: {ACCENT_BRIGHT};
-    border: 1px solid {ACCENT};
+    background: {STATUS_INFO_BG};
+    color: {STATUS_INFO_FG};
+    border: 1px solid {STATUS_INFO_BORDER};
     border-radius: {RADIUS_PILL};
     padding: 6px 12px;
     font-weight: 600;
@@ -531,9 +637,16 @@ QToolButton {{
     padding: 8px 12px;
 }}
 QLabel#unsavedLabel {{
-    color: {ACCENT_BRIGHT};
+    color: {STATUS_PENDING_FG};
     font-weight: 600;
-    padding-left: 6px;
+    padding: 0px;
+}}
+QLabel#unsavedLabel[pending="true"] {{
+    background: {STATUS_PENDING_BG};
+    border: 1px solid {STATUS_PENDING_BORDER};
+    border-radius: {RADIUS_PILL};
+    color: {STATUS_PENDING_FG};
+    padding: 4px 10px;
 }}
 QLabel#filePath {{
     color: {TEXT};
@@ -607,7 +720,7 @@ QLabel#emptyHint {{
 /* Toast Notifications */
 QLabel#toastSuccess {{
     background: {TOAST_SUCCESS_BG};
-    color: {TEXT};
+    color: {TOAST_SUCCESS_FG};
     border: 1px solid {TOAST_SUCCESS_BORDER};
     border-radius: {RADIUS_MD};
     padding: 6px 16px;
@@ -616,7 +729,7 @@ QLabel#toastSuccess {{
 }}
 QLabel#toastError {{
     background: {TOAST_ERROR_BG};
-    color: {TEXT};
+    color: {TOAST_ERROR_FG};
     border: 1px solid {TOAST_ERROR_BORDER};
     border-radius: {RADIUS_MD};
     padding: 6px 16px;
@@ -748,36 +861,36 @@ QFrame#partsLevelSeg[filled="4"] {{
 }}
 /* Junkman accent badges */
 QLabel#partsJunkmanActive {{
-    background: {JUNKMAN_BG};
-    border: 1px solid {JUNKMAN_BORDER};
+    background: {STATUS_SUCCESS_BG};
+    border: 1px solid {STATUS_SUCCESS_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {JUNKMAN_TEXT};
+    color: {STATUS_SUCCESS_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#partsJunkmanNone {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
+    background: {STATUS_NEUTRAL_BG};
+    border: 1px solid {STATUS_NEUTRAL_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {MUTED};
+    color: {STATUS_NEUTRAL_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QPushButton#partsJunkmanToggle {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
+    background: {STATUS_NEUTRAL_BG};
+    border: 1px solid {STATUS_NEUTRAL_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {MUTED};
+    color: {STATUS_NEUTRAL_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QPushButton#partsJunkmanToggle[active="true"] {{
-    background: {JUNKMAN_BG};
-    border: 1px solid {JUNKMAN_BORDER};
-    color: {JUNKMAN_TEXT};
+    background: {STATUS_SUCCESS_BG};
+    border: 1px solid {STATUS_SUCCESS_BORDER};
+    color: {STATUS_SUCCESS_FG};
 }}
 QPushButton#partsJunkmanToggle:disabled {{
     background: {BG_DISABLED};
@@ -859,83 +972,83 @@ QLabel#partsCardNote {{
     font-size: 10.5px;
 }}
 QLabel#garageCardStatBadge {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
+    background: {STATUS_NEUTRAL_BG};
+    border: 1px solid {STATUS_NEUTRAL_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {MUTED};
+    color: {STATUS_NEUTRAL_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#tuningStatusStock {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
+    background: {STATUS_NEUTRAL_BG};
+    border: 1px solid {STATUS_NEUTRAL_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {MUTED};
+    color: {STATUS_NEUTRAL_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#tuningStatusModified {{
-    background: rgba(79, 115, 168, 0.14);
-    border: 1px solid {CAREER_SOURCE_BORDER};
+    background: {STATUS_INFO_BG};
+    border: 1px solid {STATUS_INFO_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {CAREER_SOURCE};
+    color: {STATUS_INFO_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#tuningStatusMaxed {{
-    background: {MAXED_BG};
-    border: 1px solid {MAXED_BORDER};
+    background: {STATUS_WARNING_BG};
+    border: 1px solid {STATUS_WARNING_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {MAXED_TEXT};
+    color: {STATUS_WARNING_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#tuningStatusJunkman {{
-    background: {JUNKMAN_BG};
-    border: 1px solid {JUNKMAN_BORDER};
+    background: {STATUS_SUCCESS_BG};
+    border: 1px solid {STATUS_SUCCESS_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {JUNKMAN_TEXT};
+    color: {STATUS_SUCCESS_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#pinkSlipBadgeText {{
-    background: {GOLD_BG};
-    border: 1px solid {GOLD_BORDER};
+    background: {STATUS_REWARD_BG};
+    border: 1px solid {STATUS_REWARD_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {GOLD};
+    color: {STATUS_REWARD_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#careerSourceBadge {{
-    background: {CAREER_SOURCE_BG};
-    border: 1px solid {CAREER_SOURCE_BORDER};
+    background: {STATUS_INFO_BG};
+    border: 1px solid {STATUS_INFO_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {CAREER_SOURCE};
+    color: {STATUS_INFO_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#myCarsSourceBadge {{
-    background: {MY_CARS_SOURCE_BG};
-    border: 1px solid {MY_CARS_SOURCE_BORDER};
+    background: {STATUS_ALT_INFO_BG};
+    border: 1px solid {STATUS_ALT_INFO_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {MY_CARS_SOURCE};
+    color: {STATUS_ALT_INFO_FG};
     font-size: 11px;
     font-weight: 600;
 }}
 QLabel#activeCarBadge {{
-    background: {ACTIVE_CAR_BG};
-    border: 1px solid {ACTIVE_CAR_BORDER};
+    background: {STATUS_ACTIVE_BG};
+    border: 1px solid {STATUS_ACTIVE_BORDER};
     border-radius: {RADIUS_MD};
     padding: 3px 8px;
-    color: {ACTIVE_CAR};
+    color: {STATUS_ACTIVE_FG};
     font-size: 11px;
     font-weight: 600;
 }}

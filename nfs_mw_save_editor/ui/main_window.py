@@ -253,6 +253,8 @@ class MainWindow(
         self.lbl_status.setObjectName("mutedLabel")
         self.lbl_unsaved = QLabel("")
         self.lbl_unsaved.setObjectName("unsavedLabel")
+        self.lbl_unsaved.setProperty("pending", False)
+        self.lbl_unsaved.setVisible(False)
 
         for w in [self.btn_open, self.btn_save_header, self.btn_fix]:
             row.addWidget(w)
@@ -780,6 +782,10 @@ class MainWindow(
         self.btn_apply.setEnabled(enabled and pending)
         self.btn_reset_want.setEnabled(enabled)
         self.lbl_unsaved.setText("\u25cf Unsaved changes" if pending else "")
+        self.lbl_unsaved.setProperty("pending", pending)
+        self.lbl_unsaved.setVisible(pending)
+        self.lbl_unsaved.style().unpolish(self.lbl_unsaved)
+        self.lbl_unsaved.style().polish(self.lbl_unsaved)
 
     def _update_header_path(self):
         text = "File: (not opened)" if not self.savefile else f"{self.savefile.path}"
