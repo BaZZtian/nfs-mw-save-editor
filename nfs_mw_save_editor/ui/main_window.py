@@ -863,11 +863,11 @@ class MainWindow(
         self._refresh_profile_inputs()
         current_page = self._current_stack_page_name()
         if current_page == "Garage":
-            self._refresh_garage_page(reason="data_change")
+            self._refresh_garage_page(reason="save_load_visible")
         elif current_page == "Tuning":
-            self._refresh_parts_page(reason="data_change")
+            self._refresh_parts_page(reason="save_load_visible")
         elif current_page == "Presets":
-            self._refresh_presets_page(reason="data_change")
+            self._refresh_presets_page(reason="save_load_visible")
         self.refresh_cards()
         if hasattr(self, "_schedule_parts_pool_prewarm"):
             self._schedule_parts_pool_prewarm(delay_ms=0)

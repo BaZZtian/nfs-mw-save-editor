@@ -516,9 +516,13 @@ class JunkmanMixin:
         self.want_snapshot_injections = {}
         self._mark_all_heavy_pages_dirty()
         self._refresh_profile_inputs()
-        self._refresh_garage_page(reason="data_change")
-        self._refresh_parts_page(reason="data_change")
-        self._refresh_presets_page(reason="data_change")
+        current_page = self._current_stack_page_name()
+        if current_page == "Garage":
+            self._refresh_garage_page(reason="reset_reveal")
+        elif current_page == "Tuning":
+            self._refresh_parts_page(reason="reset_reveal")
+        elif current_page == "Presets":
+            self._refresh_presets_page(reason="reset_reveal")
         self.refresh_cards()
 
     def on_clear_all_want(self):

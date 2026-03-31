@@ -1398,20 +1398,31 @@ class PartsMixin:
 
         columns = max(1, self._detect_parts_card_columns())
         self._parts_slot_columns = columns
+        controller = self._parts_render_controller
         if (
             reason in {"page_enter", "reflow"}
             and not self._parts_cards_dirty
-            and self._parts_render_controller.has_rendered_content()
-            and not self._parts_render_controller.is_rendering
+            and controller.has_rendered_content()
+            and not controller.is_rendering
         ):
-            if reason == "page_enter" and columns == self._parts_render_controller.current_columns:
-                self._parts_render_controller.replay_visible_reveal()
+            if reason == "page_enter" and columns == controller.current_columns:
+                controller.replay_visible_reveal()
             else:
-                self._parts_render_controller.reflow(columns)
+                controller.reflow(columns)
+            return
+
+        if (
+            reason == "reset_reveal"
+            and controller.has_rendered_content()
+            and not controller.is_rendering
+            and columns == controller.current_columns
+        ):
+            self._patch_parts_cards_in_place()
+            controller.replay_visible_reveal()
             return
 
         self._rebuild_parts_cards(
-            animate=reason in {"page_enter", "filter_change"},
+            animate=reason in {"page_enter", "filter_change", "reset_reveal", "save_load_visible"},
             reset_scroll=reason in {"search_change", "filter_change"},
         )
 
