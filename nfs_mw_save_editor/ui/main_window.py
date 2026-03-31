@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QBrush, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -53,7 +53,15 @@ from ui.pages.parts_mixin import PartsMixin
 from ui.pages.presets_mixin import PresetsMixin
 from ui.pages.profile_mixin import ProfileMixin
 from ui.pages.settings_mixin import SettingsMixin
-from ui.theme import apply_theme, load_saved_theme_name, save_theme_name
+from ui.theme import (
+    apply_theme_palette,
+    build_page_stylesheet,
+    build_shell_stylesheet,
+    ensure_scoped_theme_mode,
+    load_saved_theme_name,
+    resolve_theme_tokens,
+    save_theme_name,
+)
 from ui.widgets import SplitTextProgressBar, ToastNotification
 
 logger = logging.getLogger(__name__)
@@ -174,25 +182,35 @@ class MainWindow(
         self.catalog_path = _ensure_user_catalog_path()
         self.load_catalog()
         self._build_ui()
+        self._apply_scoped_theme_to_visible_roots(self.theme_name, mark_hidden_dirty=True)
         self._setup_render_timers()
         self.refresh_state()
 
     def _build_ui(self):
         root = QWidget()
+        root.setObjectName("appChromeRoot")
+        root.setAutoFillBackground(True)
         self.setCentralWidget(root)
         base = QVBoxLayout(root)
         base.setContentsMargins(12, 12, 12, 12)
         base.setSpacing(10)
 
-        base.addLayout(self._build_header())
+        self.header_chrome = QWidget()
+        self.header_chrome.setLayout(self._build_header())
+        base.addWidget(self.header_chrome)
 
         body = QHBoxLayout()
         body.setSpacing(12)
         base.addLayout(body, 1)
 
-        body.addLayout(self._build_nav(), 0)
+        self.nav_chrome = QWidget()
+        self.nav_chrome.setLayout(self._build_nav())
+        self.nav_chrome.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
+        body.addWidget(self.nav_chrome, 0)
 
         self.stack = QStackedWidget()
+        self.stack.setObjectName("contentStack")
+        self.stack.setAutoFillBackground(True)
         body.addWidget(self.stack, 1)
 
         self.page_junk = self._build_junk_page()
@@ -202,13 +220,28 @@ class MainWindow(
         self.page_presets = self._build_presets_page()
         self.page_settings = self._build_settings_page()
         self.page_about = self._build_about_page()
+        self._page_theme_roots = {
+            "Junkman": self.page_junk,
+            "Profile": self.page_profile,
+            "Garage": self.page_garage,
+            "Tuning": self.page_parts,
+            "Presets": self.page_presets,
+            "Settings": self.page_settings,
+            "About": self.page_about,
+        }
+        self._page_theme_dirty = {name: False for name in self._page_theme_roots}
+        self._shell_theme_roots = [self.header_chrome, self.nav_chrome]
+        self._backdrop_theme_roots = [root, self.stack]
 
         for p in [self.page_junk, self.page_profile, self.page_garage, self.page_parts, self.page_presets,
                    self.page_settings, self.page_about]:
             self.stack.addWidget(p)
 
         self._select_page("Junkman")
-        base.addLayout(self._build_footer())
+        self.footer_chrome = QWidget()
+        self.footer_chrome.setLayout(self._build_footer())
+        base.addWidget(self.footer_chrome)
+        self._shell_theme_roots.append(self.footer_chrome)
 
         # -- Keyboard shortcuts --
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.on_open)
@@ -377,6 +410,7 @@ class MainWindow(
             "About": self.page_about,
         }
         self.stack.setCurrentWidget(mapping[name])
+        self._ensure_page_theme(name)
         if name == "Profile":
             self._refresh_profile_inputs()
         elif name == "Junkman" and hasattr(self, "cards_container") and hasattr(self, "lbl_free"):
@@ -403,7 +437,79 @@ class MainWindow(
             return "Profile"
         if current is self.page_junk:
             return "Junkman"
+        if current is self.page_settings:
+            return "Settings"
+        if current is self.page_about:
+            return "About"
         return None
+
+    def _apply_stylesheet_to_root(self, root: Optional[QWidget], stylesheet: str, *, theme_name: str) -> None:
+        if root is None:
+            return
+        applied_name = root.property("_scopedThemeName")
+        if applied_name == theme_name and root.styleSheet() == stylesheet:
+            return
+        root.setStyleSheet(stylesheet)
+        root.setProperty("_scopedThemeName", theme_name)
+
+    def _apply_shell_theme(self, theme_name: str) -> None:
+        stylesheet = build_shell_stylesheet(theme_name)
+        for root in getattr(self, "_shell_theme_roots", []):
+            self._apply_stylesheet_to_root(root, stylesheet, theme_name=theme_name)
+
+    def _apply_backdrop_palette(self, theme_name: str) -> None:
+        try:
+            from PySide6.QtGui import QColor, QPalette
+        except Exception:
+            return
+        bg = resolve_theme_tokens(theme_name)["BG"]
+        brush = QBrush(QColor(bg))
+        for root in getattr(self, "_backdrop_theme_roots", []):
+            if root is None:
+                continue
+            palette = root.palette()
+            palette.setBrush(QPalette.ColorRole.Window, brush)
+            root.setPalette(palette)
+
+    def _apply_page_theme(self, page_name: str) -> None:
+        root = getattr(self, "_page_theme_roots", {}).get(page_name)
+        if root is None:
+            return
+        stylesheet = build_page_stylesheet(self.theme_name)
+        self._apply_stylesheet_to_root(root, stylesheet, theme_name=self.theme_name)
+        if hasattr(self, "_page_theme_dirty"):
+            self._page_theme_dirty[page_name] = False
+
+    def _mark_hidden_pages_theme_dirty(self, current_page_name: Optional[str]) -> None:
+        if not hasattr(self, "_page_theme_dirty"):
+            return
+        for page_name in self._page_theme_dirty:
+            self._page_theme_dirty[page_name] = page_name != current_page_name
+
+    def _ensure_page_theme(self, page_name: str) -> None:
+        if not hasattr(self, "_page_theme_dirty"):
+            return
+        root = self._page_theme_roots.get(page_name)
+        if root is None:
+            return
+        if not self._page_theme_dirty.get(page_name, False):
+            applied_name = root.property("_scopedThemeName")
+            if applied_name == self.theme_name and root.styleSheet():
+                return
+        self._apply_page_theme(page_name)
+
+    def _apply_scoped_theme_to_visible_roots(self, theme_name: str, *, mark_hidden_dirty: bool) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            ensure_scoped_theme_mode(app)
+        self.theme_name = theme_name
+        self._apply_backdrop_palette(theme_name)
+        self._apply_shell_theme(theme_name)
+        current_page = self._current_stack_page_name()
+        if current_page:
+            self._apply_page_theme(current_page)
+        if mark_hidden_dirty:
+            self._mark_hidden_pages_theme_dirty(current_page)
 
     def _mark_garage_cards_dirty(self) -> None:
         self._garage_cards_dirty = True
@@ -838,10 +944,10 @@ class MainWindow(
 
     def on_theme_changed(self, theme_name: str) -> None:
         resolved_name = save_theme_name(theme_name)
-        self.theme_name = resolved_name
         app = QApplication.instance()
         if app is not None:
-            apply_theme(app, resolved_name)
+            apply_theme_palette(app, resolved_name)
+        self._apply_scoped_theme_to_visible_roots(resolved_name, mark_hidden_dirty=True)
         if hasattr(self, "_on_parts_theme_changed"):
             self._on_parts_theme_changed()
         if hasattr(self, "cmb_theme"):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -493,14 +494,34 @@ def _apply_theme_palette(app, tokens: dict[str, str]) -> None:
 
     palette = app.palette()
     accent = QColor(tokens["ACCENT"])
+    window = QColor(tokens["BG"])
+    window_text = QColor(tokens["TEXT"])
+    base = QColor(tokens["BG_INPUT"])
+    alternate_base = QColor(tokens["BG_PANEL"])
+    button = QColor(tokens["BG_BUTTON"])
+    button_text = QColor(tokens["TEXT"])
+    text = QColor(tokens["TEXT"])
+    tooltip_base = QColor(tokens["BG_CARD"])
+    tooltip_text = QColor(tokens["TEXT"])
     highlight = QColor(tokens["BG_NAV_ACTIVE"])
     highlighted_text = QColor(tokens["TEXT"])
     for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
         palette.setColor(group, QPalette.ColorRole.Accent, accent)
+        palette.setColor(group, QPalette.ColorRole.Window, window)
+        palette.setColor(group, QPalette.ColorRole.WindowText, window_text)
+        palette.setColor(group, QPalette.ColorRole.Base, base)
+        palette.setColor(group, QPalette.ColorRole.AlternateBase, alternate_base)
+        palette.setColor(group, QPalette.ColorRole.Button, button)
+        palette.setColor(group, QPalette.ColorRole.ButtonText, button_text)
+        palette.setColor(group, QPalette.ColorRole.Text, text)
+        palette.setColor(group, QPalette.ColorRole.ToolTipBase, tooltip_base)
+        palette.setColor(group, QPalette.ColorRole.ToolTipText, tooltip_text)
         palette.setColor(group, QPalette.ColorRole.Highlight, highlight)
         palette.setColor(group, QPalette.ColorRole.HighlightedText, highlighted_text)
     app.setPalette(palette)
 
+
+_SCOPED_THEME_ACTIVE_PROPERTY = "_scopedThemeStylesActive"
 
 STYLE_TEMPLATE = """
 QWidget {{
@@ -1246,15 +1267,45 @@ QFrame#separator {{
 """
 
 
-def build_stylesheet(theme_name: str | None = None) -> str:
+@lru_cache(maxsize=None)
+def _render_stylesheet(theme_name: str) -> str:
     return STYLE_TEMPLATE.format_map(resolve_theme_tokens(theme_name))
 
 
-def apply_theme(app, theme_name: str | None = None) -> str:
-    """Apply the selected UI theme and return the resolved preset name."""
+def build_stylesheet(theme_name: str | None = None) -> str:
+    preset = get_theme_preset(theme_name or load_saved_theme_name())
+    return _render_stylesheet(preset.name)
+
+
+def build_shell_stylesheet(theme_name: str | None = None) -> str:
+    return build_stylesheet(theme_name)
+
+
+def build_page_stylesheet(theme_name: str | None = None) -> str:
+    return build_stylesheet(theme_name)
+
+
+def apply_theme_palette(app, theme_name: str | None = None) -> str:
+    """Apply only app-level theme state and palette, without global QSS."""
     preset = get_theme_preset(theme_name or load_saved_theme_name())
     tokens = resolve_theme_tokens(preset.name)
     app.setProperty("themeName", preset.name)
     _apply_theme_palette(app, tokens)
-    app.setStyleSheet(STYLE_TEMPLATE.format_map(tokens))
     return preset.name
+
+
+def ensure_scoped_theme_mode(app) -> bool:
+    """Clear any app-wide stylesheet once and mark scoped-theme mode active."""
+    had_global_stylesheet = bool(app.styleSheet())
+    if had_global_stylesheet:
+        app.setStyleSheet("")
+    if had_global_stylesheet or not bool(app.property(_SCOPED_THEME_ACTIVE_PROPERTY)):
+        app.setProperty(_SCOPED_THEME_ACTIVE_PROPERTY, True)
+    return had_global_stylesheet
+
+
+def apply_theme(app, theme_name: str | None = None) -> str:
+    """Apply app-level theme state and switch the app into scoped-theme mode."""
+    resolved_name = apply_theme_palette(app, theme_name)
+    ensure_scoped_theme_mode(app)
+    return resolved_name
