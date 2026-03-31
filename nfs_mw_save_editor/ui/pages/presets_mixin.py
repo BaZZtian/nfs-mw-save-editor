@@ -30,7 +30,7 @@ from core.models import FullCarBuildSnapshot, SnapshotInjectionPlan, SnapshotLib
 from core.tuning_limits import get_model_tuning_limits
 from ui.pages.constants import *
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
-from ui.widgets import ToastNotification, build_perf_level_row
+from ui.widgets import ToastNotification
 
 logger = logging.getLogger(__name__)
 
@@ -231,11 +231,52 @@ class PresetsMixin:
         limits = get_model_tuning_limits(model_name)
         for idx, (name, level) in enumerate(performance_levels):
             max_level = max(level, int(limits.get(name, 0))) if limits is not None else None
-            row_w, _ = build_perf_level_row(name, level, max_level)
+            row_w = self._build_presets_perf_row(name, level, max_level)
             grid.addWidget(row_w, idx // 2, idx % 2)
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
         parent.addLayout(grid)
+
+    def _build_presets_perf_visual_host(self, level: int, max_level: int | None) -> QWidget:
+        host = QWidget()
+        host.setObjectName("partsPerfControlHost")
+        host.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        layout = QHBoxLayout(host)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        if max_level is not None:
+            for seg_idx in range(1, int(max_level) + 1):
+                seg = QFrame()
+                seg.setObjectName("partsLevelSeg")
+                seg.setProperty("filled", str(seg_idx) if int(level) >= seg_idx else "0")
+                seg.setFixedSize(20, 8)
+                layout.addWidget(seg)
+
+        num = QLabel(f"{int(level)}/{max_level}" if max_level is not None else f"{int(level)}/?")
+        num.setObjectName("partsLevelNum")
+        layout.addWidget(num)
+        return host
+
+    def _build_presets_perf_row(self, name: str, level: int, max_level: int | None) -> QWidget:
+        row_w = QWidget()
+        row_w.setObjectName("partsLevelRow")
+        row_layout = QHBoxLayout(row_w)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(6)
+
+        lbl = QLabel(name)
+        lbl.setObjectName("partsLevelLabel")
+        row_layout.addWidget(lbl)
+
+        current_host = self._build_presets_perf_visual_host(int(level), max_level)
+        reference_max_level = max_level if max_level is not None else 4
+        reference_host = self._build_presets_perf_visual_host(int(level), reference_max_level)
+        host_width = max(current_host.minimumSizeHint().width(), reference_host.minimumSizeHint().width())
+        host_height = max(current_host.minimumSizeHint().height(), reference_host.minimumSizeHint().height())
+        current_host.setFixedSize(host_width, host_height)
+        row_layout.addWidget(current_host)
+        return row_w
 
     # ── Library card columns / reflow ───────────────────────────
 
