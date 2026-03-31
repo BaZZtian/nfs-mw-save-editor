@@ -4,6 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from ui.pages.constants import APP_NAME
 
@@ -15,6 +16,7 @@ class ThemePreset:
     background: str
     foreground: str
     tokens: dict[str, str] | None = None
+    text_on_accent_mode: Literal["auto", "light", "dark"] = "auto"
 
 
 DEFAULT_THEME_NAME = "Blueprint"
@@ -66,11 +68,23 @@ THEME_PRESETS: dict[str, ThemePreset] = {
             "RADIUS_PILL": "14px",
         },
     ),
-    "Catppuccin": ThemePreset("Catppuccin", "#CBA6F7", "#1E1E2E", "#CDD6F4"),
+    "Catppuccin": ThemePreset(
+        "Catppuccin",
+        "#CBA6F7",
+        "#1E1E2E",
+        "#CDD6F4",
+        text_on_accent_mode="dark",
+    ),
     "Claude": ThemePreset("Claude", "#CC7D5E", "#2D2D2B", "#F9F9F7"),
     "Codex": ThemePreset("Codex", "#0169CC", "#111111", "#FCFCFC"),
     "Dracula": ThemePreset("Dracula", "#FF79C6", "#282A36", "#F8F8F2"),
-    "Everforest": ThemePreset("Everforest", "#A7C080", "#2D353B", "#D3C6AA"),
+    "Everforest": ThemePreset(
+        "Everforest",
+        "#A7C080",
+        "#2D353B",
+        "#D3C6AA",
+        text_on_accent_mode="dark",
+    ),
     "GitHub": ThemePreset("GitHub", "#1F6FEB", "#0D1117", "#E6EDF3"),
     "Gruvbox": ThemePreset("Gruvbox", "#458588", "#282828", "#EBDBB2"),
     "Linear": ThemePreset("Linear", "#5E6AD2", "#17181D", "#E6E9EF"),
@@ -79,11 +93,29 @@ THEME_PRESETS: dict[str, ThemePreset] = {
     "Matrix": ThemePreset("Matrix", "#1EFF5A", "#040805", "#B8FFCA"),
     "Monokai": ThemePreset("Monokai", "#99947C", "#272822", "#F8F8F2"),
     "Night Owl": ThemePreset("Night Owl", "#44596B", "#011627", "#D6DEEB"),
-    "Nord": ThemePreset("Nord", "#88C0D0", "#2E3440", "#D8DEE9"),
+    "Nord": ThemePreset(
+        "Nord",
+        "#88C0D0",
+        "#2E3440",
+        "#D8DEE9",
+        text_on_accent_mode="dark",
+    ),
     "Notion": ThemePreset("Notion", "#3183D8", "#191919", "#D9D9D8"),
     "One": ThemePreset("One", "#4D78CC", "#282C34", "#ABB2BF"),
-    "Oscurance": ThemePreset("Oscurance", "#F9B98C", "#0B0B0F", "#E6E6E6"),
-    "Rose Pine": ThemePreset("Rose Pine", "#EA9A97", "#232136", "#E0DEF4"),
+    "Oscurance": ThemePreset(
+        "Oscurance",
+        "#F9B98C",
+        "#0B0B0F",
+        "#E6E6E6",
+        text_on_accent_mode="dark",
+    ),
+    "Rose Pine": ThemePreset(
+        "Rose Pine",
+        "#EA9A97",
+        "#232136",
+        "#E0DEF4",
+        text_on_accent_mode="dark",
+    ),
     "Sentry": ThemePreset("Sentry", "#7055F6", "#2D2935", "#E6DFF9"),
     "Solarized": ThemePreset("Solarized", "#D30102", "#002B36", "#839496"),
     "Temple": ThemePreset("Temple", "#E4F222", "#02120C", "#C7E6DA"),
@@ -423,10 +455,15 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
         }
 
     dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
-    tokens["TEXT_ON_ACCENT"] = _brand_aware_text_on_accent(
-        tokens["ACCENT"],
-        dark_on_accent,
-    )
+    if preset.text_on_accent_mode == "dark":
+        tokens["TEXT_ON_ACCENT"] = dark_on_accent
+    elif preset.text_on_accent_mode == "light":
+        tokens["TEXT_ON_ACCENT"] = "#FFFFFF"
+    else:
+        tokens["TEXT_ON_ACCENT"] = _brand_aware_text_on_accent(
+            tokens["ACCENT"],
+            dark_on_accent,
+        )
     tokens.update(_derive_semantic_status_tokens(tokens))
     return tokens
 

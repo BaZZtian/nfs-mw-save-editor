@@ -763,6 +763,8 @@ class MainWindow(
         elif current_page == "Presets":
             self._refresh_presets_page(reason="data_change")
         self.refresh_cards()
+        if hasattr(self, "_schedule_parts_pool_prewarm"):
+            self._schedule_parts_pool_prewarm(delay_ms=0)
 
     def _has_pending_changes(self) -> bool:
         for tid in set(self.want_counts.keys()) | set(self.have_counts.keys()):
@@ -840,6 +842,8 @@ class MainWindow(
         app = QApplication.instance()
         if app is not None:
             apply_theme(app, resolved_name)
+        if hasattr(self, "_on_parts_theme_changed"):
+            self._on_parts_theme_changed()
         if hasattr(self, "cmb_theme"):
             self.cmb_theme.blockSignals(True)
             self.cmb_theme.setCurrentText(resolved_name)

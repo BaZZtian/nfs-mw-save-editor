@@ -63,6 +63,16 @@ class AnimatedCardShell(QWidget):
     def content(self) -> Optional[QWidget]:
         return self._content
 
+    def take_content(self) -> Optional[QWidget]:
+        widget = self._content
+        if widget is None:
+            return None
+        widget.setParent(None)
+        widget.hide()
+        self._content = None
+        self.updateGeometry()
+        return widget
+
     def clear_animation(self) -> None:
         self._reveal_generation += 1
         if self._animation_group is not None:
@@ -106,7 +116,7 @@ class AnimatedCardShell(QWidget):
         *,
         delay_ms: int = 0,
         distance: int = 12,
-        duration_ms: int = 200,
+        duration_ms: int = 300,
     ) -> None:
         if self._content is None:
             return
@@ -121,13 +131,13 @@ class AnimatedCardShell(QWidget):
         fade.setDuration(int(duration_ms))
         fade.setStartValue(0.0)
         fade.setEndValue(1.0)
-        fade.setEasingCurve(QEasingCurve.OutCubic)
+        fade.setEasingCurve(QEasingCurve.OutQuart)
 
         slide = QPropertyAnimation(self, b"offsetY", self)
         slide.setDuration(int(duration_ms))
         slide.setStartValue(-abs(int(distance)))
         slide.setEndValue(0)
-        slide.setEasingCurve(QEasingCurve.OutCubic)
+        slide.setEasingCurve(QEasingCurve.OutQuart)
 
         parallel = QParallelAnimationGroup(self)
         parallel.addAnimation(fade)
@@ -146,7 +156,7 @@ class AnimatedCardShell(QWidget):
         *,
         delay_ms: int = 0,
         distance: int = 12,
-        duration_ms: int = 200,
+        duration_ms: int = 300,
         stable_checks: int = 2,
     ) -> None:
         if self._content is None:
@@ -621,8 +631,9 @@ class ViewportLazyGridController(QObject):
         forward_buffer_rows: int = 2,
         backward_buffer_rows: int = 1,
         idle_restart_ms: int = 120,
-        stagger_ms: int = 24,
+        stagger_ms: int = 40,
         max_animated_cards: int = 12,
+        release_widget: Optional[Callable[[QWidget], None]] = None,
         log: Optional[logging.Logger] = None,
     ):
         super().__init__(parent)
@@ -634,6 +645,7 @@ class ViewportLazyGridController(QObject):
         self._idle_restart_ms = max(0, int(idle_restart_ms))
         self._stagger_ms = max(0, int(stagger_ms))
         self._max_animated_cards = max(0, int(max_animated_cards))
+        self._release_widget = release_widget
         self._log = log or logger
 
         self._generation = 0
@@ -798,8 +810,7 @@ class ViewportLazyGridController(QObject):
         shells = self._build_row_shells(row_items)
         height = self._estimate_row_height(shells)
         for shell in shells:
-            shell.clear_animation()
-            shell.deleteLater()
+            self._dispose_shell(shell)
         return height
 
     def _build_row_shells(self, row_items: Sequence[Any]) -> list[AnimatedCardShell]:
@@ -1212,8 +1223,9 @@ class ViewportLazyGridController(QObject):
                 continue
             if delete_widgets:
                 if isinstance(widget, AnimatedCardShell):
-                    widget.clear_animation()
-                widget.deleteLater()
+                    self._dispose_shell(widget)
+                else:
+                    widget.deleteLater()
 
     def _configure_columns(self, columns: int) -> None:
         for col in range(max(self._last_columns, columns)):
@@ -1250,3 +1262,13 @@ class ViewportLazyGridController(QObject):
         if viewport is not None:
             viewport.setUpdatesEnabled(viewport_enabled)
             viewport.update()
+
+    def _dispose_shell(self, shell: AnimatedCardShell) -> None:
+        shell.clear_animation()
+        widget = shell.take_content()
+        if widget is not None:
+            if self._release_widget is not None:
+                self._release_widget(widget)
+            else:
+                widget.deleteLater()
+        shell.deleteLater()
