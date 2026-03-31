@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.icon_map import token_icon_path
-from ui.theme import resolve_theme_tokens
+from ui.theme import apply_popup_theme, resolve_theme_tokens
 
 
 def build_perf_level_row(name: str, level: int, max_level: Optional[int]) -> tuple[QWidget, QHBoxLayout]:
@@ -389,6 +389,7 @@ class ToastNotification(QLabel):
     def __init__(self, parent: QWidget, message: str, *, is_error: bool = False):
         super().__init__(message, parent)
         self.setObjectName("toastError" if is_error else "toastSuccess")
+        apply_popup_theme(self)
         self.setAlignment(Qt.AlignCenter)
         self.setFixedHeight(36)
         self.setMinimumWidth(220)
@@ -515,6 +516,8 @@ class ApplyConfirmDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+
+        apply_popup_theme(self)
 
         root.activate()
         self._collapsed_height = max(320, self.sizeHint().height() + 12)

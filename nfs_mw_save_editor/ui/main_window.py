@@ -16,12 +16,13 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QFileDialog,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -54,6 +55,7 @@ from ui.pages.presets_mixin import PresetsMixin
 from ui.pages.profile_mixin import ProfileMixin
 from ui.pages.settings_mixin import SettingsMixin
 from ui.theme import (
+    apply_popup_theme,
     apply_theme_palette,
     build_page_stylesheet,
     build_shell_stylesheet,
@@ -182,6 +184,8 @@ class MainWindow(
         self.catalog_path = _ensure_user_catalog_path()
         self.load_catalog()
         self._build_ui()
+        if app is not None:
+            app.installEventFilter(self)
         self._apply_scoped_theme_to_visible_roots(self.theme_name, mark_hidden_dirty=True)
         self._setup_render_timers()
         self.refresh_state()
@@ -479,6 +483,38 @@ class MainWindow(
         self._apply_stylesheet_to_root(root, stylesheet, theme_name=self.theme_name)
         if hasattr(self, "_page_theme_dirty"):
             self._page_theme_dirty[page_name] = False
+
+    def _popup_owned_by_main_window(self, widget: QWidget) -> bool:
+        current = widget
+        while current is not None:
+            if current is self:
+                return True
+            current = current.parent()
+        return False
+
+    def _iter_owned_popup_widgets(self) -> list[QWidget]:
+        app = QApplication.instance()
+        if app is None:
+            return []
+        widgets: list[QWidget] = []
+        for widget in app.topLevelWidgets():
+            if not isinstance(widget, (QDialog, QMessageBox)):
+                continue
+            if isinstance(widget, QFileDialog):
+                continue
+            if not self._popup_owned_by_main_window(widget):
+                continue
+            widgets.append(widget)
+        return widgets
+
+    def _apply_popup_theme_to_visible_widgets(self) -> None:
+        for widget in self._iter_owned_popup_widgets():
+            apply_popup_theme(widget, self.theme_name)
+        toasts = [toast for toast in self.findChildren(ToastNotification) if toast.isVisible()]
+        for toast in toasts:
+            apply_popup_theme(toast, self.theme_name)
+        if toasts:
+            ToastNotification.reposition_active(self)
 
     def _mark_hidden_pages_theme_dirty(self, current_page_name: Optional[str]) -> None:
         if not hasattr(self, "_page_theme_dirty"):
@@ -948,6 +984,7 @@ class MainWindow(
         if app is not None:
             apply_theme_palette(app, resolved_name)
         self._apply_scoped_theme_to_visible_roots(resolved_name, mark_hidden_dirty=True)
+        self._apply_popup_theme_to_visible_widgets()
         if hasattr(self, "_on_parts_theme_changed"):
             self._on_parts_theme_changed()
         if hasattr(self, "cmb_theme"):
@@ -957,6 +994,17 @@ class MainWindow(
         if hasattr(self, "_update_theme_preview"):
             self._update_theme_preview(resolved_name)
         self.update()
+
+    def eventFilter(self, watched, event):
+        if (
+            event is not None
+            and event.type() in {QEvent.Type.Polish, QEvent.Type.Show}
+            and isinstance(watched, (QDialog, QMessageBox))
+            and not isinstance(watched, QFileDialog)
+            and self._popup_owned_by_main_window(watched)
+        ):
+            apply_popup_theme(watched, self.theme_name)
+        return super().eventFilter(watched, event)
 
     def on_open(self, filepath: str | None = None):
         path = filepath

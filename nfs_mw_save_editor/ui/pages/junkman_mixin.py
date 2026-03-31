@@ -524,6 +524,7 @@ class JunkmanMixin:
         elif current_page == "Presets":
             self._refresh_presets_page(reason="reset_reveal")
         self.refresh_cards()
+        ToastNotification.show_toast(self, "Want reset to Have")
 
     def on_clear_all_want(self):
         self.want_counts = {t.id: 0 for t in self.tokens}

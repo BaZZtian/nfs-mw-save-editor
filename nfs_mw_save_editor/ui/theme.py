@@ -1332,6 +1332,10 @@ def build_page_stylesheet(theme_name: str | None = None) -> str:
     return build_stylesheet(theme_name)
 
 
+def build_popup_stylesheet(theme_name: str | None = None) -> str:
+    return build_stylesheet(theme_name)
+
+
 def apply_theme_palette(app, theme_name: str | None = None) -> str:
     """Apply only app-level theme state and palette, without global QSS."""
     preset = get_theme_preset(theme_name or load_saved_theme_name())
@@ -1339,6 +1343,29 @@ def apply_theme_palette(app, theme_name: str | None = None) -> str:
     app.setProperty("themeName", preset.name)
     _apply_theme_palette(app, tokens)
     return preset.name
+
+
+def apply_popup_theme(widget, theme_name: str | None = None) -> str:
+    """Apply scoped popup styling to a dialog/toast root without touching app-wide QSS."""
+    if widget is None:
+        return theme_name or load_saved_theme_name()
+    resolved_name = theme_name
+    if not resolved_name:
+        app = None
+        try:
+            from PySide6.QtWidgets import QApplication
+            app = QApplication.instance()
+        except Exception:
+            app = None
+        app_theme = app.property("themeName") if app is not None else None
+        resolved_name = app_theme if isinstance(app_theme, str) and app_theme else load_saved_theme_name()
+    stylesheet = build_popup_stylesheet(resolved_name)
+    applied_name = widget.property("_scopedThemeName")
+    if applied_name == resolved_name and widget.styleSheet() == stylesheet:
+        return resolved_name
+    widget.setStyleSheet(stylesheet)
+    widget.setProperty("_scopedThemeName", resolved_name)
+    return resolved_name
 
 
 def ensure_scoped_theme_mode(app) -> bool:
