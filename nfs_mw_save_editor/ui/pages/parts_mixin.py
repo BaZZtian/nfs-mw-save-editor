@@ -304,6 +304,7 @@ class ReusablePartsCardWidget(QFrame):
             btn_minus = QPushButton("-")
             btn_minus.setObjectName("partsLevelBtn")
             btn_minus.setFixedSize(24, 24)
+            btn_minus.setFocusPolicy(Qt.NoFocus)
             btn_minus.clicked.connect(lambda _, part=name: self._bump_perf_spin(part, -1))
             row_layout.addWidget(btn_minus)
 
@@ -319,6 +320,7 @@ class ReusablePartsCardWidget(QFrame):
             btn_plus = QPushButton("+")
             btn_plus.setObjectName("partsLevelBtn")
             btn_plus.setFixedSize(24, 24)
+            btn_plus.setFocusPolicy(Qt.NoFocus)
             btn_plus.clicked.connect(lambda _, part=name: self._bump_perf_spin(part, 1))
             row_layout.addWidget(btn_plus)
 
@@ -1122,6 +1124,7 @@ class PartsMixin:
                 btn_minus = QPushButton("-")
                 btn_minus.setObjectName("partsLevelBtn")
                 btn_minus.setFixedSize(24, 24)
+                btn_minus.setFocusPolicy(Qt.NoFocus)
                 spin = WantSpinBox()
                 spin.setObjectName("partsLevelSpin")
                 spin.setRange(0, max_level)
@@ -1134,6 +1137,7 @@ class PartsMixin:
                 btn_plus = QPushButton("+")
                 btn_plus.setObjectName("partsLevelBtn")
                 btn_plus.setFixedSize(24, 24)
+                btn_plus.setFocusPolicy(Qt.NoFocus)
                 btn_minus.clicked.connect(lambda _, s=spin: s.setValue(max(s.minimum(), s.value() - 1)))
                 btn_plus.clicked.connect(lambda _, s=spin: s.setValue(min(s.maximum(), s.value() + 1)))
                 row_layout.addWidget(btn_minus)
