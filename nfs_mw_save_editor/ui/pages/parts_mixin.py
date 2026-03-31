@@ -441,7 +441,7 @@ class PartsMixin:
         self._parts_visible_order: List[int] = []
         self._parts_live_vm_map: Dict[int, PartsCardVm] = {}
         self._parts_card_pool: Dict[bool, List[ReusablePartsCardWidget]] = {False: [], True: []}
-        self._parts_pool_target = 8
+        self._parts_pool_target = 16
         self._parts_pool_prewarm_requested = False
         self._parts_pool_prewarm_mode = False
         self._parts_pool_prewarm_timer = QTimer(self)
@@ -452,6 +452,7 @@ class PartsMixin:
             name="Tuning",
             layout=self.parts_cards_layout,
             scroll_area=self.parts_cards_scroll,
+            split_initial_visible_batch=True,
             release_widget=self._release_parts_card_widget,
         )
         return w
@@ -1397,8 +1398,12 @@ class PartsMixin:
             reason in {"page_enter", "reflow"}
             and not self._parts_cards_dirty
             and self._parts_render_controller.has_rendered_content()
+            and not self._parts_render_controller.is_rendering
         ):
-            self._parts_render_controller.reflow(columns)
+            if reason == "page_enter" and columns == self._parts_render_controller.current_columns:
+                self._parts_render_controller.replay_visible_reveal()
+            else:
+                self._parts_render_controller.reflow(columns)
             return
 
         self._rebuild_parts_cards(

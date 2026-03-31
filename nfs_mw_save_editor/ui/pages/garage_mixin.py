@@ -931,8 +931,12 @@ class GarageMixin:
             reason in {"page_enter", "reflow"}
             and not self._garage_cards_dirty
             and self._garage_render_controller.has_rendered_content()
+            and not self._garage_render_controller.is_rendering
         ):
-            self._garage_render_controller.reflow(columns)
+            if reason == "page_enter" and columns == self._garage_render_controller.current_columns:
+                self._garage_render_controller.replay_visible_reveal()
+            else:
+                self._garage_render_controller.reflow(columns)
             return
 
         self._rebuild_garage_cards(

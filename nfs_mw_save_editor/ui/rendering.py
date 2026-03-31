@@ -36,6 +36,42 @@ def refresh_widget_style(widget: QWidget) -> None:
     style.polish(widget)
 
 
+def _visible_shells_in_viewport(
+    shells: Sequence[AnimatedCardShell],
+    scroll_area: QScrollArea,
+) -> list[AnimatedCardShell]:
+    scrollbar = scroll_area.verticalScrollBar()
+    viewport = scroll_area.viewport()
+    if scrollbar is None or viewport is None or viewport.height() <= 0:
+        return []
+    top = scrollbar.value()
+    bottom = top + viewport.height()
+    visible = [
+        shell
+        for shell in shells
+        if shell.isVisible()
+        and shell.geometry().height() > 0
+        and shell.geometry().bottom() > top
+        and shell.geometry().top() < bottom
+    ]
+    visible.sort(key=lambda shell: (shell.geometry().y(), shell.geometry().x()))
+    return visible
+
+
+@dataclass
+class BuildTimingMetrics:
+    content_build_ms: float = 0.0
+    shell_attach_ms: float = 0.0
+    shell_pool_hits: int = 0
+    shell_pool_misses: int = 0
+
+    def extend(self, other: "BuildTimingMetrics") -> None:
+        self.content_build_ms += other.content_build_ms
+        self.shell_attach_ms += other.shell_attach_ms
+        self.shell_pool_hits += other.shell_pool_hits
+        self.shell_pool_misses += other.shell_pool_misses
+
+
 class AnimatedCardShell(QWidget):
     """Layout-managed shell that animates one child widget into view."""
 
@@ -47,18 +83,24 @@ class AnimatedCardShell(QWidget):
         self._offset_y = 0
         self._animation_group: Optional[QSequentialAnimationGroup] = None
         self._reveal_generation = 0
+        self._reveal_finished_slots: list[Callable[[], None]] = []
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self._opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self._opacity_effect)
 
     def set_content(self, widget: QWidget) -> None:
         if self._content is widget:
             return
         if self._content is not None:
+            self._content.hide()
             self._content.setParent(None)
         self._content = widget
         widget.setParent(self)
         widget.show()
         self.setSizePolicy(widget.sizePolicy())
         self.updateGeometry()
-        self._apply_content_geometry()
+        if self.isVisible() and self.width() > 0 and self.height() > 0:
+            self._apply_content_geometry()
 
     def content(self) -> Optional[QWidget]:
         return self._content
@@ -73,6 +115,13 @@ class AnimatedCardShell(QWidget):
         self.updateGeometry()
         return widget
 
+    def sync_content_geometry(self) -> None:
+        if self._content is None:
+            return
+        if self.width() <= 0 or self.height() <= 0:
+            return
+        self._apply_content_geometry()
+
     def clear_animation(self) -> None:
         self._reveal_generation += 1
         if self._animation_group is not None:
@@ -80,8 +129,23 @@ class AnimatedCardShell(QWidget):
             self._animation_group.deleteLater()
             self._animation_group = None
         self._set_offset_y(0)
-        if self._content is not None:
-            self._content.setGraphicsEffect(None)
+        self._opacity_effect.setOpacity(1.0)
+        self._opacity_effect.setEnabled(True)
+
+    def reset_for_reuse(self) -> None:
+        self.clear_animation()
+        for slot in self._reveal_finished_slots:
+            try:
+                self.revealFinished.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+        self._reveal_finished_slots.clear()
+        self.hide()
+        self.updateGeometry()
+
+    def add_reveal_finished_listener(self, slot: Callable[[], None]) -> None:
+        self.revealFinished.connect(slot)
+        self._reveal_finished_slots.append(slot)
 
     def _get_offset_y(self) -> int:
         return self._offset_y
@@ -121,13 +185,10 @@ class AnimatedCardShell(QWidget):
         if self._content is None:
             return
         self.clear_animation()
-
-        effect = QGraphicsOpacityEffect(self._content)
-        effect.setOpacity(0.0)
-        self._content.setGraphicsEffect(effect)
+        self._opacity_effect.setOpacity(0.0)
         self._set_offset_y(-abs(int(distance)))
 
-        fade = QPropertyAnimation(effect, b"opacity", self)
+        fade = QPropertyAnimation(self._opacity_effect, b"opacity", self)
         fade.setDuration(int(duration_ms))
         fade.setStartValue(0.0)
         fade.setEndValue(1.0)
@@ -162,9 +223,7 @@ class AnimatedCardShell(QWidget):
         if self._content is None:
             return
         self.clear_animation()
-        effect = QGraphicsOpacityEffect(self._content)
-        effect.setOpacity(0.0)
-        self._content.setGraphicsEffect(effect)
+        self._opacity_effect.setOpacity(0.0)
         self._set_offset_y(0)
         generation = self._reveal_generation
         self._schedule_settle_check(
@@ -242,8 +301,7 @@ class AnimatedCardShell(QWidget):
 
     def _on_animation_finished(self) -> None:
         self._set_offset_y(0)
-        if self._content is not None:
-            self._content.setGraphicsEffect(None)
+        self._opacity_effect.setOpacity(1.0)
         if self._animation_group is not None:
             self._animation_group.deleteLater()
             self._animation_group = None
@@ -264,6 +322,7 @@ class ChunkedGridController(QObject):
         frame_budget_ms: int = 7,
         stagger_ms: int = 24,
         max_animated_cards: int = 12,
+        release_widget: Optional[Callable[[QWidget], None]] = None,
         log: Optional[logging.Logger] = None,
     ):
         super().__init__(parent)
@@ -274,6 +333,7 @@ class ChunkedGridController(QObject):
         self._frame_budget_ms = max(1, int(frame_budget_ms))
         self._stagger_ms = max(0, int(stagger_ms))
         self._max_animated_cards = max(0, int(max_animated_cards))
+        self._release_widget = release_widget
         self._log = log or logger
 
         self._generation = 0
@@ -281,6 +341,7 @@ class ChunkedGridController(QObject):
         self._last_columns = 0
         self._items: list[Any] = []
         self._shells: list[AnimatedCardShell] = []
+        self._shell_pool: list[AnimatedCardShell] = []
         self._empty_widget: Optional[QWidget] = None
         self._build_widget: Optional[Callable[[Any], QWidget]] = None
         self._next_index = 0
@@ -295,8 +356,30 @@ class ChunkedGridController(QObject):
     def is_rendering(self) -> bool:
         return self._rendering
 
+    @property
+    def current_columns(self) -> int:
+        return self._columns
+
     def has_rendered_content(self) -> bool:
         return bool(self._shells) or self._empty_widget is not None
+
+    def replay_visible_reveal(self) -> None:
+        if self._rendering:
+            return
+        shells = _visible_shells_in_viewport(self._shells, self._scroll_area)
+        if not shells:
+            return
+        for shell in shells:
+            shell.clear_animation()
+            shell.sync_content_geometry()
+        for index, shell in enumerate(shells):
+            shell.play_reveal(delay_ms=index * self._stagger_ms)
+        self._log.debug(
+            "%s replay visible reveal: %d shell(s), viewport=%d px",
+            self._name,
+            len(shells),
+            self._viewport_width(),
+        )
 
     def cancel(self) -> None:
         self._generation += 1
@@ -363,17 +446,21 @@ class ChunkedGridController(QObject):
         )
         batch_timer = QElapsedTimer()
         batch_timer.start()
-        initial_batch = self._build_initial_batch()
+        initial_batch, build_metrics = self._build_initial_batch()
         build_ms = batch_timer.elapsed()
         commit_ms = self._commit_batch(initial_batch)
         self._chunk_count = 1 if initial_batch else 0
         self._log.debug(
-            "%s chunk %d: built %d card(s) in %d ms, committed in %d ms",
+            "%s chunk %d: built %d card(s) in %d ms, committed in %d ms (content %.1f ms, shell %.1f ms, shell pool h/m=%d/%d)",
             self._name,
             self._chunk_count,
             len(initial_batch),
             build_ms,
             commit_ms,
+            build_metrics.content_build_ms,
+            build_metrics.shell_attach_ms,
+            build_metrics.shell_pool_hits,
+            build_metrics.shell_pool_misses,
         )
         if self._next_index < len(self._items):
             self._schedule_pump(self._generation)
@@ -401,7 +488,10 @@ class ChunkedGridController(QObject):
             else:
                 for idx, shell in enumerate(self._shells):
                     self._layout.addWidget(shell, idx // self._columns, idx % self._columns)
+                    shell.show()
             self._layout.activate()
+            for shell in self._shells:
+                shell.sync_content_geometry()
             parent_widget = self._layout.parentWidget()
             if parent_widget is not None:
                 parent_widget.updateGeometry()
@@ -427,60 +517,78 @@ class ChunkedGridController(QObject):
             return
         batch_timer = QElapsedTimer()
         batch_timer.start()
-        batch = self._build_batch(max_items=None, budget_ms=self._frame_budget_ms)
+        batch, build_metrics = self._build_batch(max_items=None, budget_ms=self._frame_budget_ms)
         build_ms = batch_timer.elapsed()
         commit_ms = self._commit_batch(batch)
         self._chunk_count += 1
         self._log.debug(
-            "%s chunk %d: built %d card(s) in %d ms, committed in %d ms",
+            "%s chunk %d: built %d card(s) in %d ms, committed in %d ms (content %.1f ms, shell %.1f ms, shell pool h/m=%d/%d)",
             self._name,
             self._chunk_count,
             len(batch),
             build_ms,
             commit_ms,
+            build_metrics.content_build_ms,
+            build_metrics.shell_attach_ms,
+            build_metrics.shell_pool_hits,
+            build_metrics.shell_pool_misses,
         )
         if self._next_index < len(self._items):
             self._schedule_pump(generation)
         else:
             self._finish_render()
 
-    def _build_initial_batch(self) -> list[AnimatedCardShell]:
-        batch = self._build_batch(max_items=1, budget_ms=None)
+    def _build_initial_batch(self) -> tuple[list[AnimatedCardShell], BuildTimingMetrics]:
+        batch, metrics = self._build_batch(max_items=1, budget_ms=None)
         if not batch:
-            return batch
+            return batch, metrics
         target = self._estimate_initial_batch_size(batch[0])
         while self._next_index < len(self._items) and len(batch) < target:
-            shell = self._build_shell_for_next_item()
+            shell, shell_metrics = self._build_shell_for_next_item()
             if shell is None:
                 break
             batch.append(shell)
-        return batch
+            metrics.extend(shell_metrics)
+        return batch, metrics
 
-    def _build_batch(self, *, max_items: Optional[int], budget_ms: Optional[int]) -> list[AnimatedCardShell]:
+    def _build_batch(self, *, max_items: Optional[int], budget_ms: Optional[int]) -> tuple[list[AnimatedCardShell], BuildTimingMetrics]:
         if self._build_widget is None:
-            return []
+            return [], BuildTimingMetrics()
         batch: list[AnimatedCardShell] = []
+        metrics = BuildTimingMetrics()
         elapsed = QElapsedTimer()
         elapsed.start()
         while self._next_index < len(self._items):
-            shell = self._build_shell_for_next_item()
+            shell, shell_metrics = self._build_shell_for_next_item()
             if shell is None:
                 break
             batch.append(shell)
+            metrics.extend(shell_metrics)
             if max_items is not None and len(batch) >= max_items:
                 break
             if budget_ms is not None and batch and elapsed.elapsed() >= budget_ms:
                 break
-        return batch
+        return batch, metrics
 
-    def _build_shell_for_next_item(self) -> Optional[AnimatedCardShell]:
+    def _build_shell_for_next_item(self) -> tuple[Optional[AnimatedCardShell], BuildTimingMetrics]:
+        metrics = BuildTimingMetrics()
         if self._build_widget is None or self._next_index >= len(self._items):
-            return None
+            return None, metrics
+        content_timer = QElapsedTimer()
+        content_timer.start()
         widget = self._build_widget(self._items[self._next_index])
-        shell = AnimatedCardShell()
+        metrics.content_build_ms = float(content_timer.nsecsElapsed() / 1_000_000)
+        shell_timer = QElapsedTimer()
+        shell_timer.start()
+        shell, from_pool = self._acquire_shell()
         shell.set_content(widget)
+        metrics.shell_attach_ms = float(shell_timer.nsecsElapsed() / 1_000_000)
+        if from_pool:
+            metrics.shell_pool_hits = 1
+        else:
+            metrics.shell_pool_misses = 1
         self._next_index += 1
-        return shell
+        return shell, metrics
 
     def _estimate_initial_batch_size(self, first_shell: AnimatedCardShell) -> int:
         viewport = self._scroll_area.viewport()
@@ -503,8 +611,11 @@ class ChunkedGridController(QObject):
             for offset, shell in enumerate(batch):
                 index = start_index + offset
                 self._layout.addWidget(shell, index // self._columns, index % self._columns)
+                shell.show()
                 self._shells.append(shell)
             self._layout.activate()
+            for shell in batch:
+                shell.sync_content_geometry()
             parent_widget = self._layout.parentWidget()
             if parent_widget is not None:
                 parent_widget.updateGeometry()
@@ -553,8 +664,9 @@ class ChunkedGridController(QObject):
                 continue
             if delete_widgets:
                 if isinstance(widget, AnimatedCardShell):
-                    widget.clear_animation()
-                widget.deleteLater()
+                    self._dispose_shell(widget)
+                else:
+                    widget.deleteLater()
 
     def _configure_columns(self, columns: int) -> None:
         for col in range(max(self._last_columns, columns)):
@@ -602,6 +714,33 @@ class ChunkedGridController(QObject):
             viewport.setUpdatesEnabled(viewport_enabled)
             viewport.update()
 
+    def _shell_pool_parent(self) -> Optional[QWidget]:
+        return self._layout.parentWidget()
+
+    def _acquire_shell(self) -> tuple[AnimatedCardShell, bool]:
+        if self._shell_pool:
+            shell = self._shell_pool.pop()
+            shell.reset_for_reuse()
+            return shell, True
+        return AnimatedCardShell(self._shell_pool_parent()), False
+
+    def _release_shell(self, shell: AnimatedCardShell) -> None:
+        shell.reset_for_reuse()
+        pool_parent = self._shell_pool_parent()
+        if pool_parent is not None and shell.parentWidget() is not pool_parent:
+            shell.setParent(pool_parent)
+        self._shell_pool.append(shell)
+
+    def _dispose_shell(self, shell: AnimatedCardShell) -> None:
+        shell.clear_animation()
+        widget = shell.take_content()
+        if widget is not None:
+            if self._release_widget is not None:
+                self._release_widget(widget)
+            else:
+                widget.deleteLater()
+        self._release_shell(shell)
+
 
 @dataclass
 class LazyGridRowState:
@@ -633,6 +772,7 @@ class ViewportLazyGridController(QObject):
         idle_restart_ms: int = 120,
         stagger_ms: int = 40,
         max_animated_cards: int = 12,
+        split_initial_visible_batch: bool = False,
         release_widget: Optional[Callable[[QWidget], None]] = None,
         log: Optional[logging.Logger] = None,
     ):
@@ -645,6 +785,7 @@ class ViewportLazyGridController(QObject):
         self._idle_restart_ms = max(0, int(idle_restart_ms))
         self._stagger_ms = max(0, int(stagger_ms))
         self._max_animated_cards = max(0, int(max_animated_cards))
+        self._split_initial_visible_batch = bool(split_initial_visible_batch)
         self._release_widget = release_widget
         self._log = log or logger
 
@@ -656,6 +797,7 @@ class ViewportLazyGridController(QObject):
         self._build_widget: Optional[Callable[[Any], QWidget]] = None
         self._empty_widget_factory: Optional[Callable[[int], QWidget]] = None
         self._empty_widget: Optional[QWidget] = None
+        self._shell_pool: list[AnimatedCardShell] = []
         self._animate = False
         self._rendering = False
         self._render_elapsed: Optional[QElapsedTimer] = None
@@ -671,6 +813,10 @@ class ViewportLazyGridController(QObject):
         self._visible_reveal_blockers = 0
         self._idle_restart_pending = False
         self._pending_idle_immediate = True
+        self._initial_split_consumed = False
+        self._deferred_preload_rows: list[int] = []
+        self._deferred_preload_scheduled = False
+        self._deferred_preload_token = 0
 
         self._idle_restart_timer = QTimer(self)
         self._idle_restart_timer.setSingleShot(True)
@@ -685,8 +831,33 @@ class ViewportLazyGridController(QObject):
     def is_rendering(self) -> bool:
         return self._rendering
 
+    @property
+    def current_columns(self) -> int:
+        return self._columns
+
     def has_rendered_content(self) -> bool:
         return bool(self._rows) or self._empty_widget is not None
+
+    def replay_visible_reveal(self) -> None:
+        if self._rendering:
+            return
+        shells = _visible_shells_in_viewport(
+            [shell for row in self._rows if row.realized for shell in row.shells],
+            self._scroll_area,
+        )
+        if not shells:
+            return
+        for shell in shells:
+            shell.clear_animation()
+            shell.sync_content_geometry()
+        for index, shell in enumerate(shells):
+            shell.play_reveal(delay_ms=index * self._stagger_ms)
+        self._log.debug(
+            "%s replay visible reveal: %d shell(s), viewport=%d px",
+            self._name,
+            len(shells),
+            self._viewport_width(),
+        )
 
     def cancel(self) -> None:
         self._generation += 1
@@ -699,6 +870,10 @@ class ViewportLazyGridController(QObject):
         self._visible_reveal_blockers = 0
         self._idle_restart_pending = False
         self._pending_idle_immediate = True
+        self._initial_split_consumed = False
+        self._deferred_preload_rows = []
+        self._deferred_preload_scheduled = False
+        self._deferred_preload_token += 1
 
     def clear(self) -> None:
         self.cancel()
@@ -716,6 +891,10 @@ class ViewportLazyGridController(QObject):
         self._visible_reveal_blockers = 0
         self._idle_restart_pending = False
         self._pending_idle_immediate = True
+        self._initial_split_consumed = False
+        self._deferred_preload_rows = []
+        self._deferred_preload_scheduled = False
+        self._deferred_preload_token += 1
         self._clear_layout(delete_widgets=True)
 
     def schedule_render(
@@ -752,6 +931,10 @@ class ViewportLazyGridController(QObject):
         self._visible_reveal_blockers = 0
         self._idle_restart_pending = False
         self._pending_idle_immediate = True
+        self._initial_split_consumed = False
+        self._deferred_preload_rows = []
+        self._deferred_preload_scheduled = False
+        self._deferred_preload_token += 1
 
         self._clear_layout(delete_widgets=True)
         self._configure_columns(self._columns)
@@ -807,22 +990,33 @@ class ViewportLazyGridController(QObject):
         )
 
     def _build_probe_row_height(self, row_items: Sequence[Any]) -> int:
-        shells = self._build_row_shells(row_items)
+        shells, _ = self._build_row_shells(row_items)
         height = self._estimate_row_height(shells)
         for shell in shells:
             self._dispose_shell(shell)
         return height
 
-    def _build_row_shells(self, row_items: Sequence[Any]) -> list[AnimatedCardShell]:
+    def _build_row_shells(self, row_items: Sequence[Any]) -> tuple[list[AnimatedCardShell], BuildTimingMetrics]:
         if self._build_widget is None:
-            return []
+            return [], BuildTimingMetrics()
         shells: list[AnimatedCardShell] = []
+        metrics = BuildTimingMetrics()
         for item in row_items:
+            content_timer = QElapsedTimer()
+            content_timer.start()
             widget = self._build_widget(item)
-            shell = AnimatedCardShell()
+            metrics.content_build_ms += float(content_timer.nsecsElapsed() / 1_000_000)
+            shell_timer = QElapsedTimer()
+            shell_timer.start()
+            shell, from_pool = self._acquire_shell()
             shell.set_content(widget)
+            metrics.shell_attach_ms += float(shell_timer.nsecsElapsed() / 1_000_000)
+            if from_pool:
+                metrics.shell_pool_hits += 1
+            else:
+                metrics.shell_pool_misses += 1
             shells.append(shell)
-        return shells
+        return shells, metrics
 
     def _estimate_row_height(self, shells: Sequence[AnimatedCardShell]) -> int:
         if not shells:
@@ -856,6 +1050,7 @@ class ViewportLazyGridController(QObject):
         if not self._rendering:
             return
         self._idle_token += 1
+        self._clear_deferred_preload_rows()
         self._schedule_visible_eval(mode=_EVAL_MODE_NORMAL)
         self._schedule_idle_restart(immediate=False)
 
@@ -900,8 +1095,24 @@ class ViewportLazyGridController(QObject):
             target_range = range(visible_start, visible_end + 1)
             reason = "followup"
         else:
-            target_range = range(preload_start, preload_end + 1)
-            reason = "visible"
+            if (
+                self._split_initial_visible_batch
+                and viewport_ready
+                and not self._initial_split_consumed
+            ):
+                target_range = range(visible_start, visible_end + 1)
+                self._initial_split_consumed = True
+                self._deferred_preload_rows = [
+                    row_index
+                    for row_index in range(preload_start, preload_end + 1)
+                    if row_index > visible_end and not self._rows[row_index].realized
+                ]
+                reason = "visible"
+                if self._deferred_preload_rows:
+                    self._schedule_deferred_preload_tick(generation, self._deferred_preload_token)
+            else:
+                target_range = range(preload_start, preload_end + 1)
+                reason = "visible"
         target_rows = [row_index for row_index in target_range if not self._rows[row_index].realized]
         self._log.debug(
             "%s lazy %s band: strict %d-%d, preload %d-%d, ready=%s (%d/%d rows)",
@@ -933,6 +1144,35 @@ class ViewportLazyGridController(QObject):
                 self._schedule_idle_restart(immediate=True)
             elif not viewport_ready:
                 self._schedule_visible_eval(mode=_EVAL_MODE_NORMAL)
+        self._finish_if_complete()
+
+    def _schedule_deferred_preload_tick(self, generation: int, token: int) -> None:
+        if self._deferred_preload_scheduled or not self._deferred_preload_rows:
+            return
+        self._deferred_preload_scheduled = True
+        QTimer.singleShot(0, lambda gen=generation, deferred_token=token: self._run_deferred_preload_tick(gen, deferred_token))
+
+    def _run_deferred_preload_tick(self, generation: int, token: int) -> None:
+        self._deferred_preload_scheduled = False
+        if generation != self._generation or token != self._deferred_preload_token or not self._rendering:
+            return
+        next_row = None
+        while self._deferred_preload_rows:
+            candidate = self._deferred_preload_rows.pop(0)
+            if 0 <= candidate < len(self._rows) and not self._rows[candidate].realized:
+                next_row = candidate
+                break
+        if next_row is None:
+            self._finish_if_complete()
+            if self._initial_visible_eval_done:
+                self._schedule_idle_restart(immediate=True)
+            return
+        self._realize_rows([next_row], reason="deferred_preload")
+        if self._deferred_preload_rows:
+            self._schedule_deferred_preload_tick(generation, token)
+        else:
+            if self._initial_visible_eval_done:
+                self._schedule_idle_restart(immediate=True)
         self._finish_if_complete()
 
     def _visible_row_range(self) -> tuple[int, int, bool]:
@@ -985,9 +1225,12 @@ class ViewportLazyGridController(QObject):
             return
         build_timer = QElapsedTimer()
         build_timer.start()
+        build_metrics = BuildTimingMetrics()
         built_rows: list[tuple[LazyGridRowState, list[AnimatedCardShell]]] = []
         for row in pending:
-            built_rows.append((row, self._build_row_shells(row.items)))
+            shells, row_metrics = self._build_row_shells(row.items)
+            build_metrics.extend(row_metrics)
+            built_rows.append((row, shells))
         build_ms = build_timer.elapsed()
 
         commit_timer = QElapsedTimer()
@@ -1003,7 +1246,11 @@ class ViewportLazyGridController(QObject):
                 row.realized = True
                 for col, shell in enumerate(shells):
                     self._layout.addWidget(shell, row.row_index, col)
+                    shell.show()
             self._layout.activate()
+            for _row, shells in built_rows:
+                for shell in shells:
+                    shell.sync_content_geometry()
             parent_widget = self._layout.parentWidget()
             if parent_widget is not None:
                 parent_widget.updateGeometry()
@@ -1030,7 +1277,7 @@ class ViewportLazyGridController(QObject):
             self._schedule_visible_eval(mode=_EVAL_MODE_FOLLOWUP)
 
         if self._animate:
-            blocks_idle = reason in {"visible", "followup"}
+            blocks_idle = reason in {"visible", "followup", "deferred_preload"}
             for row, shells in built_rows:
                 for shell in shells:
                     if self._realized_shell_count >= self._max_animated_cards:
@@ -1044,12 +1291,16 @@ class ViewportLazyGridController(QObject):
                 break
 
         self._log.debug(
-            "%s lazy %s swap: realized row(s) %s in %d ms build + %d ms commit (%d/%d rows)",
+            "%s lazy %s swap: realized row(s) %s in %d ms build + %d ms commit (content %.1f ms, shell %.1f ms, shell pool h/m=%d/%d, %d/%d rows)",
             self._name,
             reason,
             ",".join(str(row.row_index) for row, _ in built_rows),
             build_ms,
             commit_ms,
+            build_metrics.content_build_ms,
+            build_metrics.shell_attach_ms,
+            build_metrics.shell_pool_hits,
+            build_metrics.shell_pool_misses,
             sum(1 for row in self._rows if row.realized),
             len(self._rows),
         )
@@ -1137,6 +1388,11 @@ class ViewportLazyGridController(QObject):
             return
         if not self._initial_visible_eval_done:
             return
+        if self._deferred_preload_rows or self._deferred_preload_scheduled:
+            self._idle_restart_timer.stop()
+            self._idle_restart_pending = True
+            self._pending_idle_immediate = self._pending_idle_immediate and immediate
+            return
         if self._visible_reveal_blockers > 0:
             self._idle_restart_timer.stop()
             self._idle_restart_pending = True
@@ -1164,9 +1420,7 @@ class ViewportLazyGridController(QObject):
     def _register_visible_reveal_blocker(self, shell: AnimatedCardShell) -> None:
         generation = self._generation
         self._visible_reveal_blockers += 1
-        shell.revealFinished.connect(
-            lambda gen=generation: self._on_visible_reveal_finished(gen),
-        )
+        shell.add_reveal_finished_listener(lambda gen=generation: self._on_visible_reveal_finished(gen))
 
     def _on_visible_reveal_finished(self, generation: int) -> None:
         if generation != self._generation:
@@ -1181,6 +1435,11 @@ class ViewportLazyGridController(QObject):
         )
         if self._visible_reveal_blockers == 0:
             self._flush_pending_idle_restart()
+
+    def _clear_deferred_preload_rows(self) -> None:
+        self._deferred_preload_token += 1
+        self._deferred_preload_rows = []
+        self._deferred_preload_scheduled = False
 
     def _flush_pending_idle_restart(self) -> None:
         if not self._idle_restart_pending or not self._rendering or not self._initial_visible_eval_done:
@@ -1263,6 +1522,23 @@ class ViewportLazyGridController(QObject):
             viewport.setUpdatesEnabled(viewport_enabled)
             viewport.update()
 
+    def _shell_pool_parent(self) -> Optional[QWidget]:
+        return self._layout.parentWidget()
+
+    def _acquire_shell(self) -> tuple[AnimatedCardShell, bool]:
+        if self._shell_pool:
+            shell = self._shell_pool.pop()
+            shell.reset_for_reuse()
+            return shell, True
+        return AnimatedCardShell(self._shell_pool_parent()), False
+
+    def _release_shell(self, shell: AnimatedCardShell) -> None:
+        shell.reset_for_reuse()
+        pool_parent = self._shell_pool_parent()
+        if pool_parent is not None and shell.parentWidget() is not pool_parent:
+            shell.setParent(pool_parent)
+        self._shell_pool.append(shell)
+
     def _dispose_shell(self, shell: AnimatedCardShell) -> None:
         shell.clear_animation()
         widget = shell.take_content()
@@ -1271,4 +1547,4 @@ class ViewportLazyGridController(QObject):
                 self._release_widget(widget)
             else:
                 widget.deleteLater()
-        shell.deleteLater()
+        self._release_shell(shell)

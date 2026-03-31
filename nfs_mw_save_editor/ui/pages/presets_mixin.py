@@ -182,12 +182,14 @@ class PresetsMixin:
             name="PresetsLibrary",
             layout=self.snapshot_library_cards_layout,
             scroll_area=self.snapshot_library_scroll,
+            split_initial_visible_batch=True,
         )
         self._snapshot_render_controller = ViewportLazyGridController(
             self,
             name="PresetsMySave",
             layout=self.snapshot_cards_layout,
             scroll_area=self.snapshot_cards_scroll,
+            split_initial_visible_batch=True,
         )
         return w
 
@@ -1149,8 +1151,12 @@ class PresetsMixin:
                 reason in {"page_enter", "reflow"}
                 and not self._snapshot_library_cards_dirty
                 and self._snapshot_library_render_controller.has_rendered_content()
+                and not self._snapshot_library_render_controller.is_rendering
             ):
-                self._snapshot_library_render_controller.reflow(columns)
+                if reason == "page_enter" and columns == self._snapshot_library_render_controller.current_columns:
+                    self._snapshot_library_render_controller.replay_visible_reveal()
+                else:
+                    self._snapshot_library_render_controller.reflow(columns)
                 return
             self._rebuild_snapshot_library_cards(
                 animate=reason in {"page_enter", "filter_change"},
@@ -1164,8 +1170,12 @@ class PresetsMixin:
             reason in {"page_enter", "reflow"}
             and not self._snapshot_cards_dirty
             and self._snapshot_render_controller.has_rendered_content()
+            and not self._snapshot_render_controller.is_rendering
         ):
-            self._snapshot_render_controller.reflow(columns)
+            if reason == "page_enter" and columns == self._snapshot_render_controller.current_columns:
+                self._snapshot_render_controller.replay_visible_reveal()
+            else:
+                self._snapshot_render_controller.reflow(columns)
             return
         self._rebuild_snapshot_cards(
             animate=reason in {"page_enter", "filter_change"},
