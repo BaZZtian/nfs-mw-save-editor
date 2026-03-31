@@ -723,6 +723,10 @@ QWidget#tokenRow QSpinBox {{
     border: 1px solid {BORDER};
     border-radius: {RADIUS_MD};
 }}
+QWidget#partsPerfControlHost {{
+    background: transparent;
+    border: none;
+}}
 
 /* Inputs */
 QLineEdit, QSpinBox, QTextEdit, QPlainTextEdit {{

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
@@ -158,6 +158,8 @@ class ReusablePartsCardWidget(QFrame):
         utility_label = QLabel()
         utility_label.setObjectName("mutedLabel")
         utility_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        utility_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        utility_label.setMinimumHeight(max(12, utility_label.sizeHint().height()))
         card_layout.addWidget(utility_label)
 
         sep = QFrame()
@@ -297,32 +299,10 @@ class ReusablePartsCardWidget(QFrame):
             num_label.setObjectName("partsLevelNum")
             row_layout.addWidget(num_label)
 
-            read_only_badge = self._owner._make_stat_badge("Read-only")
-            read_only_badge.setVisible(False)
-            row_layout.addWidget(read_only_badge)
-
-            btn_minus = QPushButton("-")
-            btn_minus.setObjectName("partsLevelBtn")
-            btn_minus.setFixedSize(24, 24)
-            btn_minus.setFocusPolicy(Qt.NoFocus)
-            btn_minus.clicked.connect(lambda _, part=name: self._bump_perf_spin(part, -1))
-            row_layout.addWidget(btn_minus)
-
-            spin = WantSpinBox()
-            spin.setObjectName("partsLevelSpin")
-            spin.setRange(0, 4)
-            spin.setValue(0)
-            spin.setAlignment(Qt.AlignCenter)
-            spin.setButtonSymbols(WantSpinBox.NoButtons)
-            spin.valueChanged.connect(lambda val, part=name: self._on_perf_spin_changed(part, val))
-            row_layout.addWidget(spin)
-
-            btn_plus = QPushButton("+")
-            btn_plus.setObjectName("partsLevelBtn")
-            btn_plus.setFixedSize(24, 24)
-            btn_plus.setFocusPolicy(Qt.NoFocus)
-            btn_plus.clicked.connect(lambda _, part=name: self._bump_perf_spin(part, 1))
-            row_layout.addWidget(btn_plus)
+            control_host, read_only_badge, btn_minus, spin, btn_plus = self._owner._build_parts_perf_control_host(
+                lambda val, part=name: self._on_perf_spin_changed(part, val)
+            )
+            row_layout.addWidget(control_host)
 
             grid.addWidget(row_w, idx // 2, idx % 2)
             handles[name] = PartsPerfRowHandle(
@@ -342,6 +322,7 @@ class ReusablePartsCardWidget(QFrame):
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
+        row.addStrut(20)
         buttons: Dict[str, QPushButton] = {}
         for _, cat in SaveFile.JUNKMAN_MASK_BITS:
             btn = QPushButton(cat)
@@ -883,6 +864,7 @@ class PartsMixin:
         spin: Optional[WantSpinBox],
         minus_button: Optional[QPushButton],
         plus_button: Optional[QPushButton],
+        read_only_badge: Optional[QLabel] = None,
     ) -> PartsPerfRowHandle:
         num_label = next(
             (label for label in row_w.findChildren(QLabel) if label.objectName() == "partsLevelNum"),
@@ -900,7 +882,57 @@ class PartsMixin:
             spin=spin,
             minus_button=minus_button,
             plus_button=plus_button,
+            read_only_badge=read_only_badge,
         )
+
+    def _build_parts_perf_control_host(
+        self,
+        on_value_changed: Callable[[int], None],
+    ) -> tuple[QWidget, QLabel, QPushButton, WantSpinBox, QPushButton]:
+        control_host = QWidget()
+        control_host.setObjectName("partsPerfControlHost")
+        control_host.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        control_layout = QHBoxLayout(control_host)
+        control_layout.setContentsMargins(0, 0, 0, 0)
+        control_layout.setSpacing(6)
+
+        read_only_badge = self._make_stat_badge("Read-only")
+        read_only_badge.setVisible(False)
+        control_layout.addWidget(read_only_badge, 0, Qt.AlignVCenter)
+
+        btn_minus = QPushButton("-")
+        btn_minus.setObjectName("partsLevelBtn")
+        btn_minus.setFixedSize(24, 24)
+        btn_minus.setFocusPolicy(Qt.NoFocus)
+        control_layout.addWidget(btn_minus, 0, Qt.AlignVCenter)
+
+        spin = WantSpinBox()
+        spin.setObjectName("partsLevelSpin")
+        spin.setRange(0, 4)
+        spin.setValue(0)
+        spin.setAlignment(Qt.AlignCenter)
+        spin.setButtonSymbols(WantSpinBox.NoButtons)
+        spin.valueChanged.connect(on_value_changed)
+        control_layout.addWidget(spin, 0, Qt.AlignVCenter)
+
+        btn_plus = QPushButton("+")
+        btn_plus.setObjectName("partsLevelBtn")
+        btn_plus.setFixedSize(24, 24)
+        btn_plus.setFocusPolicy(Qt.NoFocus)
+        control_layout.addWidget(btn_plus, 0, Qt.AlignVCenter)
+
+        btn_minus.clicked.connect(lambda _, s=spin: s.setValue(max(s.minimum(), s.value() - 1)))
+        btn_plus.clicked.connect(lambda _, s=spin: s.setValue(min(s.maximum(), s.value() + 1)))
+
+        control_host_height = max(
+            24,
+            read_only_badge.minimumSizeHint().height(),
+            btn_minus.minimumSizeHint().height(),
+            spin.minimumSizeHint().height(),
+            btn_plus.minimumSizeHint().height(),
+        )
+        control_host.setFixedHeight(control_host_height)
+        return control_host, read_only_badge, btn_minus, spin, btn_plus
 
     def _update_parts_perf_row(
         self,
@@ -955,7 +987,7 @@ class PartsMixin:
         handle.career_badge.setText("")
         handle.utility_label.clear()
         handle.utility_label.setToolTip("")
-        handle.utility_label.setVisible(False)
+        handle.utility_label.setVisible(True)
         for perf_handle in handle.perf_rows.values():
             self._update_parts_perf_row(perf_handle, level=0, max_level=None)
         for btn in handle.junkman_buttons.values():
@@ -1030,7 +1062,7 @@ class PartsMixin:
         utility_text, utility_tooltip = self._parts_utility_summary(vm)
         handle.utility_label.setText(utility_text)
         handle.utility_label.setToolTip(utility_tooltip)
-        handle.utility_label.setVisible(bool(utility_text))
+        handle.utility_label.setVisible(True)
 
         limits = vm.limits or {}
         for name, perf_handle in handle.perf_rows.items():
@@ -1117,40 +1149,26 @@ class PartsMixin:
             level = int(levels.get(name, 0))
             max_level = max(level, int(limits.get(name, 0))) if editable else None
             row_w, row_layout = build_perf_level_row(name, level, max_level)
-            btn_minus: Optional[QPushButton] = None
-            spin: Optional[WantSpinBox] = None
-            btn_plus: Optional[QPushButton] = None
-            if editable:
-                btn_minus = QPushButton("-")
-                btn_minus.setObjectName("partsLevelBtn")
-                btn_minus.setFixedSize(24, 24)
-                btn_minus.setFocusPolicy(Qt.NoFocus)
-                spin = WantSpinBox()
-                spin.setObjectName("partsLevelSpin")
-                spin.setRange(0, max_level)
-                spin.setValue(level)
-                spin.setAlignment(Qt.AlignCenter)
-                spin.setButtonSymbols(WantSpinBox.NoButtons)
-                spin.valueChanged.connect(
-                    lambda val, slot=card_entry.parts_slot, part=name: self.on_parts_level_changed(slot, part, val)
-                )
-                btn_plus = QPushButton("+")
-                btn_plus.setObjectName("partsLevelBtn")
-                btn_plus.setFixedSize(24, 24)
-                btn_plus.setFocusPolicy(Qt.NoFocus)
-                btn_minus.clicked.connect(lambda _, s=spin: s.setValue(max(s.minimum(), s.value() - 1)))
-                btn_plus.clicked.connect(lambda _, s=spin: s.setValue(min(s.maximum(), s.value() + 1)))
-                row_layout.addWidget(btn_minus)
-                row_layout.addWidget(spin)
-                row_layout.addWidget(btn_plus)
-            else:
-                row_layout.addWidget(self._make_stat_badge("Read-only"))
+            control_host, read_only_badge, btn_minus, spin, btn_plus = self._build_parts_perf_control_host(
+                lambda val, slot=card_entry.parts_slot, part=name: self.on_parts_level_changed(slot, part, val)
+            )
+            row_layout.addWidget(control_host)
+            spin.setRange(0, max(level, int(max_level or 0)))
+            spin.setValue(level)
+            spin.setVisible(editable)
+            spin.setEnabled(editable)
+            btn_minus.setVisible(editable)
+            btn_minus.setEnabled(editable and int(level) > 0)
+            btn_plus.setVisible(editable)
+            btn_plus.setEnabled(editable and max_level is not None and int(level) < int(max_level))
+            read_only_badge.setVisible(not editable)
             grid.addWidget(row_w, idx // 2, idx % 2)
             handles[name] = self._capture_parts_perf_row_handle(
                 row_w,
                 spin=spin,
                 minus_button=btn_minus,
                 plus_button=btn_plus,
+                read_only_badge=read_only_badge,
             )
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
@@ -1165,6 +1183,7 @@ class PartsMixin:
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
+        row.addStrut(20)
         active_any = False
         buttons: Dict[str, QPushButton] = {}
         for bit, cat in SaveFile.JUNKMAN_MASK_BITS:
@@ -1276,6 +1295,8 @@ class PartsMixin:
         utility_label = QLabel()
         utility_label.setObjectName("mutedLabel")
         utility_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        utility_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        utility_label.setMinimumHeight(max(12, utility_label.sizeHint().height()))
         card_layout.addWidget(utility_label)
 
         sep = QFrame()
