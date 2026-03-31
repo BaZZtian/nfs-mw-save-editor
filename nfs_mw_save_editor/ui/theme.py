@@ -1102,6 +1102,15 @@ QLabel#tuningStatusJunkman {{
     font-size: 11px;
     font-weight: 600;
 }}
+QLabel#tuningStatusReadOnly {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {TEXT};
+    font-size: 11px;
+    font-weight: 600;
+}}
 QLabel#pinkSlipBadgeText {{
     background: {STATUS_REWARD_BG};
     border: 1px solid {STATUS_REWARD_BORDER};

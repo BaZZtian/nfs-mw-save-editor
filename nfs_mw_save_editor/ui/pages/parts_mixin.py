@@ -176,6 +176,7 @@ class PartsMixin:
             "Modified": "tuningStatusModified",
             "Maxed": "tuningStatusMaxed",
             "Junkman": "tuningStatusJunkman",
+            "Read-only": "tuningStatusReadOnly",
         }.get(text, "garageCardStatBadge")
 
     def _normalize_tuning_entry(self, entry: object) -> TuningCardEntry:
@@ -477,10 +478,7 @@ class PartsMixin:
 
     def _parts_utility_summary(self, vm: PartsCardVm) -> tuple[str, str]:
         if vm.limits is None:
-            return (
-                "Read-only",
-                "No confirmed tuning limits for this model yet. Safe mode keeps this card read-only.",
-            )
+            return ("", "")
         blocked = [
             f"{cat}: {reason}"
             for _, cat in SaveFile.JUNKMAN_MASK_BITS
@@ -508,8 +506,12 @@ class PartsMixin:
         handle.name_label.setText(card_entry.display_name)
 
         visible_statuses = set(vm.statuses)
+        read_only_tooltip = "No confirmed tuning limits for this model yet. Safe mode keeps this card read-only."
+        if vm.limits is None:
+            visible_statuses.add("Read-only")
         for text, badge in handle.status_badges.items():
             badge.setVisible(text in visible_statuses)
+            badge.setToolTip(read_only_tooltip if text == "Read-only" and vm.limits is None else "")
 
         for button in handle.bulk_buttons.values():
             button.setEnabled(vm.limits is not None)
@@ -523,6 +525,7 @@ class PartsMixin:
         utility_text, utility_tooltip = self._parts_utility_summary(vm)
         handle.utility_label.setText(utility_text)
         handle.utility_label.setToolTip(utility_tooltip)
+        handle.utility_label.setVisible(bool(utility_text))
 
         limits = vm.limits or {}
         for name, perf_handle in handle.perf_rows.items():
@@ -710,7 +713,7 @@ class PartsMixin:
         status_row = QHBoxLayout()
         status_row.setSpacing(8)
         status_badges: Dict[str, QLabel] = {}
-        for text in ["Stock", "Modified", "Maxed", "Junkman"]:
+        for text in ["Stock", "Modified", "Maxed", "Junkman", "Read-only"]:
             badge = self._make_tuning_status_badge(text)
             badge.setVisible(False)
             status_badges[text] = badge
@@ -752,12 +755,6 @@ class PartsMixin:
         utility_label.setObjectName("mutedLabel")
         utility_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         card_layout.addWidget(utility_label)
-
-        if vm.limits is None:
-            note = QLabel("No confirmed tuning limits for this model yet. Safe mode keeps this card read-only.")
-            note.setObjectName("partsCardNote")
-            note.setWordWrap(True)
-            card_layout.addWidget(note)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
