@@ -147,6 +147,11 @@ class ShimmerFrame(QFrame):
 class WantSpinBox(QSpinBox):
     """SpinBox that ignores mouse wheel to prevent accidental edits."""
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Keep click/tab keyboard editing, but do not let wheel scrolling focus the control.
+        self.setFocusPolicy(Qt.StrongFocus)
+
     def wheelEvent(self, event):
         event.ignore()
 
