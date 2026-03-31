@@ -455,6 +455,10 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
             "RADIUS_PILL": "14px",
         }
 
+    tokens.setdefault(
+        "SCROLLBAR_THUMB_HOVER",
+        _mix(tokens["BG_BUTTON_HOVER"], tokens["TEXT"], 0.12),
+    )
     dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
     if preset.text_on_accent_mode == "dark":
         tokens["TEXT_ON_ACCENT"] = dark_on_accent
@@ -815,16 +819,59 @@ QMenu::item:selected {{
     color: {TEXT_ON_ACCENT};
 }}
 QScrollBar:vertical {{
-    background: {BG_PANEL};
-    width: 12px;
+    background: transparent;
+    width: 8px;
     margin: 2px 0 2px 0;
 }}
 QScrollBar::handle:vertical {{
-    background: {ACCENT};
-    min-height: 20px;
-    border-radius: 6px;
+    background: {BG_BUTTON_HOVER};
+    min-height: 24px;
+    border: none;
+    border-radius: 4px;
 }}
-QScrollBar::handle:vertical:hover {{ background: {ACCENT_BRIGHT}; }}
+QScrollBar::handle:vertical:hover {{ background: {SCROLLBAR_THUMB_HOVER}; }}
+QScrollBar::handle:vertical:pressed {{ background: {ACCENT}; }}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {{
+    background: transparent;
+    border: none;
+    height: 0px;
+}}
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {{
+    background: transparent;
+}}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 8px;
+    margin: 0 2px 0 2px;
+}}
+QScrollBar::handle:horizontal {{
+    background: {BG_BUTTON_HOVER};
+    min-width: 24px;
+    border: none;
+    border-radius: 4px;
+}}
+QScrollBar::handle:horizontal:hover {{ background: {SCROLLBAR_THUMB_HOVER}; }}
+QScrollBar::handle:horizontal:pressed {{ background: {ACCENT}; }}
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {{
+    background: transparent;
+    border: none;
+    width: 0px;
+}}
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {{
+    background: transparent;
+}}
+QScrollBar::up-arrow,
+QScrollBar::down-arrow,
+QScrollBar::left-arrow,
+QScrollBar::right-arrow {{
+    background: transparent;
+    width: 0px;
+    height: 0px;
+}}
 QCheckBox {{
     spacing: 6px;
     color: {TEXT};
