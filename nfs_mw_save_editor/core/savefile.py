@@ -55,6 +55,9 @@ class SaveFile:
     SLOT_MAX = 200  # upper bound for diff helpers
     MONEY_OFFSET = 0x4039
     ACTIVE_CAREER_CAR_NUMBER_OFFSET = 0x4034
+    PROFILE_ALIAS_OFFSET = 0x5A31
+    PROFILE_ALIAS_BUFFER_SIZE = 0x24
+    PROFILE_ALIAS_MAX_LEN = 35
     GARAGE_BASE_OFFSET = 0xE2ED
     GARAGE_SLOT_SIZE = 0x38
     GARAGE_BOUNTY_OFFSET = 0x10
@@ -281,6 +284,35 @@ class SaveFile:
 
     def set_money(self, value: int) -> None:
         self._write_u32(self.MONEY_OFFSET, self._require_u32(value))
+
+    def get_profile_alias_raw(self) -> bytes:
+        start = self.PROFILE_ALIAS_OFFSET
+        end = start + self.PROFILE_ALIAS_BUFFER_SIZE
+        if end > len(self.data):
+            raise ValueError("profile alias field points outside the file")
+        return bytes(self.data[start:end])
+
+    def get_profile_alias(self) -> str:
+        raw = self.get_profile_alias_raw()
+        name_bytes = raw.split(b"\x00", 1)[0]
+        return name_bytes.decode("ascii")
+
+    def set_profile_alias(self, value: str) -> None:
+        alias = str(value)
+        try:
+            alias_bytes = alias.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise ValueError("profile alias must contain ASCII characters only") from exc
+        if len(alias_bytes) > self.PROFILE_ALIAS_MAX_LEN:
+            raise ValueError(f"profile alias must be at most {self.PROFILE_ALIAS_MAX_LEN} ASCII characters")
+
+        payload = alias_bytes + b"\x00"
+        payload = payload.ljust(self.PROFILE_ALIAS_BUFFER_SIZE, b"\x00")
+        start = self.PROFILE_ALIAS_OFFSET
+        end = start + self.PROFILE_ALIAS_BUFFER_SIZE
+        if end > len(self.data):
+            raise ValueError("profile alias field points outside the file")
+        self.data[start:end] = payload
 
     def get_active_career_car_number(self) -> int:
         return self._read_u8(self.ACTIVE_CAREER_CAR_NUMBER_OFFSET)

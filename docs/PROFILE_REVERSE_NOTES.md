@@ -433,6 +433,64 @@ Implication:
 - future safety/product work should no longer be framed as only "keep at least one car in
   Career"; it must preserve or retarget `0x4034` to a surviving career-linked car
 
+#### Profile alias / displayed name (`0x5A31`)
+
+The displayed profile name is not currently parsed by the editor, but a stable field was
+isolated by checking multiple independent saves:
+
+- `fixture-a`
+- `fixture-e`
+- `Bkmz-1`
+- `GaySIgm`
+- `John`
+- `fixture-f`
+- `fixture-c`
+- `fixture-i`
+- `fixture-b`
+- `fixture-d`
+- `AllCars`
+
+Observed result:
+
+- each healthy save contains one stable match for the displayed alias at absolute offset
+  `0x5A31`
+- the same field is still authoritative even when the file name is not; for example,
+  `SAVE_B_tokens\\SAVE_B_tokens` still stores `fixture-a` at `0x5A31`
+- relative to saved data start (`0x34`), this is `saved_data + 0x59FD`
+
+Observed layout around the field:
+
+- `0x5A2D..0x5A30` -> unknown `u32`-like field, not part of the alias text
+- `0x5A31..0x5A54` -> alias buffer
+- `0x5A55..0x5A60` -> next stable structure:
+  - `03 CD CD CD 01 00 00 00 01 CD CD CD`
+
+Observed encoding:
+
+- single-byte null-terminated text
+- all tested saves decode cleanly as plain ASCII
+- no tested save showed a UTF-16LE copy of the alias
+
+Observed storage behavior:
+
+- the alias string starts exactly at `0x5A31`
+- it is followed by `0x00`
+- the remainder of the buffer is zero-padded up to `0x5A54`
+- the next non-zero byte is always at `0x5A55`
+
+Practical length conclusion:
+
+- the alias buffer size is `0x24` bytes (`36` bytes)
+- the safe maximum stored text length is therefore `35` bytes if the game expects a trailing
+  null terminator
+- the longest observed alias in the current test set is `fixture-d` (`8` bytes)
+
+What is still not claimed:
+
+- the exact in-game UI input limit for creating/editing a profile name
+- whether non-ASCII code pages are accepted in-game, even though the save field is clearly
+  single-byte and ASCII-compatible in all tested files
+
 #### End-to-end injector fidelity test (`My Cars`, primary-only donor)
 
 An end-to-end injector test was then run with:
