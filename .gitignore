@@ -1,4 +1,4 @@
-﻿# Python cache / compiled
+# Python cache / compiled
 __pycache__/
 *.pyc
 *.pyo
@@ -22,6 +22,7 @@ env/
 .vscode/
 .idea/
 .claude/
+.agents/
 
 # Build artifacts
 build/
@@ -54,6 +55,7 @@ htmlcov/
 *.zip
 .python-version
 AGENT_CONTEXT.md
+skills-lock.json
 
 # Local developer-only files
 dev_assets/
