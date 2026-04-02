@@ -64,6 +64,9 @@ class SnapshotLibraryCardHandle:
 class PresetsMixin:
     # ── Page builder ────────────────────────────────────────────
 
+    def _preset_bucket_ui_label(self, bucket: str) -> str:
+        return "Blacklist" if str(bucket) == "Main" else str(bucket)
+
     def _build_presets_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
@@ -120,13 +123,13 @@ class PresetsMixin:
         self.snapshot_library_filter_group = QButtonGroup(self)
         self.snapshot_library_filter_group.setExclusive(True)
         self.snapshot_library_filter_buttons: Dict[str, QPushButton] = {}
-        for name in ["All", "Main", "Bonus"]:
-            btn = QPushButton(name)
+        for filter_value in ["All", "Main", "Bonus"]:
+            btn = QPushButton(self._preset_bucket_ui_label(filter_value))
             btn.setCheckable(True)
             btn.setObjectName("garageFilterBtn")
-            btn.clicked.connect(lambda _, v=name: self.on_snapshot_library_filter_changed(v))
+            btn.clicked.connect(lambda _, v=filter_value: self.on_snapshot_library_filter_changed(v))
             self.snapshot_library_filter_group.addButton(btn)
-            self.snapshot_library_filter_buttons[name] = btn
+            self.snapshot_library_filter_buttons[filter_value] = btn
             controls.addWidget(btn)
         self.snapshot_library_filter_buttons["All"].setChecked(True)
         self.presets_search = QLineEdit()
@@ -445,7 +448,7 @@ class PresetsMixin:
     def _apply_snapshot_library_card_vm(self, handle: SnapshotLibraryCardHandle, vm: SnapshotLibraryCardVm) -> None:
         entry = vm.entry
         handle.card.setProperty("changed", vm.staged_mode is not None)
-        handle.bucket_badge.setText(entry.library_bucket)
+        handle.bucket_badge.setText(self._preset_bucket_ui_label(entry.library_bucket))
         self._apply_garage_source_badge(handle.source_badge, entry.source_kind)
         handle.name_label.setText(entry.display_name)
 
@@ -547,7 +550,7 @@ class PresetsMixin:
             # Header: bucket badge + source badge
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
-            bucket_badge = QLabel(entry.library_bucket)
+            bucket_badge = QLabel(self._preset_bucket_ui_label(entry.library_bucket))
             bucket_badge.setObjectName("garageCardSlot")
             bucket_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             bucket_badge.setAlignment(Qt.AlignCenter)
@@ -912,7 +915,7 @@ class PresetsMixin:
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        bucket_badge = QLabel(entry.library_bucket)
+        bucket_badge = QLabel(self._preset_bucket_ui_label(entry.library_bucket))
         bucket_badge.setObjectName("garageCardSlot")
         bucket_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         bucket_badge.setAlignment(Qt.AlignCenter)
