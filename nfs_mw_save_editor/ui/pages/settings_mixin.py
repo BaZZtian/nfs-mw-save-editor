@@ -73,7 +73,7 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
             painter.drawRoundedRect(row_rect, radius, radius)
 
         content_rect = row_rect.adjusted(12, 0, -12, 0)
-        reserve = 20 if is_active_theme else 0
+        reserve = 24 if is_active_theme else 0
         text_rect = content_rect.adjusted(0, 0, -reserve, 0)
 
         painter.setPen(text_color)
@@ -85,18 +85,30 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
         )
 
         if is_active_theme:
-            check_rect = content_rect.adjusted(content_rect.width() - 18, 0, 0, 0)
-            check_font = painter.font()
-            check_font.setBold(True)
-            painter.setFont(check_font)
+            check_rect = content_rect.adjusted(content_rect.width() - 18, 0, -2, 0)
             if is_selected:
-                painter.setPen(text_color)
+                check_color = text_color
             else:
-                painter.setPen(QColor(tokens["BORDER_NAV_ACTIVE"]))
-            painter.drawText(
-                check_rect,
-                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
-                "✓",
+                check_color = QColor(tokens["BORDER_NAV_ACTIVE"])
+            check_pen = QPen(check_color, 1.8)
+            check_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            check_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(check_pen)
+            center_y = check_rect.center().y()
+            start_x = check_rect.left() + 4
+            mid_x = check_rect.left() + 8
+            end_x = check_rect.right() - 2
+            painter.drawLine(
+                start_x,
+                center_y,
+                mid_x,
+                center_y + 4,
+            )
+            painter.drawLine(
+                mid_x,
+                center_y + 4,
+                end_x,
+                center_y - 5,
             )
 
         painter.restore()
@@ -183,6 +195,7 @@ class SettingsMixin:
         section = QLabel("Settings")
         section.setObjectName("sectionLabel")
         layout.addWidget(section)
+
         self.cmb_theme = QComboBox()
         self.cmb_theme.addItems(available_theme_names())
         self.cmb_theme.setMinimumWidth(220)
@@ -220,7 +233,7 @@ class SettingsMixin:
         ]))
         self._update_theme_preview(self.cmb_theme.currentText())
 
-        # ── Token Limits ─────────────────────────────────────
+        # Token Limits
         self.chk_safe = QCheckBox("Standard mode")
         self.chk_safe.setChecked(True)
         self.chk_safe.stateChanged.connect(self.on_range_toggle)
@@ -237,7 +250,7 @@ class SettingsMixin:
             self.chk_practical_cap10, self.lbl_limits,
         ]))
 
-        # ── Data Safety ──────────────────────────────────────
+        # Data Safety
         self.chk_preserve_unknown = QCheckBox("Preserve unknown token data (recommended)")
         self.chk_preserve_unknown.setChecked(True)
         self.chk_preserve_unknown.stateChanged.connect(self.on_preserve_toggle)
@@ -254,7 +267,7 @@ class SettingsMixin:
             self.chk_preserve_unknown, self.btn_clear_unknown, self.lbl_type_safety,
         ]))
 
-        # ── Display ──────────────────────────────────────────
+        # Display
         self.chk_show_integrity = QCheckBox("Show integrity panel on Profile")
         self.chk_show_integrity.setChecked(False)
         self.chk_show_integrity.stateChanged.connect(self.on_toggle_show_integrity)
@@ -266,7 +279,7 @@ class SettingsMixin:
             self.chk_show_integrity, self.chk_show_unlinked_pursuits,
         ]))
 
-        # ── Catalog ──────────────────────────────────────────
+        # Catalog
         self.lbl_catalog_path = QLabel(f"Catalog: {self.catalog_path}")
         self.lbl_catalog_path.setObjectName("mutedLabel")
         self.lbl_catalog_path.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -302,7 +315,7 @@ class SettingsMixin:
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        ver = QLabel(f"{APP_VERSION}  ·  {APP_PLATFORM}")
+        ver = QLabel(f"{APP_VERSION} - {APP_PLATFORM}")
         ver.setObjectName("mutedLabel")
         ver.setAlignment(Qt.AlignCenter)
         layout.addWidget(ver)
@@ -321,7 +334,7 @@ class SettingsMixin:
             "Token layout is detected automatically for each save file.\n"
             "Apply updates the open save in memory; Save + backup writes it to disk.\n\n"
             "Keyboard shortcuts:\n"
-            "  Ctrl+O  Open save · Ctrl+S  Save + backup · Ctrl+Z  Reset Want\n\n"
+            "  Ctrl+O  Open save - Ctrl+S  Save + backup - Ctrl+Z  Reset Want\n\n"
             "Drag & drop .sav files directly onto the window."
         )
         desc.setObjectName("mutedLabel")
