@@ -215,6 +215,68 @@ class SplitTextProgressBar(QProgressBar):
         painter.end()
 
 
+class ThemeTransitionOverlay(QWidget):
+    """Snapshot overlay that crossfades out during runtime theme switches."""
+
+    _DURATION_MS = 240
+
+    def __init__(self, parent: QWidget, snapshot: QPixmap, *, duration_ms: int = _DURATION_MS):
+        super().__init__(parent)
+        self._snapshot = snapshot
+        self._animation_finished = False
+
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setAutoFillBackground(False)
+        self.setGeometry(parent.rect())
+
+        self._opacity = QGraphicsOpacityEffect(self)
+        self._opacity.setOpacity(1.0)
+        self.setGraphicsEffect(self._opacity)
+
+        self._fade = QPropertyAnimation(self._opacity, b"opacity", self)
+        self._fade.setDuration(duration_ms)
+        self._fade.setStartValue(1.0)
+        self._fade.setEndValue(0.0)
+        self._fade.setEasingCurve(QEasingCurve.OutCubic)
+        self._fade.finished.connect(self._cleanup_after_animation)
+
+    def sync_to_parent(self) -> None:
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        self.setGeometry(parent.rect())
+        self.update()
+
+    def start(self) -> None:
+        self.sync_to_parent()
+        self.show()
+        self.raise_()
+        self._fade.start()
+
+    def finish_immediately(self) -> None:
+        if self._animation_finished:
+            return
+        self._fade.stop()
+        self._cleanup_after_animation()
+
+    def _cleanup_after_animation(self) -> None:
+        if self._animation_finished:
+            return
+        self._animation_finished = True
+        self.hide()
+        self.deleteLater()
+
+    def paintEvent(self, event) -> None:
+        _ = event
+        if self._snapshot.isNull():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.drawPixmap(self.rect(), self._snapshot)
+        painter.end()
+
+
 class TokenCard(QWidget):
     """A dark card representing a single Junkman token."""
 

@@ -64,7 +64,7 @@ from ui.theme import (
     resolve_theme_tokens,
     save_theme_name,
 )
-from ui.widgets import SplitTextProgressBar, ToastNotification
+from ui.widgets import SplitTextProgressBar, ThemeTransitionOverlay, ToastNotification
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,7 @@ class MainWindow(
         app = QApplication.instance()
         app_theme = app.property("themeName") if app is not None else None
         self.theme_name = app_theme if isinstance(app_theme, str) and app_theme else load_saved_theme_name()
+        self._theme_transition_overlay: Optional[ThemeTransitionOverlay] = None
 
     #  state
         self.savefile: Optional[SaveFile] = None
@@ -515,6 +516,35 @@ class MainWindow(
             apply_popup_theme(toast, self.theme_name)
         if toasts:
             ToastNotification.reposition_active(self)
+
+    def _clear_theme_transition_overlay(self) -> None:
+        overlay = self._theme_transition_overlay
+        self._theme_transition_overlay = None
+        if overlay is not None:
+            overlay.finish_immediately()
+
+    def _start_theme_transition_overlay(self) -> Optional[ThemeTransitionOverlay]:
+        root = self.centralWidget()
+        if root is None or not root.isVisible():
+            return None
+        snapshot = root.grab()
+        if snapshot.isNull() or snapshot.size().isEmpty():
+            return None
+
+        self._clear_theme_transition_overlay()
+
+        overlay = ThemeTransitionOverlay(root, snapshot)
+        overlay.show()
+        overlay.raise_()
+        overlay.destroyed.connect(
+            lambda _obj=None, overlay=overlay: (
+                setattr(self, "_theme_transition_overlay", None)
+                if self._theme_transition_overlay is overlay
+                else None
+            )
+        )
+        self._theme_transition_overlay = overlay
+        return overlay
 
     def _mark_hidden_pages_theme_dirty(self, current_page_name: Optional[str]) -> None:
         if not hasattr(self, "_page_theme_dirty"):
@@ -941,6 +971,8 @@ class MainWindow(
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if self._theme_transition_overlay is not None:
+            self._theme_transition_overlay.sync_to_parent()
         ToastNotification.reposition_active(self)
         self._update_header_path()
         if hasattr(self, "scroll") and hasattr(self, "cards_container"):
@@ -980,6 +1012,7 @@ class MainWindow(
 
     def on_theme_changed(self, theme_name: str) -> None:
         resolved_name = save_theme_name(theme_name)
+        overlay = self._start_theme_transition_overlay()
         app = QApplication.instance()
         if app is not None:
             apply_theme_palette(app, resolved_name)
@@ -996,6 +1029,8 @@ class MainWindow(
         if hasattr(self, "_update_theme_preview"):
             self._update_theme_preview(resolved_name)
         self.update()
+        if overlay is not None:
+            overlay.start()
 
     def eventFilter(self, watched, event):
         if (
