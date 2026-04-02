@@ -991,6 +991,8 @@ class MainWindow(
             self.cmb_theme.blockSignals(True)
             self.cmb_theme.setCurrentText(resolved_name)
             self.cmb_theme.blockSignals(False)
+        if hasattr(self, "_update_theme_combo_active_marker"):
+            self._update_theme_combo_active_marker(resolved_name)
         if hasattr(self, "_update_theme_preview"):
             self._update_theme_preview(resolved_name)
         self.update()

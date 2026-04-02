@@ -2,23 +2,118 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListView,
     QPushButton,
+    QStyle,
+    QStyledItemDelegate,
     QVBoxLayout,
     QWidget,
 )
 
 from ui.pages.constants import *
-from ui.theme import available_theme_names, get_theme_preset
+from ui.theme import available_theme_names, get_theme_preset, resolve_theme_tokens
+
+
+def _parse_px(value: str, fallback: int) -> int:
+    if isinstance(value, str) and value.endswith("px"):
+        try:
+            return int(float(value[:-2]))
+        except ValueError:
+            return fallback
+    return fallback
+
+
+class ThemeComboItemDelegate(QStyledItemDelegate):
+    """Popup delegate that marks the currently applied theme with a calm check state."""
+
+    def __init__(self, combo: QComboBox) -> None:
+        super().__init__(combo)
+        self._combo = combo
+
+    def _active_theme_name(self) -> str:
+        active_name = self._combo.property("activeThemeName")
+        if isinstance(active_name, str) and active_name:
+            return active_name
+        return self._combo.currentText()
+
+    def paint(self, painter: QPainter, option, index) -> None:
+        theme_name = self._active_theme_name()
+        tokens = resolve_theme_tokens(theme_name)
+        item_text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        is_selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        is_active_theme = item_text == theme_name
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        row_rect = option.rect.adjusted(6, 2, -6, -2)
+        radius = _parse_px(tokens.get("RADIUS_MD", "8px"), 8)
+
+        selected_fill = QColor(tokens["BG_NAV_ACTIVE"])
+        active_fill = QColor(tokens["BG_NAV_ACTIVE"])
+        active_fill.setAlpha(155)
+        active_border = QColor(tokens["BORDER_NAV_ACTIVE"])
+        active_border.setAlpha(180)
+        text_color = QColor(tokens["TEXT"])
+
+        if is_selected:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(selected_fill)
+            painter.drawRoundedRect(row_rect, radius, radius)
+        elif is_active_theme:
+            painter.setPen(QPen(active_border, 1.0))
+            painter.setBrush(active_fill)
+            painter.drawRoundedRect(row_rect, radius, radius)
+
+        content_rect = row_rect.adjusted(12, 0, -12, 0)
+        reserve = 20 if is_active_theme else 0
+        text_rect = content_rect.adjusted(0, 0, -reserve, 0)
+
+        painter.setPen(text_color)
+        painter.setFont(option.font)
+        painter.drawText(
+            text_rect,
+            int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+            item_text,
+        )
+
+        if is_active_theme:
+            check_rect = content_rect.adjusted(content_rect.width() - 18, 0, 0, 0)
+            check_font = painter.font()
+            check_font.setBold(True)
+            painter.setFont(check_font)
+            if is_selected:
+                painter.setPen(text_color)
+            else:
+                painter.setPen(QColor(tokens["BORDER_NAV_ACTIVE"]))
+            painter.drawText(
+                check_rect,
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
+                "✓",
+            )
+
+        painter.restore()
 
 
 class SettingsMixin:
+    def _update_theme_combo_active_marker(self, theme_name: str) -> None:
+        if not hasattr(self, "cmb_theme"):
+            return
+        self.cmb_theme.setProperty("activeThemeName", theme_name)
+        self.cmb_theme.update()
+        view = self.cmb_theme.view()
+        if view is not None:
+            view.update()
+            if view.viewport() is not None:
+                view.viewport().update()
+
     def _build_settings_group(self, title: str, widgets: list) -> QFrame:
         """Create a garageCard-styled settings group with a title and child widgets."""
         group = QFrame()
@@ -91,9 +186,14 @@ class SettingsMixin:
         self.cmb_theme = QComboBox()
         self.cmb_theme.addItems(available_theme_names())
         self.cmb_theme.setMinimumWidth(220)
+        theme_view = QListView(self.cmb_theme)
+        theme_view.setUniformItemSizes(True)
+        self.cmb_theme.setView(theme_view)
+        self.cmb_theme.setItemDelegate(ThemeComboItemDelegate(self.cmb_theme))
         self.cmb_theme.blockSignals(True)
         self.cmb_theme.setCurrentText(getattr(self, "theme_name", available_theme_names()[0]))
         self.cmb_theme.blockSignals(False)
+        self._update_theme_combo_active_marker(self.cmb_theme.currentText())
         self.cmb_theme.currentTextChanged.connect(self.on_theme_changed)
 
         theme_row = QHBoxLayout()
