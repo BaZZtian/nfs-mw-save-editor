@@ -18,6 +18,7 @@ Built with **Python 3** and **PySide6**. Dark blue UI theme.
 
 ### Profile / Rap Sheet Editor
 - **Money** - editable field (u32) with current-value display
+- **Profile alias** - staged inline editing with ASCII validation, default safe limit `7`, optional unlock up to `16`
 - **Total Bounty**, **Escapes**, **Busts** - read-only summary stats shown in a horizontal stat strip with rounded badge styling
 - **Garage card grid** - scrollable, adaptive 1-3 column layout:
   - Each card shows the **resolved vehicle name** (8-byte signature -> model name via `core/cars.py`)
@@ -48,6 +49,7 @@ Built with **Python 3** and **PySide6**. Dark blue UI theme.
 ### Settings
 - **Default cap <= 10** per token (practical mode)
 - Optional **Unlock limit (<= 63)** toggle for advanced users
+- Optional **Unlock profile alias editing up to 16 characters** toggle for advanced users
 - Preserve or clear Unknown tokens on apply (with confirmation)
 - **Show empty valid garage slots** - display all pursuit-block entries on Profile, not just occupied ones
 - **Show Integrity panel** - toggle the Integrity section on the Profile page
@@ -57,6 +59,7 @@ Built with **Python 3** and **PySide6**. Dark blue UI theme.
 - **Drag and drop** save files onto the window to open
 - **Toast notifications** for non-blocking success feedback
 - **Fade-in animations** on card grid, hover effects on cards
+- **Page-switch fade overlay** for smoother transitions between sections
 - About page with version info, author credit, and shortcuts reference
 
 ### Other
