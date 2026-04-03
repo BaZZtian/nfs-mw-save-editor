@@ -31,7 +31,10 @@ class ProfileMixin:
             QRegularExpression(r"[0-9, ]*"), self,
         )
 
-        # ── Alias tile ─────────────────────────────────────────
+        # ── Top strip: Alias + Money ───────────────────────────
+        top_strip = QHBoxLayout()
+        top_strip.setSpacing(10)
+
         self.alias_edit = QLineEdit()
         self.alias_edit.setMaxLength(35)
         self.alias_edit.setPlaceholderText("Player alias")
@@ -41,18 +44,9 @@ class ProfileMixin:
         self.alias_current_label = QLabel("Current: -")
         self.alias_current_label.setObjectName("statTileSub")
         self.alias_current_label.setAlignment(Qt.AlignCenter)
-        alias_tile = self._build_stat_tile("Alias", self.alias_edit, self.alias_current_label)
-        alias_tile.setMaximumWidth(300)
-        alias_row = QHBoxLayout()
-        alias_row.setContentsMargins(0, 0, 0, 0)
-        alias_row.addStretch(1)
-        alias_row.addWidget(alias_tile)
-        alias_row.addStretch(1)
-        layout.addLayout(alias_row)
-
-        # ── Stat strip (4 tiles) ────────────────────────────────
-        stat_strip = QHBoxLayout()
-        stat_strip.setSpacing(10)
+        top_strip.addWidget(
+            self._build_stat_tile("Alias", self.alias_edit, self.alias_current_label), 1,
+        )
 
         self.money_edit = QLineEdit()
         self.money_edit.setPlaceholderText("0")
@@ -63,9 +57,15 @@ class ProfileMixin:
         self.money_current_label = QLabel("Current: -")
         self.money_current_label.setObjectName("statTileSub")
         self.money_current_label.setAlignment(Qt.AlignCenter)
-        stat_strip.addWidget(
+        top_strip.addWidget(
             self._build_stat_tile("Money", self.money_edit, self.money_current_label), 1,
         )
+
+        layout.addLayout(top_strip)
+
+        # ── Bounty strip: Total Bounty, Escapes, Busts ─────────
+        bounty_strip = QHBoxLayout()
+        bounty_strip.setSpacing(10)
 
         self.total_bounty_label = QLabel("-")
         self.total_bounty_label.setObjectName("statTileValue")
@@ -74,7 +74,7 @@ class ProfileMixin:
         self.total_bounty_current_label = QLabel("Current: -")
         self.total_bounty_current_label.setObjectName("statTileSub")
         self.total_bounty_current_label.setAlignment(Qt.AlignCenter)
-        stat_strip.addWidget(
+        bounty_strip.addWidget(
             self._build_stat_tile("Total Bounty", self.total_bounty_label, self.total_bounty_current_label), 1,
         )
 
@@ -85,7 +85,7 @@ class ProfileMixin:
         self.escaped_total_current_label = QLabel("Current: -")
         self.escaped_total_current_label.setObjectName("statTileSub")
         self.escaped_total_current_label.setAlignment(Qt.AlignCenter)
-        stat_strip.addWidget(
+        bounty_strip.addWidget(
             self._build_stat_tile("Escapes", self.escaped_total_label, self.escaped_total_current_label), 1,
         )
 
@@ -96,11 +96,11 @@ class ProfileMixin:
         self.busted_total_current_label = QLabel("Current: -")
         self.busted_total_current_label.setObjectName("statTileSub")
         self.busted_total_current_label.setAlignment(Qt.AlignCenter)
-        stat_strip.addWidget(
+        bounty_strip.addWidget(
             self._build_stat_tile("Busts", self.busted_total_label, self.busted_total_current_label), 1,
         )
 
-        layout.addLayout(stat_strip)
+        layout.addLayout(bounty_strip)
         hint = QLabel(
             "Money is edited here. This page shows save totals and a compact garage summary."
         )
