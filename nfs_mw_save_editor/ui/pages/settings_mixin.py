@@ -1,8 +1,8 @@
 """Settings and About pages."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QRectF, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPen
+from PySide6.QtCore import Qt, QRectF, QSize, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -86,6 +86,38 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
         painter.drawText(tx, ty, full_text)
 
         painter.restore()
+
+    @staticmethod
+    def make_theme_icon(theme_name: str, size: int = 24) -> QIcon:
+        """Render an 'Aa' icon for *theme_name* as a QIcon."""
+        preset = get_theme_preset(theme_name)
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        rect = QRectF(0, 0, size, size)
+
+        # Background
+        border_color = QColor(255, 255, 255, 28)
+        painter.setPen(QPen(border_color, 1.5))
+        painter.setBrush(QColor(preset.background))
+        painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), 7.0, 7.0)
+
+        # Text
+        font = QFont("Segoe UI", -1)
+        font.setPixelSize(11)
+        font.setWeight(QFont.Weight.Bold)
+        font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        painter.setFont(font)
+        fm = painter.fontMetrics()
+        text = "Aa"
+        tw = fm.horizontalAdvance(text)
+        tx = (size - tw) / 2.0
+        ty = (size + fm.ascent()) / 2.0 - fm.descent() / 2.0
+        painter.setPen(QColor(preset.accent))
+        painter.drawText(tx, ty, text)
+        painter.end()
+        return QIcon(pixmap)
 
     def paint(self, painter: QPainter, option, index) -> None:
         theme_name = self._active_theme_name()
@@ -247,7 +279,10 @@ class SettingsMixin:
         layout.addWidget(section)
 
         self.cmb_theme = QComboBox()
-        self.cmb_theme.addItems(available_theme_names())
+        self.cmb_theme.setIconSize(QSize(24, 24))
+        for name in available_theme_names():
+            icon = ThemeComboItemDelegate.make_theme_icon(name)
+            self.cmb_theme.addItem(icon, name)
         self.cmb_theme.setMinimumWidth(220)
         theme_view = QListView(self.cmb_theme)
         theme_view.setUniformItemSizes(True)
