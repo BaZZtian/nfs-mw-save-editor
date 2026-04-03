@@ -1,8 +1,8 @@
 """Settings and About pages."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPen
+from PySide6.QtCore import Qt, QRectF, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -31,7 +31,12 @@ def _parse_px(value: str, fallback: int) -> int:
 
 
 class ThemeComboItemDelegate(QStyledItemDelegate):
-    """Popup delegate that marks the currently applied theme with a calm check state."""
+    """Popup delegate with compact 'Aa' theme preview icons."""
+
+    _ICON_SIZE = 24
+    _ICON_RADIUS = 7.0
+    _ICON_FONT_PX = 11
+    _ICON_GAP = 10  # gap between icon and theme name
 
     def __init__(self, combo: QComboBox) -> None:
         super().__init__(combo)
@@ -42,6 +47,45 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
         if isinstance(active_name, str) and active_name:
             return active_name
         return self._combo.currentText()
+
+    def sizeHint(self, option, index):
+        base = super().sizeHint(option, index)
+        return base.__class__(base.width(), max(base.height(), 30))
+
+    # ── Drawing ──────────────────────────────────────────────────────
+
+    def _draw_aa_icon(self, painter: QPainter, rect: QRectF,
+                      bg: str, accent: str) -> None:
+        """Draw a small rounded square filled with *bg*, containing 'Aa'
+        in the theme's *accent* colour."""
+        painter.save()
+
+        # 1. Background square with subtle border
+        border_color = QColor(255, 255, 255, 28)
+        painter.setPen(QPen(border_color, 1.5))
+        painter.setBrush(QColor(bg))
+        painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5),
+                                self._ICON_RADIUS, self._ICON_RADIUS)
+
+        # 2. Font
+        icon_font = QFont("Segoe UI", -1)
+        icon_font.setPixelSize(self._ICON_FONT_PX)
+        icon_font.setWeight(QFont.Weight.Bold)
+        icon_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        painter.setFont(icon_font)
+
+        fm = painter.fontMetrics()
+        full_text = "Aa"
+        text_w = fm.horizontalAdvance(full_text)
+        # Centre the text inside the rect
+        tx = rect.left() + (rect.width() - text_w) / 2.0
+        ty = rect.top() + (rect.height() + fm.ascent()) / 2.0 - fm.descent() / 2.0
+
+        # 3. Draw "Aa" — both letters in accent colour
+        painter.setPen(QColor(accent))
+        painter.drawText(tx, ty, full_text)
+
+        painter.restore()
 
     def paint(self, painter: QPainter, option, index) -> None:
         theme_name = self._active_theme_name()
@@ -56,6 +100,7 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
         row_rect = option.rect.adjusted(6, 2, -6, -2)
         radius = _parse_px(tokens.get("RADIUS_MD", "8px"), 8)
 
+        # ── Row highlight ────────────────────────────────────────────
         selected_fill = QColor(tokens["BG_NAV_ACTIVE"])
         active_fill = QColor(tokens["BG_NAV_ACTIVE"])
         active_fill.setAlpha(155)
@@ -73,8 +118,22 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
             painter.drawRoundedRect(row_rect, radius, radius)
 
         content_rect = row_rect.adjusted(12, 0, -12, 0)
+
+        # ── "Aa" icon ────────────────────────────────────────────────
+        item_preset = get_theme_preset(item_text)
+        icon_y = content_rect.center().y() - self._ICON_SIZE / 2.0
+        icon_rect = QRectF(content_rect.left(), icon_y,
+                           self._ICON_SIZE, self._ICON_SIZE)
+        self._draw_aa_icon(
+            painter, icon_rect,
+            bg=item_preset.background,
+            accent=item_preset.accent,
+        )
+
+        # ── Theme name ───────────────────────────────────────────────
         reserve = 24 if is_active_theme else 0
-        text_rect = content_rect.adjusted(0, 0, -reserve, 0)
+        name_left = content_rect.left() + self._ICON_SIZE + self._ICON_GAP
+        text_rect = content_rect.adjusted(name_left - content_rect.left(), 0, -reserve, 0)
 
         painter.setPen(text_color)
         painter.setFont(option.font)
@@ -84,6 +143,7 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
             item_text,
         )
 
+        # ── Checkmark for active theme ───────────────────────────────
         if is_active_theme:
             check_rect = content_rect.adjusted(content_rect.width() - 18, 0, -2, 0)
             if is_selected:
@@ -94,22 +154,12 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
             check_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             check_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             painter.setPen(check_pen)
-            center_y = check_rect.center().y()
-            start_x = check_rect.left() + 4
-            mid_x = check_rect.left() + 8
-            end_x = check_rect.right() - 2
-            painter.drawLine(
-                start_x,
-                center_y,
-                mid_x,
-                center_y + 4,
-            )
-            painter.drawLine(
-                mid_x,
-                center_y + 4,
-                end_x,
-                center_y - 5,
-            )
+            cy = check_rect.center().y()
+            sx = check_rect.left() + 4
+            mx = check_rect.left() + 8
+            ex = check_rect.right() - 2
+            painter.drawLine(sx, cy, mx, cy + 4)
+            painter.drawLine(mx, cy + 4, ex, cy - 5)
 
         painter.restore()
 
