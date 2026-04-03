@@ -97,10 +97,10 @@ Download the latest build from [Releases](https://github.com/sprintstate/nfs-mw-
 
 ## Usage
 
-1. Click **Open save** (or press `Ctrl+O`, or drag a save file onto the window)
+1. Click **Open save** (or press `Ctrl+O`, or drag a save file onto the window to open)
    Default save location: `%APPDATA%\NFS Most Wanted\`
 2. Adjust token counts in the **Junkman** tab using spinboxes, sliders, or quick-action buttons
-3. Edit **Money** and per-car **Bounty** values in the **Profile** tab
+3. Edit **Money**, **Profile alias**, and per-car **Bounty** values in the **Profile** tab
 4. Click **Apply (memory)** to stage changes
 5. Click **Save + backup** (or press `Ctrl+S`) to write changes to disk (original file backed up as `.bak`)
 6. Use **Fix checksums** if the game does not accept the modified save
@@ -113,34 +113,35 @@ Download the latest build from [Releases](https://github.com/sprintstate/nfs-mw-
 
 ```text
 nfs_mw_save_editor/
-├── main.py                 # Application entry point
-├── resources.py            # PyInstaller-compatible resource loader
-├── requirements.txt        # PySide6>=6.5
-├── token_catalog.json      # Default token definitions (22 types)
-│
-├── core/                   # Save file logic (no Qt dependency)
-│   ├── savefile.py         # SaveFile - load, validate, fix, read/write slots
-│   ├── checksums.py        # EA CRC32 implementation (poly 0x04C11DB7)
-│   ├── junkman.py          # JunkmanInventory - slot detection, apply counts
-│   ├── cars.py             # Vehicle name resolver (8-byte signature -> model name)
-│   ├── diff.py             # Byte-level diff utilities
-│   └── patch.py            # Low-level read/write helpers (u32, u8)
-│
-├── ui/                     # PySide6 interface
-│   ├── main_window.py      # MainWindow - all pages and coordination
-│   ├── widgets.py          # TokenCard, WantSpinBox, ToastNotification
-│   ├── icon_map.py         # Centralized icon path mappings
-│   └── theme.py            # Dark blue theme (QSS stylesheet)
-│
-└── assets/
-    ├── icon.ico            # Application icon
-    ├── icon.png            # Application icon (PNG)
-    └── icons/              # Token, nav, and category icons (from original game)
-        ├── perf/           # Performance token icons (7 files)
-        ├── vis/            # Visual token icons (9 files)
-        ├── pol/            # Police token icons (5 files)
-        ├── nav/            # Sidebar navigation icons (5 files + unknown.png)
-        └── cat/            # Category filter icons (4 files)
+|-- main.py                 # Application entry point
+|-- resources.py            # PyInstaller-compatible resource loader
+|-- requirements.txt        # PySide6>=6.5
+|-- token_catalog.json      # Default token definitions (22 types)
+|
+|-- core/                   # Save file logic (no Qt dependency)
+|   |-- savefile.py         # SaveFile - load, validate, fix, read/write slots
+|   |-- checksums.py        # EA CRC32 implementation (poly 0x04C11DB7)
+|   |-- junkman.py          # JunkmanInventory - slot detection, apply counts
+|   |-- cars.py             # Vehicle name resolver (8-byte signature -> model name)
+|   |-- diff.py             # Byte-level diff utilities
+|   `-- patch.py            # Low-level read/write helpers (u32, u8)
+|
+|-- ui/                     # PySide6 interface
+|   |-- main_window.py      # MainWindow - all pages and coordination
+|   |-- widgets.py          # TokenCard, WantSpinBox, ToastNotification
+|   |-- icon_map.py         # Centralized icon path mappings
+|   `-- theme.py            # Dark blue theme (QSS stylesheet)
+|
+`-- assets/
+    |-- icon.ico            # Application icon
+    |-- icon.png            # Application icon (PNG)
+    |-- unique_cars/        # Bundled boss-car snapshot library for Presets -> Library
+    `-- icons/              # Token, nav, and category icons (from original game)
+        |-- perf/           # Performance token icons (7 files)
+        |-- vis/            # Visual token icons (9 files)
+        |-- pol/            # Police token icons (5 files)
+        |-- nav/            # Sidebar navigation icons (5 files + unknown.png)
+        `-- cat/            # Category filter icons (4 files)
 ```
 
 `docs/` (repo root) contains reverse-engineering notes: `JUNKMAN_OFFSETS.md`, `PROFILE_REVERSE_NOTES.md`, `PROFILE_REVERSE_OVERVIEW.md`. Not included in releases.
