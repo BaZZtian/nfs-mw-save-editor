@@ -126,6 +126,7 @@ class MainWindow(
         saved_alias_unlock = load_ui_setting("unlock_profile_alias_16", False)
         self.unlock_profile_alias_16 = bool(saved_alias_unlock) if isinstance(saved_alias_unlock, bool) else False
         self._theme_transition_overlay: Optional[ThemeTransitionOverlay] = None
+        self._page_transition_overlay: Optional[ThemeTransitionOverlay] = None
 
     #  state
         self.savefile: Optional[SaveFile] = None
@@ -409,6 +410,8 @@ class MainWindow(
         return row
 
     def _select_page(self, name: str):
+        if self._current_stack_page_name() == name:
+            return
         for n, btn in self.nav_buttons.items():
             btn.setChecked(n == name)
         mapping = {
@@ -420,6 +423,7 @@ class MainWindow(
             "Settings": self.page_settings,
             "About": self.page_about,
         }
+        overlay = self._start_page_transition_overlay()
         self.stack.setCurrentWidget(mapping[name])
         self._ensure_page_theme(name)
         if name == "Profile":
@@ -433,6 +437,8 @@ class MainWindow(
             self._refresh_parts_page(reason="page_enter")
         elif name == "Presets":
             self._refresh_presets_page(reason="page_enter")
+        if overlay is not None:
+            overlay.start()
 
     def _current_stack_page_name(self) -> Optional[str]:
         if not hasattr(self, "stack"):
@@ -529,6 +535,12 @@ class MainWindow(
         if overlay is not None:
             overlay.finish_immediately()
 
+    def _clear_page_transition_overlay(self) -> None:
+        overlay = self._page_transition_overlay
+        self._page_transition_overlay = None
+        if overlay is not None:
+            overlay.finish_immediately()
+
     def _start_theme_transition_overlay(self) -> Optional[ThemeTransitionOverlay]:
         root = self.centralWidget()
         if root is None or not root.isVisible():
@@ -550,6 +562,29 @@ class MainWindow(
             )
         )
         self._theme_transition_overlay = overlay
+        return overlay
+
+    def _start_page_transition_overlay(self) -> Optional[ThemeTransitionOverlay]:
+        if not hasattr(self, "stack") or not self.stack.isVisible():
+            return None
+        snapshot = self.stack.grab()
+        if snapshot.isNull() or snapshot.size().isEmpty():
+            return None
+
+        self._clear_page_transition_overlay()
+
+        overlay = ThemeTransitionOverlay(self.stack, snapshot, duration_ms=120)
+        overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        overlay.show()
+        overlay.raise_()
+        overlay.destroyed.connect(
+            lambda _obj=None, overlay=overlay: (
+                setattr(self, "_page_transition_overlay", None)
+                if self._page_transition_overlay is overlay
+                else None
+            )
+        )
+        self._page_transition_overlay = overlay
         return overlay
 
     def _mark_hidden_pages_theme_dirty(self, current_page_name: Optional[str]) -> None:
@@ -986,6 +1021,8 @@ class MainWindow(
         super().resizeEvent(event)
         if self._theme_transition_overlay is not None:
             self._theme_transition_overlay.sync_to_parent()
+        if self._page_transition_overlay is not None:
+            self._page_transition_overlay.sync_to_parent()
         ToastNotification.reposition_active(self)
         self._update_header_path()
         if hasattr(self, "scroll") and hasattr(self, "cards_container"):

@@ -762,11 +762,11 @@ QComboBox {{
     min-height: 18px;
 }}
 QComboBox:hover {{
-    border-color: {ACCENT};
+    border-color: {BORDER};
     background: {BG_BUTTON_HOVER};
 }}
 QComboBox:focus {{
-    border-color: {ACCENT_BRIGHT};
+    border-color: {BORDER};
 }}
 QComboBox::drop-down {{
     border: none;
