@@ -45,6 +45,7 @@ NAV_ICONS: Dict[str, str] = {
     "Tuning":   "cat/cat_performance.png",
     "My Cars":  "nav/parts.png",
     "Presets":  "nav/nav_save.png",
+    "Builds":   "nav/nav_save.png",
     "Settings": "nav/nav_settings.png",
     "About":    "nav/nav_info.png",
 }

@@ -399,6 +399,29 @@ class SettingsMixin:
             catalog_row,
         ]))
 
+        self.btn_load_preset = QPushButton("Import Tokens")
+        self.btn_save_preset = QPushButton("Export Tokens")
+        self.btn_export_have = QPushButton("Export Current Tokens")
+        self.btn_load_preset.clicked.connect(self.on_load_preset)
+        self.btn_save_preset.clicked.connect(self.on_save_preset)
+        self.btn_export_have.clicked.connect(self.on_export_have)
+
+        legacy_hint = QLabel(
+            "Legacy token preset actions are kept here for compatibility. Main build workflows now live in Builds."
+        )
+        legacy_hint.setObjectName("mutedLabel")
+        legacy_hint.setWordWrap(True)
+        legacy_row = QHBoxLayout()
+        legacy_row.setSpacing(8)
+        legacy_row.addWidget(self.btn_load_preset)
+        legacy_row.addWidget(self.btn_save_preset)
+        legacy_row.addWidget(self.btn_export_have)
+        legacy_row.addStretch(1)
+        layout.addWidget(self._build_settings_group("Legacy Tools", [
+            legacy_hint,
+            legacy_row,
+        ]))
+
         layout.addStretch(1)
 
         scroll = QScrollArea()

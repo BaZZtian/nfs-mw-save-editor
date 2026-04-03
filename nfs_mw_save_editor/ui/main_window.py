@@ -81,6 +81,10 @@ def _user_catalog_path() -> Path:
     return _appdata_dir() / APP_NAME / CATALOG_FILENAME
 
 
+def _user_snapshot_library_path() -> Path:
+    return _appdata_dir() / APP_NAME / SaveFile.USER_SNAPSHOT_LIBRARY_DIRNAME
+
+
 def _default_catalog_path() -> Path:
     return resource_path(CATALOG_FILENAME)
 
@@ -181,8 +185,9 @@ class MainWindow(
         self._library_slot_columns = 0
         self._pink_slip_badge_pixmap: Optional[QPixmap] = None
         self.snapshot_library_root = SaveFile.default_snapshot_library_root()
+        self.user_snapshot_library_root = _user_snapshot_library_path()
         self.want_snapshot_injections: Dict[str, str] = {}
-        self.snapshot_library_filter = "All"
+        self.snapshot_library_filter = "Main"
         self.presets_view = "Library"
         self._garage_cards_dirty = True
         self._parts_cards_dirty = True
@@ -237,7 +242,7 @@ class MainWindow(
             "Profile": self.page_profile,
             "Garage": self.page_garage,
             "Tuning": self.page_parts,
-            "Presets": self.page_presets,
+            "Builds": self.page_presets,
             "Settings": self.page_settings,
             "About": self.page_about,
         }
@@ -358,7 +363,7 @@ class MainWindow(
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
 
-        for name in ["Junkman", "Profile", "Garage", "Tuning", "Presets", "Settings", "About"]:
+        for name in ["Junkman", "Profile", "Garage", "Tuning", "Builds", "Settings", "About"]:
             btn = QPushButton(name)
             btn.setObjectName("navButton")
             btn.setCheckable(True)
@@ -419,7 +424,7 @@ class MainWindow(
             "Profile": self.page_profile,
             "Garage": self.page_garage,
             "Tuning": self.page_parts,
-            "Presets": self.page_presets,
+            "Builds": self.page_presets,
             "Settings": self.page_settings,
             "About": self.page_about,
         }
@@ -435,7 +440,7 @@ class MainWindow(
             self._refresh_garage_page(reason="page_enter")
         elif name == "Tuning":
             self._refresh_parts_page(reason="page_enter")
-        elif name == "Presets":
+        elif name == "Builds":
             self._refresh_presets_page(reason="page_enter")
         if overlay is not None:
             overlay.start()
@@ -449,7 +454,7 @@ class MainWindow(
         if current is self.page_parts:
             return "Tuning"
         if current is self.page_presets:
-            return "Presets"
+            return "Builds"
         if current is self.page_profile:
             return "Profile"
         if current is self.page_junk:
@@ -649,7 +654,7 @@ class MainWindow(
             self._maybe_reflow_garage_rows()
         elif current == "Tuning":
             self._maybe_reflow_parts_rows()
-        elif current == "Presets":
+        elif current == "Builds":
             self._maybe_reflow_library_rows()
             self._maybe_reflow_snapshot_rows()
 
@@ -788,7 +793,10 @@ class MainWindow(
         loaded = self.savefile is not None
 
         try:
-            self.snapshot_library = SaveFile.load_snapshot_library(self.snapshot_library_root)
+            self.snapshot_library = SaveFile.load_snapshot_library(
+                self.snapshot_library_root,
+                user_root=self.user_snapshot_library_root,
+            )
             self.snapshot_library_error = None
         except Exception as exc:
             self.snapshot_library = []
@@ -979,7 +987,7 @@ class MainWindow(
             self._refresh_garage_page(reason="save_load_visible")
         elif current_page == "Tuning":
             self._refresh_parts_page(reason="save_load_visible")
-        elif current_page == "Presets":
+        elif current_page == "Builds":
             self._refresh_presets_page(reason="save_load_visible")
         self.refresh_cards()
         if hasattr(self, "_schedule_parts_pool_prewarm"):

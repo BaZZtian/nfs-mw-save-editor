@@ -1,4 +1,4 @@
-"""Presets page: token preset I/O, build-library injection, save snapshot export."""
+"""Builds page: library injection, user snapshot saves, save snapshot export."""
 from __future__ import annotations
 
 import json
@@ -8,7 +8,8 @@ from pathlib import Path
 from time import perf_counter
 from typing import Dict, List
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -65,7 +66,11 @@ class PresetsMixin:
     # ── Page builder ────────────────────────────────────────────
 
     def _preset_bucket_ui_label(self, bucket: str) -> str:
-        return "Blacklist" if str(bucket) == "Main" else str(bucket)
+        if str(bucket) == "Main":
+            return "Blacklist"
+        if str(bucket) == "User":
+            return "My Builds"
+        return str(bucket)
 
     def _build_presets_page(self):
         w = QWidget()
@@ -74,32 +79,11 @@ class PresetsMixin:
         layout.setSpacing(10)
 
         # ── 1. Junkman Presets compact strip ──────────────────
-        preset_frame = QFrame()
-        preset_frame.setObjectName("settingsGroup")
-        preset_inner = QVBoxLayout(preset_frame)
-        preset_inner.setContentsMargins(12, 8, 12, 8)
-        preset_inner.setSpacing(6)
-        preset_title = QLabel("Token Presets")
-        preset_title.setObjectName("settingsGroupTitle")
-        preset_inner.addWidget(preset_title)
-        preset_row = QHBoxLayout()
-        preset_row.setSpacing(8)
-        self.btn_load_preset = QPushButton("Import Tokens")
-        self.btn_save_preset = QPushButton("Export Tokens")
-        self.btn_export_have = QPushButton("Export Current Tokens")
-        self.btn_load_preset.clicked.connect(self.on_load_preset)
-        self.btn_save_preset.clicked.connect(self.on_save_preset)
-        self.btn_export_have.clicked.connect(self.on_export_have)
-        for btn in [self.btn_load_preset, self.btn_save_preset, self.btn_export_have]:
-            preset_row.addWidget(btn)
-        preset_row.addStretch(1)
-        preset_inner.addLayout(preset_row)
-        layout.addWidget(preset_frame)
 
         # ── 2. Car Builds header + view toggle ─────────────────
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        boss_label = QLabel("Car Builds")
+        boss_label = QLabel("Builds")
         boss_label.setObjectName("sectionLabel")
         header_row.addWidget(boss_label)
         header_row.addStretch(1)
@@ -123,7 +107,7 @@ class PresetsMixin:
         self.snapshot_library_filter_group = QButtonGroup(self)
         self.snapshot_library_filter_group.setExclusive(True)
         self.snapshot_library_filter_buttons: Dict[str, QPushButton] = {}
-        for filter_value in ["All", "Main", "Bonus"]:
+        for filter_value in ["Main", "Bonus", "User"]:
             btn = QPushButton(self._preset_bucket_ui_label(filter_value))
             btn.setCheckable(True)
             btn.setObjectName("garageFilterBtn")
@@ -131,11 +115,16 @@ class PresetsMixin:
             self.snapshot_library_filter_group.addButton(btn)
             self.snapshot_library_filter_buttons[filter_value] = btn
             controls.addWidget(btn)
-        self.snapshot_library_filter_buttons["All"].setChecked(True)
+        self.snapshot_library_filter_buttons["Main"].setChecked(True)
         self.presets_search = QLineEdit()
         self.presets_search.setPlaceholderText("Search build library...")
         self.presets_search.textChanged.connect(self._on_presets_search_changed)
         controls.addWidget(self.presets_search, 1)
+        self.btn_open_my_builds_folder = QPushButton("Open folder")
+        self.btn_open_my_builds_folder.setObjectName("partsBulkBtn")
+        self.btn_open_my_builds_folder.clicked.connect(self.on_open_user_builds_folder)
+        self.btn_open_my_builds_folder.setVisible(False)
+        controls.addWidget(self.btn_open_my_builds_folder)
         layout.addLayout(controls)
 
         # ── 4. QStackedWidget: Library / My Save ──────────────
@@ -206,6 +195,8 @@ class PresetsMixin:
         is_library = view == "Library"
         for btn in self.snapshot_library_filter_buttons.values():
             btn.setVisible(is_library)
+        if hasattr(self, "btn_open_my_builds_folder"):
+            self.btn_open_my_builds_folder.setVisible(is_library and self.snapshot_library_filter == "User")
         self.presets_stack.setCurrentIndex(0 if is_library else 1)
         self.presets_search.setPlaceholderText(
             "Search build library..." if is_library else "Search builds in this save...",
@@ -221,6 +212,10 @@ class PresetsMixin:
         self.snapshot_library_filter = str(value)
         for label, button in self.snapshot_library_filter_buttons.items():
             button.setChecked(label == self.snapshot_library_filter)
+        if hasattr(self, "btn_open_my_builds_folder"):
+            self.btn_open_my_builds_folder.setVisible(
+                self.presets_view == "Library" and self.snapshot_library_filter == "User"
+            )
         self._mark_presets_cards_dirty(library=True, snapshot=False)
         self._refresh_presets_page(reason="filter_change")
 
@@ -305,9 +300,7 @@ class PresetsMixin:
         query = ""
         if hasattr(self, "presets_search"):
             query = self.presets_search.text().strip().lower()
-        entries = list(self.snapshot_library)
-        if self.snapshot_library_filter != "All":
-            entries = [entry for entry in entries if entry.library_bucket == self.snapshot_library_filter]
+        entries = [entry for entry in self.snapshot_library if entry.library_bucket == self.snapshot_library_filter]
         if query:
             entries = [
                 entry for entry in entries
@@ -316,8 +309,28 @@ class PresetsMixin:
         return entries
 
     def _snapshot_library_empty_widget(self, _: int) -> QWidget:
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
         if self.snapshot_library_error:
             text = f"Build library unavailable: {self.snapshot_library_error}"
+        elif self.snapshot_library_filter == "User":
+            text = (
+                "My Builds is empty. Save a build from My Save to start your personal snapshot library."
+                if not self.presets_search.text().strip()
+                else "No personal builds match the current search."
+            )
+            label = QLabel(text)
+            label.setObjectName("mutedLabel")
+            label.setWordWrap(True)
+            layout.addWidget(label)
+            open_btn = QPushButton("Open folder")
+            open_btn.setObjectName("partsBulkBtn")
+            open_btn.clicked.connect(self.on_open_user_builds_folder)
+            layout.addWidget(open_btn, 0, Qt.AlignLeft)
+            layout.addStretch(1)
+            return container
         elif not self.snapshot_library:
             text = f"No snapshot files found in {self.snapshot_library_root}."
         else:
@@ -325,7 +338,8 @@ class PresetsMixin:
         label = QLabel(text)
         label.setObjectName("mutedLabel")
         label.setWordWrap(True)
-        return label
+        layout.addWidget(label)
+        return container
 
     def _snapshot_library_card_view_models(
         self,
@@ -848,6 +862,51 @@ class PresetsMixin:
             safe = safe.replace("__", "_")
         return safe.strip("_") or "snapshot"
 
+    def _ensure_user_snapshot_library_dir(self) -> Path:
+        root = Path(self.user_snapshot_library_root)
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _next_user_snapshot_path(self, snapshot: FullCarBuildSnapshot) -> Path:
+        root = self._ensure_user_snapshot_library_dir()
+        stem = f"{self.savefile.SNAPSHOT_FILE_PREFIX}{self._snapshot_filename_slug(snapshot.display_name)}"
+        candidate = root / f"{stem}.json"
+        suffix = 2
+        while candidate.exists():
+            candidate = root / f"{stem}-{suffix}.json"
+            suffix += 1
+        return candidate
+
+    def on_open_user_builds_folder(self) -> None:
+        target = self._ensure_user_snapshot_library_dir()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+    def on_save_build_to_user_library(self, abs_off: int) -> None:
+        if not self.savefile:
+            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
+            return
+        snapshot = next((item for item in self.build_snapshots if item.car_abs_off == abs_off), None)
+        if snapshot is None:
+            QMessageBox.warning(self, UI_TITLE_SNAPSHOT_UNAVAILABLE, "Could not resolve the requested build snapshot.")
+            return
+        try:
+            target_path = self._next_user_snapshot_path(snapshot)
+            payload = self.savefile.snapshot_to_dict(snapshot)
+            target_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            self.snapshot_library = self.savefile.load_snapshot_library(
+                self.snapshot_library_root,
+                user_root=self.user_snapshot_library_root,
+            )
+            self.snapshot_library_error = None
+        except Exception as exc:
+            QMessageBox.warning(self, "Save to My Builds failed", str(exc))
+            return
+        self.snapshot_library_filter = "User"
+        self.presets_view = "Library"
+        self._mark_presets_cards_dirty(library=True, snapshot=False)
+        self._refresh_presets_page(reason="filter_change")
+        ToastNotification.show_toast(self, "Saved to My Builds")
+
     # ── Injection staging ───────────────────────────────────────
 
     def on_stage_snapshot_injection(self, snapshot_id: str, target_mode: str) -> None:
@@ -1111,7 +1170,11 @@ class PresetsMixin:
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        export_btn = QPushButton("Export Snapshot")
+        save_btn = QPushButton("Save to My Builds")
+        save_btn.setObjectName("partsBulkBtn")
+        save_btn.clicked.connect(lambda _, off=snapshot.car_abs_off: self.on_save_build_to_user_library(off))
+        action_row.addWidget(save_btn, 0, Qt.AlignLeft)
+        export_btn = QPushButton("Export Snapshot...")
         export_btn.setObjectName("partsBulkBtn")
         export_btn.clicked.connect(lambda _, off=snapshot.car_abs_off: self.on_export_build_snapshot(off))
         action_row.addWidget(export_btn, 0, Qt.AlignLeft)
@@ -1176,7 +1239,11 @@ class PresetsMixin:
         if hasattr(self, "snapshot_library_filter_buttons"):
             for label, button in self.snapshot_library_filter_buttons.items():
                 button.setVisible(is_library)
-                button.setChecked(label == getattr(self, "snapshot_library_filter", "All"))
+                button.setChecked(label == getattr(self, "snapshot_library_filter", "Main"))
+        if hasattr(self, "btn_open_my_builds_folder"):
+            self.btn_open_my_builds_folder.setVisible(
+                is_library and getattr(self, "snapshot_library_filter", "Main") == "User"
+            )
         if hasattr(self, "presets_stack"):
             self.presets_stack.setCurrentIndex(0 if is_library else 1)
         if hasattr(self, "presets_search"):
