@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core.savefile import SaveFile
 from core.models import FullCarBuildSnapshot, SnapshotInjectionPlan, SnapshotLibraryEntry
 from core.tuning_limits import get_model_tuning_limits
 from ui.pages.constants import *
@@ -848,12 +849,6 @@ class PresetsMixin:
         for col in range(columns):
             self.snapshot_cards_layout.setColumnStretch(col, 1)
 
-    # ── Refresh ─────────────────────────────────────────────────
-
-    def _refresh_presets_page(self) -> None:
-        self._rebuild_snapshot_library_cards()
-        self._rebuild_snapshot_cards()
-
     # ── Helpers ─────────────────────────────────────────────────
 
     def _snapshot_filename_slug(self, text: str) -> str:
@@ -877,6 +872,13 @@ class PresetsMixin:
             suffix += 1
         return candidate
 
+    def _reload_snapshot_library(self) -> None:
+        self.snapshot_library = SaveFile.load_snapshot_library(
+            self.snapshot_library_root,
+            user_root=self.user_snapshot_library_root,
+        )
+        self.snapshot_library_error = None
+
     def on_open_user_builds_folder(self) -> None:
         target = self._ensure_user_snapshot_library_dir()
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
@@ -893,48 +895,14 @@ class PresetsMixin:
             target_path = self._next_user_snapshot_path(snapshot)
             payload = self.savefile.snapshot_to_dict(snapshot)
             target_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            self.snapshot_library = self.savefile.load_snapshot_library(
-                self.snapshot_library_root,
-                user_root=self.user_snapshot_library_root,
-            )
-            self.snapshot_library_error = None
+            self._reload_snapshot_library()
         except Exception as exc:
             QMessageBox.warning(self, "Save to My Builds failed", str(exc))
             return
-        self.snapshot_library_filter = "User"
-        self.presets_view = "Library"
         self._mark_presets_cards_dirty(library=True, snapshot=False)
-        self._refresh_presets_page(reason="filter_change")
+        if self._presets_page_visible():
+            self._refresh_presets_page(reason="data_change")
         ToastNotification.show_toast(self, "Saved to My Builds")
-
-    # ── Injection staging ───────────────────────────────────────
-
-    def on_stage_snapshot_injection(self, snapshot_id: str, target_mode: str) -> None:
-        if not self.savefile:
-            QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, "Open a save first.")
-            return
-        library_by_id = self._snapshot_library_by_id()
-        entry = library_by_id.get(str(snapshot_id))
-        if entry is None:
-            QMessageBox.warning(self, UI_TITLE_SNAPSHOT_UNAVAILABLE, "Could not resolve the selected library snapshot.")
-            return
-        plans, _, _, _ = self._current_snapshot_injection_plans(extra=(entry.snapshot_id, target_mode))
-        plan = plans.get(entry.snapshot_id)
-        if plan is None or plan.refusal_reason:
-            reason = plan.refusal_reason if plan is not None else "Unknown injector planner failure"
-            QMessageBox.warning(self, UI_TITLE_BLOCKED, reason)
-            return
-        self.want_snapshot_injections[entry.snapshot_id] = str(target_mode)
-        self._refresh_presets_page()
-        self._refresh_garage_page()
-        self._update_action_states()
-
-    def on_clear_snapshot_injection(self, snapshot_id: str) -> None:
-        if str(snapshot_id) in self.want_snapshot_injections:
-            self.want_snapshot_injections.pop(str(snapshot_id), None)
-            self._refresh_presets_page()
-            self._refresh_garage_page()
-            self._update_action_states()
 
     def on_export_build_snapshot(self, abs_off: int) -> None:
         if not self.savefile:
@@ -1256,6 +1224,15 @@ class PresetsMixin:
             return
 
         if is_library:
+            if (
+                getattr(self, "snapshot_library_filter", "Main") == "User"
+                and reason in {"page_enter", "filter_change", "save_load_visible"}
+            ):
+                try:
+                    self._reload_snapshot_library()
+                except Exception as exc:
+                    self.snapshot_library = []
+                    self.snapshot_library_error = str(exc)
             columns = max(1, self._detect_library_card_columns())
             self._library_slot_columns = columns
             controller = self._snapshot_library_render_controller
