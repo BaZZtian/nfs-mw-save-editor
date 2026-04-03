@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListView,
     QPushButton,
+    QScrollArea,
     QStyle,
     QStyledItemDelegate,
     QVBoxLayout,
@@ -276,8 +277,8 @@ class SettingsMixin:
             value_label.setToolTip(color.upper())
 
     def _build_settings_page(self):
-        w = QWidget()
-        layout = QVBoxLayout(w)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.setSpacing(12)
         layout.setContentsMargins(10, 10, 10, 10)
 
@@ -398,7 +399,14 @@ class SettingsMixin:
         ]))
 
         layout.addStretch(1)
-        return w
+
+        scroll = QScrollArea()
+        scroll.setObjectName("settingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        return scroll
 
     def _build_about_page(self):
         w = QWidget()
