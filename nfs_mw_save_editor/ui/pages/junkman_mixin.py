@@ -709,7 +709,9 @@ class JunkmanMixin:
         try:
             self.savefile.set_junkman_counts(want_full, clamp_max=self._current_max())
             self.savefile.set_money(self.want_money if self.want_money is not None else self.have_money)
-            self.savefile.set_profile_alias(self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias)
+            alias_want = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+            if alias_want != self.have_profile_alias:
+                self.savefile.set_profile_alias(alias_want)
             pending_transfers = []
             if not self.garage_detection_error:
                 for slot_index, value in self._current_slot_bounties().items():

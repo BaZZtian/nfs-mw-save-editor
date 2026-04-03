@@ -384,6 +384,17 @@ def _save_ui_settings(settings: dict) -> None:
     tmp_path.replace(path)
 
 
+def load_ui_setting(key: str, default=None):
+    return _load_ui_settings().get(key, default)
+
+
+def save_ui_setting(key: str, value):
+    settings = _load_ui_settings()
+    settings[key] = value
+    _save_ui_settings(settings)
+    return value
+
+
 def available_theme_names() -> list[str]:
     return list(THEME_PRESETS.keys())
 
@@ -395,7 +406,7 @@ def get_theme_preset(theme_name: str | None) -> ThemePreset:
 
 
 def load_saved_theme_name() -> str:
-    theme_name = _load_ui_settings().get("theme")
+    theme_name = load_ui_setting("theme")
     if isinstance(theme_name, str) and theme_name in THEME_PRESETS:
         return theme_name
     return DEFAULT_THEME_NAME
@@ -403,9 +414,7 @@ def load_saved_theme_name() -> str:
 
 def save_theme_name(theme_name: str) -> str:
     preset = get_theme_preset(theme_name)
-    settings = _load_ui_settings()
-    settings["theme"] = preset.name
-    _save_ui_settings(settings)
+    save_ui_setting("theme", preset.name)
     return preset.name
 
 

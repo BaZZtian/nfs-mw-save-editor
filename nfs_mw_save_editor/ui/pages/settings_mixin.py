@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.pages.constants import *
-from ui.theme import available_theme_names, get_theme_preset, resolve_theme_tokens
+from ui.theme import available_theme_names, get_theme_preset, resolve_theme_tokens, save_ui_setting
 
 
 def _parse_px(value: str, fallback: int) -> int:
@@ -197,6 +197,13 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
 
 
 class SettingsMixin:
+    def on_toggle_profile_alias_unlock(self) -> None:
+        self.unlock_profile_alias_16 = self.chk_unlock_profile_alias_16.isChecked()
+        save_ui_setting("unlock_profile_alias_16", self.unlock_profile_alias_16)
+        if hasattr(self, "alias_edit"):
+            self._refresh_profile_inputs()
+        self._update_action_states()
+
     def _update_theme_combo_active_marker(self, theme_name: str) -> None:
         if not hasattr(self, "cmb_theme"):
             return
@@ -339,6 +346,14 @@ class SettingsMixin:
         self.chk_preserve_unknown = QCheckBox("Preserve unknown token data (recommended)")
         self.chk_preserve_unknown.setChecked(True)
         self.chk_preserve_unknown.stateChanged.connect(self.on_preserve_toggle)
+        self.chk_unlock_profile_alias_16 = QCheckBox("Unlock profile alias editing up to 16 characters")
+        self.chk_unlock_profile_alias_16.setChecked(bool(getattr(self, "unlock_profile_alias_16", False)))
+        self.chk_unlock_profile_alias_16.stateChanged.connect(self.on_toggle_profile_alias_unlock)
+        self.lbl_profile_alias_safety = QLabel(
+            "Game save creation uses 7 characters. Controlled test saves remained stable up to 16 characters; longer aliases are treated as unsafe."
+        )
+        self.lbl_profile_alias_safety.setObjectName("mutedLabel")
+        self.lbl_profile_alias_safety.setWordWrap(True)
         self.btn_clear_unknown = QPushButton("Clear unknown data (unsafe)")
         self.btn_clear_unknown.clicked.connect(self.on_clear_unknown_confirm)
         self.lbl_type_safety = QLabel(
@@ -349,7 +364,11 @@ class SettingsMixin:
         self.lbl_type_safety.setWordWrap(True)
 
         layout.addWidget(self._build_settings_group("Data Safety", [
-            self.chk_preserve_unknown, self.btn_clear_unknown, self.lbl_type_safety,
+            self.chk_preserve_unknown,
+            self.chk_unlock_profile_alias_16,
+            self.lbl_profile_alias_safety,
+            self.btn_clear_unknown,
+            self.lbl_type_safety,
         ]))
 
         # Display

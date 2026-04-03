@@ -36,7 +36,6 @@ class ProfileMixin:
         top_strip.setSpacing(10)
 
         self.alias_edit = QLineEdit()
-        self.alias_edit.setMaxLength(35)
         self.alias_edit.setPlaceholderText("Player alias")
         self.alias_edit.setAlignment(Qt.AlignCenter)
         self.alias_edit.setObjectName("statTileEdit")
@@ -163,31 +162,87 @@ class ProfileMixin:
         edit.setEnabled(enabled)
         edit.blockSignals(False)
 
-    def _sync_profile_alias_feedback(self) -> None:
+    def _profile_alias_active_limit(self) -> int:
+        return SaveFile.PROFILE_ALIAS_MAX_LEN if self.unlock_profile_alias_16 else SaveFile.PROFILE_ALIAS_DEFAULT_LEN
+
+    def _profile_alias_should_lock(self, text: str) -> bool:
+        return not self.unlock_profile_alias_16 and len(text) > SaveFile.PROFILE_ALIAS_DEFAULT_LEN
+
+    def _evaluate_profile_alias_state(self, text: str) -> tuple[Optional[str], Optional[str]]:
+        if not text.isascii():
+            return ("ASCII characters only", None)
+
+        if len(text) > SaveFile.PROFILE_ALIAS_MAX_LEN:
+            if text == self.have_profile_alias and not self.unlock_profile_alias_16:
+                return (
+                    None,
+                    f"Locked: current alias exceeds the safe {SaveFile.PROFILE_ALIAS_MAX_LEN}-character limit. Enable unlock to shorten it.",
+                )
+            return (
+                f"Alias longer than {SaveFile.PROFILE_ALIAS_MAX_LEN} is unsafe. Shorten it before Apply.",
+                None,
+            )
+
+        if not self.unlock_profile_alias_16 and len(text) > SaveFile.PROFILE_ALIAS_DEFAULT_LEN:
+            if text != self.have_profile_alias:
+                return (
+                    f"Default mode allows up to {SaveFile.PROFILE_ALIAS_DEFAULT_LEN} characters. Enable unlock up to {SaveFile.PROFILE_ALIAS_MAX_LEN} in Settings.",
+                    None,
+                )
+            return (
+                None,
+                f"Locked: enable unlock to edit aliases above {SaveFile.PROFILE_ALIAS_DEFAULT_LEN} characters.",
+            )
+
+        return (None, None)
+
+    def _sync_profile_alias_edit_mode(self, text: str, loaded: bool) -> None:
+        self.alias_edit.blockSignals(True)
+        self.alias_edit.setEnabled(loaded)
+        self.alias_edit.setReadOnly(bool(loaded and self._profile_alias_should_lock(text)))
+        self.alias_edit.setMaxLength(max(self._profile_alias_active_limit(), len(text)))
+        self.alias_edit.blockSignals(False)
+
+    def _set_profile_alias_edit(self, value: str, enabled: bool) -> None:
+        self.alias_edit.blockSignals(True)
+        self.alias_edit.setEnabled(enabled)
+        self.alias_edit.setReadOnly(bool(enabled and self._profile_alias_should_lock(value)))
+        self.alias_edit.setMaxLength(max(self._profile_alias_active_limit(), len(value)))
+        self.alias_edit.setText(value if enabled else "")
+        self.alias_edit.blockSignals(False)
+
+    def _sync_profile_alias_feedback(self, text: Optional[str] = None) -> None:
         loaded = self.savefile is not None
-        has_error = bool(self.profile_alias_error)
+        alias_text = text if text is not None else (
+            self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+        )
+        self._sync_profile_alias_edit_mode(alias_text, loaded)
+        error, notice = self._evaluate_profile_alias_state(alias_text) if loaded else (None, None)
+        self.profile_alias_error = error
+        has_error = bool(error)
         if has_error:
-            self.alias_current_label.setText(self.profile_alias_error)
+            self.alias_current_label.setText(error)
+        elif notice:
+            self.alias_current_label.setText(notice)
         else:
             self.alias_current_label.setText(
                 f"Current: {self.have_profile_alias}" if loaded else "Current: -"
             )
+        alias_tip = error or notice or ""
+        self.alias_current_label.setToolTip(alias_tip)
         self.alias_current_label.setProperty("status", "error" if has_error else "")
         self.alias_current_label.style().unpolish(self.alias_current_label)
         self.alias_current_label.style().polish(self.alias_current_label)
         self.alias_edit.setProperty("invalid", has_error)
+        self.alias_edit.setToolTip(alias_tip)
         self.alias_edit.style().unpolish(self.alias_edit)
         self.alias_edit.style().polish(self.alias_edit)
 
     def _on_alias_text_changed(self, text: str) -> None:
         if self._profile_refreshing or not self.savefile:
             return
-        if not text.isascii():
-            self.profile_alias_error = "ASCII characters only"
-        else:
-            self.profile_alias_error = None
-            self.want_profile_alias = text
-        self._sync_profile_alias_feedback()
+        self.want_profile_alias = text
+        self._sync_profile_alias_feedback(text)
         self._update_action_states()
 
     def _refresh_profile_summary(self, loaded: bool) -> None:
@@ -298,9 +353,8 @@ class ProfileMixin:
                 self._format_current_value(self.have_money) if loaded else "Current: -"
             )
             alias_value = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
-            self.profile_alias_error = None
-            self._set_profile_text_edit(self.alias_edit, alias_value, loaded)
-            self._sync_profile_alias_feedback()
+            self._set_profile_alias_edit(alias_value, loaded)
+            self._sync_profile_alias_feedback(alias_value)
             self._refresh_garage_totals(loaded)
             self._refresh_profile_summary(loaded)
             self._refresh_garage_page(reason="data_change")
@@ -315,5 +369,3 @@ class ProfileMixin:
             return True
         current_alias = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
         return current_alias != self.have_profile_alias
-
-

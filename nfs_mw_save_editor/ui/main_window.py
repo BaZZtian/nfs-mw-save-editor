@@ -60,6 +60,7 @@ from ui.theme import (
     build_page_stylesheet,
     build_shell_stylesheet,
     ensure_scoped_theme_mode,
+    load_ui_setting,
     load_saved_theme_name,
     resolve_theme_tokens,
     save_theme_name,
@@ -122,6 +123,8 @@ class MainWindow(
         app = QApplication.instance()
         app_theme = app.property("themeName") if app is not None else None
         self.theme_name = app_theme if isinstance(app_theme, str) and app_theme else load_saved_theme_name()
+        saved_alias_unlock = load_ui_setting("unlock_profile_alias_16", False)
+        self.unlock_profile_alias_16 = bool(saved_alias_unlock) if isinstance(saved_alias_unlock, bool) else False
         self._theme_transition_overlay: Optional[ThemeTransitionOverlay] = None
 
     #  state
