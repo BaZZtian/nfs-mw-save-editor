@@ -31,6 +31,25 @@ class ProfileMixin:
             QRegularExpression(r"[0-9, ]*"), self,
         )
 
+        # ── Alias tile ─────────────────────────────────────────
+        self.alias_edit = QLineEdit()
+        self.alias_edit.setMaxLength(35)
+        self.alias_edit.setPlaceholderText("Player alias")
+        self.alias_edit.setAlignment(Qt.AlignCenter)
+        self.alias_edit.setObjectName("statTileEdit")
+        self.alias_edit.textChanged.connect(self._on_alias_text_changed)
+        self.alias_current_label = QLabel("Current: -")
+        self.alias_current_label.setObjectName("statTileSub")
+        self.alias_current_label.setAlignment(Qt.AlignCenter)
+        alias_tile = self._build_stat_tile("Alias", self.alias_edit, self.alias_current_label)
+        alias_tile.setMaximumWidth(300)
+        alias_row = QHBoxLayout()
+        alias_row.setContentsMargins(0, 0, 0, 0)
+        alias_row.addStretch(1)
+        alias_row.addWidget(alias_tile)
+        alias_row.addStretch(1)
+        layout.addLayout(alias_row)
+
         # ── Stat strip (4 tiles) ────────────────────────────────
         stat_strip = QHBoxLayout()
         stat_strip.setSpacing(10)
@@ -137,6 +156,39 @@ class ProfileMixin:
         edit.setText(self._format_u32(value) if enabled else "")
         edit.setEnabled(enabled)
         edit.blockSignals(False)
+
+    def _set_profile_text_edit(self, edit: QLineEdit, value: str, enabled: bool) -> None:
+        edit.blockSignals(True)
+        edit.setText(value if enabled else "")
+        edit.setEnabled(enabled)
+        edit.blockSignals(False)
+
+    def _sync_profile_alias_feedback(self) -> None:
+        loaded = self.savefile is not None
+        has_error = bool(self.profile_alias_error)
+        if has_error:
+            self.alias_current_label.setText(self.profile_alias_error)
+        else:
+            self.alias_current_label.setText(
+                f"Current: {self.have_profile_alias}" if loaded else "Current: -"
+            )
+        self.alias_current_label.setProperty("status", "error" if has_error else "")
+        self.alias_current_label.style().unpolish(self.alias_current_label)
+        self.alias_current_label.style().polish(self.alias_current_label)
+        self.alias_edit.setProperty("invalid", has_error)
+        self.alias_edit.style().unpolish(self.alias_edit)
+        self.alias_edit.style().polish(self.alias_edit)
+
+    def _on_alias_text_changed(self, text: str) -> None:
+        if self._profile_refreshing or not self.savefile:
+            return
+        if not text.isascii():
+            self.profile_alias_error = "ASCII characters only"
+        else:
+            self.profile_alias_error = None
+            self.want_profile_alias = text
+        self._sync_profile_alias_feedback()
+        self._update_action_states()
 
     def _refresh_profile_summary(self, loaded: bool) -> None:
         if not hasattr(self, "profile_summary_values"):
@@ -245,6 +297,10 @@ class ProfileMixin:
             self.money_current_label.setText(
                 self._format_current_value(self.have_money) if loaded else "Current: -"
             )
+            alias_value = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+            self.profile_alias_error = None
+            self._set_profile_text_edit(self.alias_edit, alias_value, loaded)
+            self._sync_profile_alias_feedback()
             self._refresh_garage_totals(loaded)
             self._refresh_profile_summary(loaded)
             self._refresh_garage_page(reason="data_change")
@@ -255,6 +311,9 @@ class ProfileMixin:
         if self.savefile is None:
             return False
         current_money = self.want_money if self.want_money is not None else self.have_money
-        return current_money != self.have_money
+        if current_money != self.have_money:
+            return True
+        current_alias = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+        return current_alias != self.have_profile_alias
 
 

@@ -975,6 +975,12 @@ QLabel#statTileSub {{
     color: {MUTED};
     font-size: 10.5px;
 }}
+QLineEdit#statTileEdit[invalid="true"] {{
+    border: 1px solid {TOAST_ERROR_BORDER};
+}}
+QLabel#statTileSub[status="error"] {{
+    color: {TOAST_ERROR_FG};
+}}
 
 /* Garage Car Cards */
 QFrame#garageCard {{

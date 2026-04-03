@@ -130,6 +130,9 @@ class MainWindow(
         self.want_counts: Dict[int, int] = {}
         self.have_money = 0
         self.want_money: Optional[int] = None
+        self.have_profile_alias: str = ""
+        self.want_profile_alias: Optional[str] = None
+        self.profile_alias_error: Optional[str] = None
         self.garage_slots: List[ResolvedGarageEntry] = []
         self.garage_transfer_entries: List[ResolvedTransferCarEntry] = []
         self.garage_allocator_snapshot: Optional[GarageAllocatorSnapshot] = None
@@ -710,6 +713,9 @@ class MainWindow(
         self.want_counts = {}
         self.have_money = 0
         self.want_money = None
+        self.have_profile_alias = ""
+        self.want_profile_alias = None
+        self.profile_alias_error = None
         self.have_slot_bounties = {}
         self.have_slot_flags = {}
         self.want_slot_bounties = None
@@ -729,6 +735,8 @@ class MainWindow(
         """Clear all want_* fields back to None / {} — used after Apply or open-file."""
         self.want_counts = {}
         self.want_money = None
+        self.want_profile_alias = None
+        self.profile_alias_error = None
         self.want_slot_bounties = None
         self.want_slot_flags = None
         self.want_owned_locations = None
@@ -782,6 +790,7 @@ class MainWindow(
             )
             self.have_counts = self.savefile.get_junkman_counts()
             self.have_money = self.savefile.get_money()
+            self.have_profile_alias = self.savefile.get_profile_alias()
             self.garage_detection_error = None
             self.parts_detection_error = None
             self.snapshot_detection_error = None
@@ -955,7 +964,8 @@ class MainWindow(
     def _update_action_states(self):
         pending = self._has_pending_changes()
         enabled = self.savefile is not None
-        self.btn_apply.setEnabled(enabled and pending)
+        has_error = bool(self.profile_alias_error)
+        self.btn_apply.setEnabled(enabled and pending and not has_error)
         self.btn_reset_want.setEnabled(enabled)
         self.lbl_unsaved.setText("Unsaved changes" if pending else "")
         self.lbl_unsaved.setProperty("pending", pending)

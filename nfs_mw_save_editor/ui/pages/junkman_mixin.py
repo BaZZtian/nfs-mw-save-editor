@@ -504,6 +504,8 @@ class JunkmanMixin:
     def on_reset_want(self):
         self.want_counts = dict(self.have_counts)
         self.want_money = self.have_money
+        self.want_profile_alias = self.have_profile_alias
+        self.profile_alias_error = None
         self.want_slot_bounties = None if self.garage_detection_error else dict(self.have_slot_bounties)
         self.want_slot_flags = None if self.garage_detection_error else dict(self.have_slot_flags)
         self.want_owned_locations = None if self.garage_detection_error else dict(self.have_owned_locations)
@@ -626,11 +628,14 @@ class JunkmanMixin:
                 warn_text = " [0x5577 ignored]" if plan.warnings else ""
                 injection_changes.append(f"{entry.display_name}: inject to {target_mode} -> {slot_text}{warn_text}")
         money_want = self.want_money if self.want_money is not None else self.have_money
+        alias_want = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
         summary_lines = [
             f"Token slots: {total} total, {used} used, {free} free, {needed} needed, delta +{add} / -{remove}",
             f"Unknown data preserved: {unknown_preserved}",
             f"Money: {self.have_money} -> {money_want}",
         ]
+        if alias_want != self.have_profile_alias:
+            summary_lines.append(f"Alias: '{self.have_profile_alias}' -> '{alias_want}'")
         if self.garage_detection_error:
             summary_lines.append(f"Garage: unavailable ({self.garage_detection_error})")
         else:
@@ -639,8 +644,11 @@ class JunkmanMixin:
         summary_lines.append(f"Tuning changes: {len(parts_changes)}")
         summary_lines.append(f"Preset injections: {len(injection_changes)}")
 
+        profile_detail = [f"Money: {self.have_money} -> {money_want}"]
+        if alias_want != self.have_profile_alias:
+            profile_detail.append(f"Alias: '{self.have_profile_alias}' -> '{alias_want}'")
         detail_sections: List[tuple[str, List[str]]] = [
-            ("Profile", [f"Money: {self.have_money} -> {money_want}"]),
+            ("Profile", profile_detail),
         ]
         if self.garage_detection_error:
             detail_sections[0][1].append(f"Garage unavailable: {self.garage_detection_error}")
@@ -701,6 +709,7 @@ class JunkmanMixin:
         try:
             self.savefile.set_junkman_counts(want_full, clamp_max=self._current_max())
             self.savefile.set_money(self.want_money if self.want_money is not None else self.have_money)
+            self.savefile.set_profile_alias(self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias)
             pending_transfers = []
             if not self.garage_detection_error:
                 for slot_index, value in self._current_slot_bounties().items():
