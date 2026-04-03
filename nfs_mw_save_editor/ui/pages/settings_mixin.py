@@ -294,6 +294,7 @@ class SettingsMixin:
         self.cmb_theme.setMinimumWidth(220)
         theme_view = QListView(self.cmb_theme)
         theme_view.setUniformItemSizes(True)
+        theme_view.setAutoScroll(False)
         self.cmb_theme.setView(theme_view)
         self.cmb_theme.setItemDelegate(ThemeComboItemDelegate(self.cmb_theme))
         self.cmb_theme.blockSignals(True)
