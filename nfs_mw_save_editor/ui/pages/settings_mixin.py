@@ -352,7 +352,7 @@ class SettingsMixin:
         self.chk_unlock_profile_alias_16.setChecked(bool(getattr(self, "unlock_profile_alias_16", False)))
         self.chk_unlock_profile_alias_16.stateChanged.connect(self.on_toggle_profile_alias_unlock)
         self.lbl_profile_alias_safety = QLabel(
-            "Game save creation uses 7 characters. Controlled test saves remained stable up to 16 characters; longer aliases are treated as unsafe."
+            "Game save creation uses 7 characters. Aliases up to 16 are currently allowed; longer aliases are treated as unsafe."
         )
         self.lbl_profile_alias_safety.setObjectName("mutedLabel")
         self.lbl_profile_alias_safety.setWordWrap(True)
