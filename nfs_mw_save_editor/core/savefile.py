@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import json
 import logging
+import math
 import os
 import struct
 from pathlib import Path
@@ -64,9 +65,22 @@ class SaveFile:
     PROFILE_ALIAS_MAX_LEN = 16
     GARAGE_BASE_OFFSET = 0xE2ED
     GARAGE_SLOT_SIZE = 0x38
+    GARAGE_HEAT_LEVEL_OFFSET = 0x06
+    GARAGE_HEAT_FLOAT_OFFSET = 0x0C
     GARAGE_BOUNTY_OFFSET = 0x10
     GARAGE_ESCAPED_OFFSET = 0x14
     GARAGE_BUSTED_OFFSET = 0x16
+    GARAGE_HEAT_LEVEL_MIRROR_OFFSETS = (
+        GARAGE_HEAT_LEVEL_OFFSET,
+        0x1E,
+        0x20,
+        0x22,
+        0x24,
+        0x26,
+    )
+    GARAGE_HEAT_BASELINE = 1.0
+    GARAGE_HEAT_MIN = 1.0
+    GARAGE_HEAT_MAX = 5.0
     GARAGE_SIGNATURE_A = b"\xCD\x03\x00"
     GARAGE_SIGNATURE_B = b"\x00\x00\xCD\xCD"
     CAREER_VEHICLE_BASE_OFFSET = 0x6219
@@ -178,6 +192,9 @@ class SaveFile:
     def _read_u8(self, offset: int) -> int:
         return self.data[offset]
 
+    def _read_f32(self, offset: int) -> float:
+        return struct.unpack_from("<f", self.data, offset)[0]
+
     def _write_u16(self, offset: int, value: int) -> None:
         struct.pack_into("<H", self.data, offset, int(value) & 0xFFFF)
 
@@ -186,6 +203,9 @@ class SaveFile:
 
     def _write_u32(self, offset: int, value: int) -> None:
         struct.pack_into("<I", self.data, offset, int(value) & 0xFFFFFFFF)
+
+    def _write_f32(self, offset: int, value: float) -> None:
+        struct.pack_into("<f", self.data, offset, float(value))
 
     @staticmethod
     def _bytes_to_hex(raw: bytes) -> str:
@@ -197,6 +217,52 @@ class SaveFile:
         if not (0 <= ivalue <= 0xFFFFFFFF):
             raise ValueError("value must be in range 0..4294967295")
         return ivalue
+
+    @classmethod
+    def _normalize_heat_value(cls, value: float | int) -> float:
+        heat = float(value)
+        if not math.isfinite(heat):
+            raise ValueError("heat must be a finite number")
+        if heat < cls.GARAGE_HEAT_MIN or heat > cls.GARAGE_HEAT_MAX:
+            raise ValueError(f"heat must be between {cls.GARAGE_HEAT_MIN:.1f} and {cls.GARAGE_HEAT_MAX:.1f}")
+        return heat
+
+    @classmethod
+    def _heat_level_from_value(cls, heat: float | int) -> int:
+        normalized = cls._normalize_heat_value(heat)
+        level = int(math.floor(normalized))
+        if level < int(cls.GARAGE_HEAT_MIN):
+            return int(cls.GARAGE_HEAT_MIN)
+        if level > int(cls.GARAGE_HEAT_MAX):
+            return int(cls.GARAGE_HEAT_MAX)
+        return level
+
+    @classmethod
+    def _stored_heat_tier_from_value(cls, heat: float | int) -> int:
+        return cls._heat_level_from_value(heat) - 1
+
+    @classmethod
+    def _write_pursuit_heat_fields_into(cls, payload: bytearray, heat: float | int) -> None:
+        normalized = cls._normalize_heat_value(heat)
+        stored_tier = cls._stored_heat_tier_from_value(normalized)
+        struct.pack_into("<f", payload, cls.GARAGE_HEAT_FLOAT_OFFSET, normalized)
+        for rel_off in cls.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
+            struct.pack_into("<H", payload, rel_off, stored_tier)
+
+    def _read_pursuit_heat_fields(self, abs_off: int) -> Tuple[float, int]:
+        raw_heat = self._read_f32(abs_off + self.GARAGE_HEAT_FLOAT_OFFSET)
+        raw_tier = self._read_u16(abs_off + self.GARAGE_HEAT_LEVEL_OFFSET)
+        if not math.isfinite(raw_heat):
+            raw_heat = float(max(1, raw_tier + 1))
+        heat_level = max(1, raw_tier + 1)
+        return float(raw_heat), int(heat_level)
+
+    def _write_pursuit_heat_fields(self, abs_off: int, heat: float | int) -> None:
+        normalized = self._normalize_heat_value(heat)
+        stored_tier = self._stored_heat_tier_from_value(normalized)
+        self._write_f32(abs_off + self.GARAGE_HEAT_FLOAT_OFFSET, normalized)
+        for rel_off in self.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
+            self._write_u16(abs_off + rel_off, stored_tier)
 
     def saved_data_slice(self) -> Tuple[int, int]:
         start = self.layout.saved_data_offset
@@ -427,6 +493,7 @@ class SaveFile:
         payload[0] = int(career_slot) & 0xFF
         payload[1:4] = self.GARAGE_SIGNATURE_A
         payload[8:12] = self.GARAGE_SIGNATURE_B
+        self._write_pursuit_heat_fields_into(payload, self.GARAGE_HEAT_BASELINE)
         payload[self.GARAGE_BOUNTY_OFFSET:self.GARAGE_BOUNTY_OFFSET + 4] = b"\x00" * 4
         payload[self.GARAGE_ESCAPED_OFFSET:self.GARAGE_ESCAPED_OFFSET + 2] = b"\x00" * 2
         payload[self.GARAGE_BUSTED_OFFSET:self.GARAGE_BUSTED_OFFSET + 2] = b"\x00" * 2
@@ -453,9 +520,12 @@ class SaveFile:
             raw = bytes(self.data[base_off:base_off + self.GARAGE_SLOT_SIZE])
             if not self._is_garage_slot(raw):
                 break
+            heat, heat_level = self._read_pursuit_heat_fields(base_off)
             slots.append(
                 PursuitRecord(
                     career_slot=slot_index,
+                    heat=heat,
+                    heat_level=heat_level,
                     bounty=self._read_u32(base_off + self.GARAGE_BOUNTY_OFFSET),
                     escaped=self._read_u16(base_off + self.GARAGE_ESCAPED_OFFSET),
                     busted=self._read_u16(base_off + self.GARAGE_BUSTED_OFFSET),
@@ -820,6 +890,8 @@ class SaveFile:
             if pursuit is not None and career_slot in staged_cleared_slots:
                 pursuit = PursuitRecord(
                     career_slot=pursuit.career_slot,
+                    heat=self.GARAGE_HEAT_BASELINE,
+                    heat_level=self._heat_level_from_value(self.GARAGE_HEAT_BASELINE),
                     bounty=0,
                     escaped=0,
                     busted=0,
@@ -843,6 +915,8 @@ class SaveFile:
                     is_my_cars=is_my_cars,
                     is_pink_slip=is_pink_slip,
                     has_pursuit_link=pursuit is not None,
+                    heat=(pursuit.heat if pursuit is not None else None),
+                    heat_level=(pursuit.heat_level if pursuit is not None else None),
                     bounty=(pursuit.bounty if pursuit is not None else None),
                     escaped=(pursuit.escaped if pursuit is not None else None),
                     busted=(pursuit.busted if pursuit is not None else None),
@@ -879,6 +953,7 @@ class SaveFile:
     def clear_pursuit_slot(self, career_slot: int) -> None:
         wanted = int(career_slot)
         abs_off = self._ensure_pursuit_slot_initialized(wanted)
+        self._write_pursuit_heat_fields(abs_off, self.GARAGE_HEAT_BASELINE)
         self._write_u32(abs_off + self.GARAGE_BOUNTY_OFFSET, 0)
         self._write_u16(abs_off + self.GARAGE_ESCAPED_OFFSET, 0)
         self._write_u16(abs_off + self.GARAGE_BUSTED_OFFSET, 0)
@@ -1495,6 +1570,8 @@ class SaveFile:
                     display_name=display_name,
                     source_kind=self.derive_source_kind(flags),
                     occupied=occupied,
+                    heat=pursuit.heat,
+                    heat_level=pursuit.heat_level,
                     bounty=pursuit.bounty,
                     escaped=pursuit.escaped,
                     busted=pursuit.busted,
@@ -1927,6 +2004,28 @@ class SaveFile:
         for slot in self.get_pursuit_records():
             if slot.career_slot == wanted:
                 self._write_u32(slot.abs_off + self.GARAGE_BOUNTY_OFFSET, bounty)
+                return
+        raise ValueError(f"Garage slot {wanted} was not detected")
+
+    def get_slot_heat(self, slot_index: int) -> float:
+        wanted = int(slot_index)
+        for slot in self.get_pursuit_records():
+            if slot.career_slot == wanted:
+                return float(slot.heat)
+        raise ValueError(f"Garage slot {wanted} was not detected")
+
+    def get_slot_heat_level(self, slot_index: int) -> int:
+        wanted = int(slot_index)
+        for slot in self.get_pursuit_records():
+            if slot.career_slot == wanted:
+                return int(slot.heat_level)
+        raise ValueError(f"Garage slot {wanted} was not detected")
+
+    def set_slot_heat(self, slot_index: int, value: float | int) -> None:
+        wanted = int(slot_index)
+        for slot in self.get_pursuit_records():
+            if slot.career_slot == wanted:
+                self._write_pursuit_heat_fields(slot.abs_off, value)
                 return
         raise ValueError(f"Garage slot {wanted} was not detected")
 

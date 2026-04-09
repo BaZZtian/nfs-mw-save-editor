@@ -576,6 +576,57 @@ Current fallback policy:
 - if a future save has no unique car-record match for a pursuit slot, the UI should
   show an honest fallback instead of guessing a vehicle name
 
+## Pursuit heat RE (`fixture-g`, 2026-04-09)
+
+Controlled saves on the same `Audi TT Quattro` career car:
+- `fixture-g(BASE)`
+- `fixture-g(heat level 2 and a bit)`
+- `fixture-g(heat level 3)`
+
+Confirmed pursuit record:
+- block base: `0xE2ED`
+- stride: `0x38`
+- tested record: `career_slot 1`, absolute offset `0xE325`
+
+Confirmed heat fields inside one pursuit record:
+- `+0x0C .. +0x0F` = primary heat meter as `float32`
+- `+0x06 .. +0x07` = zero-based integer heat tier mirror
+- repeated integer mirrors also move with heat at:
+  - `+0x1E`
+  - `+0x20`
+  - `+0x22`
+  - `+0x24`
+  - `+0x26`
+
+Observed values:
+- base save:
+  - `+0x0C = 1.0`
+  - `+0x06 = 0`
+- heat level 2 with partial progress:
+  - `+0x0C = 2.1613526344`
+  - `+0x06 = 1`
+- heat level 3:
+  - `+0x0C = 3.0`
+  - `+0x06 = 2`
+
+Interpretation:
+- the game persists the visible heat state as a full `float32`, not only as an integer level
+- UI heat `xN` appears to correspond to `floor(heat_float)`
+- the integer mirrors are stored zero-based:
+  - visible `x1` -> stored `0`
+  - visible `x2` -> stored `1`
+  - visible `x3` -> stored `2`
+
+Backend product rule adopted in the editor:
+- read path now exposes:
+  - `heat`
+  - `heat_level`
+- write path updates both:
+  - primary heat float at `+0x0C`
+  - all confirmed zero-based mirror fields
+- pursuit-slot reset / initialization now restores heat baseline `1.0`
+- current safe write range is `1.0 .. 5.0` (Most Wanted heat scale assumption)
+
 ## Practical validation summary
 
 Validated against real saves:

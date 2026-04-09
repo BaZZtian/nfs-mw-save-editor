@@ -40,6 +40,8 @@ class IntegrityStatus:
 @dataclass(frozen=True)
 class PursuitRecord:
     career_slot: int
+    heat: float
+    heat_level: int
     bounty: int
     escaped: int
     busted: int
@@ -92,6 +94,8 @@ class ResolvedGarageEntry:
     display_name: str
     source_kind: str
     occupied: bool
+    heat: float
+    heat_level: int
     bounty: int
     escaped: int
     busted: int
@@ -180,6 +184,8 @@ class ResolvedTransferCarEntry:
     is_my_cars: bool
     is_pink_slip: bool
     has_pursuit_link: bool
+    heat: Optional[float]
+    heat_level: Optional[int]
     bounty: Optional[int]
     escaped: Optional[int]
     busted: Optional[int]
