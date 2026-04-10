@@ -507,6 +507,7 @@ class JunkmanMixin:
         self.want_profile_alias = self.have_profile_alias
         self.profile_alias_error = None
         self.want_slot_bounties = None if self.garage_detection_error else dict(self.have_slot_bounties)
+        self.want_slot_heats = None if self.garage_detection_error else dict(self.have_slot_heats)
         self.want_slot_flags = None if self.garage_detection_error else dict(self.have_slot_flags)
         self.want_owned_locations = None if self.garage_detection_error else dict(self.have_owned_locations)
         self.want_owned_career_slots = None if self.garage_detection_error else dict(self.have_owned_career_slots)
@@ -586,6 +587,7 @@ class JunkmanMixin:
                     )
         have_total_bounty = sum(self.have_slot_bounties.values())
         want_total_bounty = sum(self._current_slot_bounties().values()) if not self.garage_detection_error else None
+        heat_changes = 0 if self.garage_detection_error else len(self._pending_slot_heats())
         parts_changes: List[str] = []
         injection_changes: List[str] = []
         if not self.parts_detection_error:
@@ -641,6 +643,7 @@ class JunkmanMixin:
         else:
             summary_lines.append(f"Bounty / Rating: {have_total_bounty} -> {want_total_bounty}")
         summary_lines.append(f"Garage transfers: {len(transfer_changes)}")
+        summary_lines.append(f"Heat changes: {heat_changes}")
         summary_lines.append(f"Tuning changes: {len(parts_changes)}")
         summary_lines.append(f"Preset injections: {len(injection_changes)}")
 
@@ -716,6 +719,8 @@ class JunkmanMixin:
             if not self.garage_detection_error:
                 for slot_index, value in self._current_slot_bounties().items():
                     self.savefile.set_slot_bounty(slot_index, value)
+                for slot_index, level in self._pending_slot_heats().items():
+                    self.savefile.set_slot_heat(slot_index, float(level))
                 current_locations = self._current_owned_locations()
                 current_career_slots = self._current_owned_career_slots()
                 for entry in self.garage_transfer_entries:

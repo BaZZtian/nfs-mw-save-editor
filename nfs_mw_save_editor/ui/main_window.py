@@ -154,6 +154,8 @@ class MainWindow(
         self.want_parts_masks: Optional[Dict[int, int]] = None
         self.have_slot_bounties: Dict[int, int] = {}
         self.want_slot_bounties: Optional[Dict[int, int]] = None
+        self.have_slot_heats: Dict[int, int] = {}
+        self.want_slot_heats: Optional[Dict[int, int]] = None
         self.have_slot_flags: Dict[int, int] = {}
         self.want_slot_flags: Optional[Dict[int, int]] = None
         self.have_owned_locations: Dict[int, int] = {}
@@ -760,8 +762,10 @@ class MainWindow(
         self.want_profile_alias = None
         self.profile_alias_error = None
         self.have_slot_bounties = {}
+        self.have_slot_heats = {}
         self.have_slot_flags = {}
         self.want_slot_bounties = None
+        self.want_slot_heats = None
         self.want_slot_flags = None
         self.have_owned_locations = {}
         self.want_owned_locations = None
@@ -781,6 +785,7 @@ class MainWindow(
         self.want_profile_alias = None
         self.profile_alias_error = None
         self.want_slot_bounties = None
+        self.want_slot_heats = None
         self.want_slot_flags = None
         self.want_owned_locations = None
         self.want_owned_career_slots = None
@@ -847,6 +852,11 @@ class MainWindow(
                 self.have_slot_bounties = {
                     slot.career_slot: slot.bounty for slot in self.garage_slots
                 }
+                self.have_slot_heats = {
+                    slot.career_slot: slot.heat_level
+                    for slot in self.garage_slots
+                    if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+                }
                 self.have_slot_flags = {
                     slot.career_slot: slot.flags for slot in self.garage_slots if slot.flags is not None
                 }
@@ -862,6 +872,7 @@ class MainWindow(
                 self.garage_transfer_entries = []
                 self.garage_allocator_snapshot = None
                 self.have_slot_bounties = {}
+                self.have_slot_heats = {}
                 self.have_slot_flags = {}
                 self.have_owned_locations = {}
                 self.have_owned_career_slots = {}
@@ -909,12 +920,14 @@ class MainWindow(
                 self.want_money = self.have_money
             if self.garage_detection_error:
                 self.want_slot_bounties = None
+                self.want_slot_heats = None
                 self.want_slot_flags = None
                 self.want_owned_locations = None
                 self.want_owned_career_slots = None
                 self.want_cleared_pursuit_slots = None
             elif self.want_slot_bounties is None:
                 self.want_slot_bounties = dict(self.have_slot_bounties)
+                self.want_slot_heats = dict(self.have_slot_heats)
                 self.want_slot_flags = dict(self.have_slot_flags)
                 self.want_owned_locations = dict(self.have_owned_locations)
                 self.want_owned_career_slots = dict(self.have_owned_career_slots)
@@ -923,6 +936,11 @@ class MainWindow(
                 self.want_slot_bounties = {
                     slot.career_slot: self.want_slot_bounties.get(slot.career_slot, slot.bounty)
                     for slot in self.garage_slots
+                }
+                self.want_slot_heats = {
+                    slot.career_slot: (self.want_slot_heats or {}).get(slot.career_slot, slot.heat_level)
+                    for slot in self.garage_slots
+                    if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
                 }
                 self.want_slot_flags = {
                     slot.career_slot: self.want_slot_flags.get(slot.career_slot, slot.flags)
@@ -1004,6 +1022,7 @@ class MainWindow(
             or self._has_profile_pending_changes()
             or self._has_parts_pending_changes()
             or self._has_garage_transfer_pending_changes()
+            or self._has_garage_pursuit_pending_changes()
             or bool(self.want_snapshot_injections)
         )
 

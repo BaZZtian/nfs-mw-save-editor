@@ -66,6 +66,10 @@ class SaveFile:
     GARAGE_BASE_OFFSET = 0xE2ED
     GARAGE_SLOT_SIZE = 0x38
     GARAGE_HEAT_LEVEL_OFFSET = 0x06
+    GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS = (
+        0x04,
+        0x1C,
+    )
     GARAGE_HEAT_FLOAT_OFFSET = 0x0C
     GARAGE_BOUNTY_OFFSET = 0x10
     GARAGE_ESCAPED_OFFSET = 0x14
@@ -82,6 +86,11 @@ class SaveFile:
     GARAGE_HEAT_MIN = 1.0
     GARAGE_HEAT_MAX = 5.0
     GARAGE_SIGNATURE_A = b"\xCD\x03\x00"
+    GARAGE_SIGNATURE_VARIANTS = (
+        b"\xCD\x03\x00",
+        b"\xCD\x04\x00",
+        b"\xCD\x05\x00",
+    )
     GARAGE_SIGNATURE_B = b"\x00\x00\xCD\xCD"
     CAREER_VEHICLE_BASE_OFFSET = 0x6219
     CAREER_VEHICLE_SIZE = 0x14
@@ -242,25 +251,40 @@ class SaveFile:
         return cls._heat_level_from_value(heat) - 1
 
     @classmethod
+    def _read_pursuit_heat_mirror_tiers(cls, data: bytes | bytearray, base_off: int) -> List[int]:
+        tiers: List[int] = []
+        for rel_off in cls.GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS:
+            raw_u32 = struct.unpack_from("<I", data, base_off + rel_off)[0]
+            tiers.append((raw_u32 >> 16) & 0xFFFF)
+        for rel_off in cls.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
+            tiers.append(struct.unpack_from("<H", data, base_off + rel_off)[0])
+        return tiers
+
+    @classmethod
     def _write_pursuit_heat_fields_into(cls, payload: bytearray, heat: float | int) -> None:
         normalized = cls._normalize_heat_value(heat)
         stored_tier = cls._stored_heat_tier_from_value(normalized)
         struct.pack_into("<f", payload, cls.GARAGE_HEAT_FLOAT_OFFSET, normalized)
+        for rel_off in cls.GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS:
+            struct.pack_into("<I", payload, rel_off, (stored_tier & 0xFFFF) << 16)
         for rel_off in cls.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
             struct.pack_into("<H", payload, rel_off, stored_tier)
 
     def _read_pursuit_heat_fields(self, abs_off: int) -> Tuple[float, int]:
         raw_heat = self._read_f32(abs_off + self.GARAGE_HEAT_FLOAT_OFFSET)
-        raw_tier = self._read_u16(abs_off + self.GARAGE_HEAT_LEVEL_OFFSET)
-        if not math.isfinite(raw_heat):
-            raw_heat = float(max(1, raw_tier + 1))
-        heat_level = max(1, raw_tier + 1)
-        return float(raw_heat), int(heat_level)
+        raw_tiers = self._read_pursuit_heat_mirror_tiers(self.data, abs_off)
+        if math.isfinite(raw_heat):
+            effective_heat = min(max(float(raw_heat), self.GARAGE_HEAT_MIN), self.GARAGE_HEAT_MAX)
+            return float(raw_heat), int(self._heat_level_from_value(effective_heat))
+        fallback_level = max(1, max(raw_tiers, default=0) + 1)
+        return float(fallback_level), int(fallback_level)
 
     def _write_pursuit_heat_fields(self, abs_off: int, heat: float | int) -> None:
         normalized = self._normalize_heat_value(heat)
         stored_tier = self._stored_heat_tier_from_value(normalized)
         self._write_f32(abs_off + self.GARAGE_HEAT_FLOAT_OFFSET, normalized)
+        for rel_off in self.GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS:
+            self._write_u32(abs_off + rel_off, (stored_tier & 0xFFFF) << 16)
         for rel_off in self.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
             self._write_u16(abs_off + rel_off, stored_tier)
 
@@ -453,7 +477,7 @@ class SaveFile:
     def _is_garage_slot(cls, raw: bytes) -> bool:
         return (
             len(raw) == cls.GARAGE_SLOT_SIZE
-            and raw[1:4] == cls.GARAGE_SIGNATURE_A
+            and raw[1:4] in cls.GARAGE_SIGNATURE_VARIANTS
             and raw[8:12] == cls.GARAGE_SIGNATURE_B
         )
 

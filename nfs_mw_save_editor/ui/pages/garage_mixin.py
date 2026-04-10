@@ -46,6 +46,8 @@ class GarageCardVm:
     is_active: bool
     current_bounty: int
     have_bounty: int
+    current_heat_level: Optional[int]
+    have_heat_level: Optional[int]
     plan_my_cars: OwnedCarTransferPlan
     plan_career: OwnedCarTransferPlan
 
@@ -66,6 +68,7 @@ class GarageCardHandle:
     utility_label: QLabel
     bounty_edit: Optional[QLineEdit]
     bounty_current_label: Optional[QLabel]
+    heat_btns: Optional[List[QPushButton]]
 
 
 class GarageMixin:
@@ -402,6 +405,28 @@ class GarageMixin:
         if hasattr(self, "garage_diag_text"):
             self.garage_diag_text.setVisible(visible)
 
+    def _current_slot_heats(self) -> Dict[int, int]:
+        want_map = self.want_slot_heats or {}
+        return {
+            slot.career_slot: want_map.get(slot.career_slot, self.have_slot_heats.get(slot.career_slot, 1))
+            for slot in self.garage_slots
+            if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+        }
+
+    def _pending_slot_heats(self) -> Dict[int, int]:
+        if self.savefile is None or self.garage_detection_error:
+            return {}
+        current = self._current_slot_heats()
+        pending: Dict[int, int] = {}
+        for slot in self.garage_slots:
+            if not slot.occupied or slot.career_slot == SaveFile.EMPTY_CAREER_SLOT:
+                continue
+            have = self.have_slot_heats.get(slot.career_slot, slot.heat_level)
+            want = current.get(slot.career_slot, have)
+            if want != have:
+                pending[slot.career_slot] = want
+        return pending
+
     def _current_slot_bounties(self) -> Dict[int, int]:
         want_map = self.want_slot_bounties or {}
         current = {
@@ -470,7 +495,14 @@ class GarageMixin:
     def _garage_card_changed(self, slot_index: int) -> bool:
         have_bounty = self.have_slot_bounties.get(slot_index, 0)
         want_bounty = self._current_slot_bounties().get(slot_index, have_bounty)
-        return want_bounty != have_bounty
+        if want_bounty != have_bounty:
+            return True
+        have_heat = self.have_slot_heats.get(slot_index)
+        if have_heat is not None:
+            want_heat = self._current_slot_heats().get(slot_index, have_heat)
+            if want_heat != have_heat:
+                return True
+        return False
 
     def _garage_transfer_changed(self, abs_off: int) -> bool:
         return (
@@ -490,6 +522,11 @@ class GarageMixin:
         return bool(self._current_cleared_pursuit_slots()) or any(
             self._garage_transfer_changed(entry.abs_off) for entry in self.garage_transfer_entries
         )
+
+    def _has_garage_pursuit_pending_changes(self) -> bool:
+        if self.savefile is None or self.garage_detection_error:
+            return False
+        return bool(self._pending_slot_heats())
 
     def _garage_empty_widget(self, _: int) -> QWidget:
         if not self.savefile:
@@ -516,6 +553,7 @@ class GarageMixin:
         _, _, _, reserved_career = self._current_snapshot_injection_plans()
         staged_career_vehicle_count = self._staged_career_vehicle_count()
         current_bounties = self._current_slot_bounties()
+        current_heats = self._current_slot_heats()
         projected_active_car_number = self.savefile.get_projected_active_career_car_number(
             location_overrides=current_locations,
             career_slot_overrides=current_career_slots,
@@ -537,6 +575,8 @@ class GarageMixin:
                     ),
                     current_bounty=current_bounties.get(career_slot, int(slot.bounty or 0)),
                     have_bounty=self.have_slot_bounties.get(career_slot, int(slot.bounty or 0)),
+                    current_heat_level=current_heats.get(career_slot) if slot.has_pursuit_link else None,
+                    have_heat_level=self.have_slot_heats.get(career_slot) if slot.has_pursuit_link else None,
                     plan_my_cars=self._garage_transfer_plan_with_context(
                         slot.abs_off,
                         "my_cars",
@@ -671,6 +711,17 @@ class GarageMixin:
                 self._set_profile_line_edit(handle.bounty_edit, vm.current_bounty, True)
             handle.bounty_current_label.setText(self._format_current_value(vm.have_bounty))
 
+        if handle.heat_btns is not None:
+            btn_enabled = (
+                not slot.is_my_cars
+                and slot.has_pursuit_link
+                and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+            )
+            lvl = vm.current_heat_level or 1
+            for i, btn in enumerate(handle.heat_btns):
+                btn.setChecked(i + 1 == lvl)
+                btn.setEnabled(btn_enabled)
+
         refresh_widget_style(handle.card)
 
     def _build_garage_card(self, vm: GarageCardVm) -> QWidget:
@@ -763,11 +814,44 @@ class GarageMixin:
 
         bounty_edit: Optional[QLineEdit] = None
         bounty_current_label: Optional[QLabel] = None
+        heat_buttons: Optional[List[QPushButton]] = None
         if not slot.is_my_cars and slot.has_pursuit_link:
             sep = QFrame()
             sep.setFrameShape(QFrame.HLine)
             sep.setObjectName("garageCardSep")
             card_layout.addWidget(sep)
+
+            # Heat level selector
+            heat_label = QLabel("Heat")
+            heat_label.setObjectName("garageCardFieldLabel")
+            heat_label.setAlignment(Qt.AlignCenter)
+            card_layout.addWidget(heat_label)
+
+            heat_row = QWidget()
+            heat_row_layout = QHBoxLayout(heat_row)
+            heat_row_layout.setContentsMargins(0, 0, 0, 0)
+            heat_row_layout.setSpacing(4)
+
+            heat_group = QButtonGroup(heat_row)
+            heat_group.setExclusive(True)
+            heat_buttons = []
+
+            for lvl in range(1, 6):
+                btn = QPushButton(f"x{lvl}")
+                btn.setCheckable(True)
+                btn.setObjectName("heatBtn")
+                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT:
+                    btn.clicked.connect(lambda _, s=slot.career_slot, l=lvl: self.on_garage_heat_changed(s, l))
+                else:
+                    btn.setEnabled(False)
+                heat_group.addButton(btn)
+                heat_row_layout.addWidget(btn)
+                heat_buttons.append(btn)
+
+            current_lvl = vm.current_heat_level or 1
+            heat_buttons[current_lvl - 1].setChecked(True)
+            card_layout.addWidget(heat_row)
 
             bounty_label = QLabel("Bounty")
             bounty_label.setObjectName("garageCardFieldLabel")
@@ -829,6 +913,7 @@ class GarageMixin:
             utility_label=utility_label,
             bounty_edit=bounty_edit,
             bounty_current_label=bounty_current_label,
+            heat_btns=heat_buttons,
         )
         self._garage_card_handles[slot.abs_off] = handle
         self._apply_garage_card_vm(handle, vm)
@@ -1039,5 +1124,15 @@ class GarageMixin:
         self._refresh_garage_totals(True)
         self._garage_cards_dirty = True
         self._sync_garage_summary_chrome(loaded=True)
+        self._patch_garage_cards_in_place()
+        self._update_action_states()
+
+    def on_garage_heat_changed(self, slot_index: int, level: int) -> None:
+        if self._profile_refreshing or not self.savefile or self.garage_detection_error:
+            return
+        if self.want_slot_heats is None:
+            self.want_slot_heats = dict(self.have_slot_heats)
+        self.want_slot_heats[slot_index] = level
+        self._garage_cards_dirty = True
         self._patch_garage_cards_in_place()
         self._update_action_states()

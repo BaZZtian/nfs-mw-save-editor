@@ -590,7 +590,9 @@ Confirmed pursuit record:
 
 Confirmed heat fields inside one pursuit record:
 - `+0x0C .. +0x0F` = primary heat meter as `float32`
+- `+0x04 .. +0x07` = zero-based integer heat tier mirror packed into the high `u16` of a `u32`
 - `+0x06 .. +0x07` = zero-based integer heat tier mirror
+- `+0x1C .. +0x1F` = zero-based integer heat tier mirror packed into the high `u16` of a `u32`
 - repeated integer mirrors also move with heat at:
   - `+0x1E`
   - `+0x20`
@@ -623,9 +625,125 @@ Backend product rule adopted in the editor:
   - `heat_level`
 - write path updates both:
   - primary heat float at `+0x0C`
-  - all confirmed zero-based mirror fields
+  - all confirmed zero-based mirror fields, including the `u32` high-half mirrors at `+0x04` and `+0x1C`
 - pursuit-slot reset / initialization now restores heat baseline `1.0`
 - current safe write range is `1.0 .. 5.0` (Most Wanted heat scale assumption)
+
+Follow-up after first editable heat UI pass:
+- the initial editor implementation only updated `+0x06` and `+0x1E/+0x20/+0x22/+0x24/+0x26`
+- it did **not** update the additional `u32` mirrors at `+0x04` and `+0x1C`
+- this matched the observed bug pattern:
+  - garage/editor-facing heat changed
+  - in-game pursuit behavior could still follow the old level
+- backend was then corrected to write the full confirmed mirror set
+- if gameplay still diverges after this fix, the next RE target is a second gameplay-facing heat companion outside the local pursuit record
+
+#### Pursuit-record signature variants (`fixture-i`, `fixture-e`)
+
+Later validation on longer/anomalous saves showed that the pursuit block is not limited to only one
+record signature variant.
+
+Observed valid per-slot signatures at bytes `+0x01..+0x03`:
+
+- normal slots: `CD 03 00`
+- later valid slots also appear as:
+  - `CD 04 00`
+  - `CD 05 00`
+
+Examples:
+
+- `fixture-i(base_heat_level5)`:
+  - slot `10` (`0xE51D`) uses `CD 04 00`
+  - slots `11..23` continue as valid pursuit records after it
+- `fixture-e`:
+  - slot `24` (`0xE82D`) uses `CD 05 00`
+
+Practical implication:
+
+- the editor's original pursuit parser stopped at the first non-`CD 03 00` record
+- this truncated the tail of the pursuit block on saves like `fixture-i` and `fixture-e`
+- later career cars then falsely appeared as having:
+  - no pursuit link
+  - no editable heat
+  - no linked bounty/escaped/busted data
+
+Current parser policy:
+
+- treat all three variants as valid pursuit-record signatures:
+  - `CD 03 00`
+  - `CD 04 00`
+  - `CD 05 00`
+- keep `00 00 CD CD` at `+0x08..+0x0B` as the second required signature half
+
+What this does **not** prove yet:
+
+- the semantic meaning of `03` vs `04` vs `05`
+- whether those values encode a subtype, state, or simply another accepted record form
+
+#### Visual-only heat decay saves (`fixture-i`)
+
+New controlled saves on the same active `Mazda RX-8` career car:
+
+- `fixture-i(base_heat_level5)`
+- `fixture-i(heat_level4_changed_only_rims_color)`
+- `fixture-i(heat_level3_changed_only_paint_color)`
+- `fixture-i(heat_level2_changed_only_paint_color_back)`
+- `fixture-i(heat_level1_changed_only_paint_color_again)`
+
+Method:
+
+- start from a real `heat x5` save
+- lower heat only through visual changes in-game
+- no new pursuit was run between the comparison points
+
+Observed result on the active car's local pursuit record (slot `20`, `0xE74D`):
+
+- the primary heat float at `+0x0C` changed cleanly:
+  - `5.0`
+  - `4.850000381`
+  - `3.395000219`
+  - `2.376500130`
+  - `1.663550019`
+- the previously identified integer mirror set did **not** track these visual-only changes in the
+  same way:
+  - several mirrors stayed stale or static
+  - this strongly suggests the float is the real persisted heat meter, while at least some integer
+    fields behave more like caches or sub-state mirrors than the primary source of truth
+
+Additional duplicate-heat clue:
+
+- the exact same changing float sequence also appeared at absolute offset `0x498`
+- this points to a second heat-related companion/cache field outside the local pursuit record
+- this companion is still not mapped well enough to write safely
+
+Current interpretation:
+
+- per-car heat is definitely persisted in the local pursuit record as a `float32`
+- garage/display heat follows that local value
+- gameplay may still involve an additional companion/cache field outside the pursuit block, and
+  that second field remains unresolved
+
+#### End-to-end editor validation on `fixture-i`
+
+After fixing the pursuit parser to accept `CD 04 00` / `CD 05 00` variants, a live in-game smoke was
+run on the `fixture-i` save:
+
+- source: `fixture-i(base_heat_level5)`
+- editor action: set the active `Mazda RX-8` heat from `x5` down to `x1`
+
+Observed result:
+
+- garage UI in-game showed `x1`
+- HUD during free-roam / pursuit also showed `x1`
+- the first spawned cop matched heat `x1`
+- later cop spawns also stayed at heat `x1`
+
+Implication:
+
+- the current backend heat write path is now sufficient on at least one clean/normal save
+- local pursuit-record heat editing is no longer just a garage-only/display-only change
+- the remaining problematic saves (`fixture-g`, some `fixture-e` cases) should now be treated as anomaly /
+  special-context cases rather than proof that the global heat model is still fundamentally wrong
 
 ## Practical validation summary
 

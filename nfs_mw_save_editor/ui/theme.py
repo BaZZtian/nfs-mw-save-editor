@@ -1190,6 +1190,30 @@ QLabel#garageCardStatBadge {{
     font-size: 11px;
     font-weight: 600;
 }}
+QPushButton#heatBtn {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_SM};
+    padding: 3px 4px;
+    color: {MUTED};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QPushButton#heatBtn:checked {{
+    background: {ACCENT};
+    border-color: {BORDER_NAV_ACTIVE};
+    color: {TEXT_NAV_ACTIVE};
+}}
+QPushButton#heatBtn:hover:!checked {{
+    background: {BG_BULK_HOVER};
+    border-color: {ACCENT};
+    color: {TEXT};
+}}
+QPushButton#heatBtn:disabled {{
+    background: {BG_DISABLED};
+    border-color: {BORDER};
+    color: {MUTED_DARK};
+}}
 QLabel#tuningStatusStock {{
     background: {STATUS_NEUTRAL_BG};
     border: 1px solid {STATUS_NEUTRAL_BORDER};
