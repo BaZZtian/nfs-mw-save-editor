@@ -117,6 +117,7 @@ THEME_PRESETS: dict[str, ThemePreset] = {
         "#E0DEF4",
         text_on_accent_mode="dark",
     ),
+    "Raycast": ThemePreset("Raycast", "#FF6363", "#101010", "#FEFEFE"),
     "Sentry": ThemePreset("Sentry", "#7055F6", "#2D2935", "#E6DFF9"),
     "Solarized": ThemePreset("Solarized", "#D30102", "#002B36", "#839496"),
     "Temple": ThemePreset("Temple", "#E4F222", "#02120C", "#C7E6DA"),
