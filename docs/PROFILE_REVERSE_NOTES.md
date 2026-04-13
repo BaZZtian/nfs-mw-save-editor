@@ -745,6 +745,790 @@ Implication:
 - the remaining problematic saves (`fixture-g`, some `fixture-e` cases) should now be treated as anomaly /
   special-context cases rather than proof that the global heat model is still fundamentally wrong
 
+## Career progression / heat-cap RE (`KSWD`, 2026-04-10)
+
+New progression-pair save set:
+
+- `KSWD(Before_beating_Vic)` / `KSWD(After_beating_Vic)`
+- `KSWD(Before_beating_Earl)` / `KSWD(After_beating_Earl)`
+- `KSWD(Before_beating_Webster)` / `KSWD(After_beating_Webster)`
+
+These pairs are not perfectly clean; they contain substantial progression/stat noise beyond a single
+flag change. However, one very strong common progression marker was isolated:
+
+- absolute offset `0x4C` as `u32`
+- observed values:
+  - before Vic: `5`
+  - after Vic: `6`
+  - before Earl: `9`
+  - after Earl: `10`
+  - before Webster: `13`
+  - after Webster: `14`
+
+This fits the simple blacklist progression model:
+
+- `field_0x4C = 19 - current_blacklist_rank`
+
+Examples:
+
+- rank `#14` -> `5`
+- rank `#13` -> `6`
+- rank `#10` -> `9`
+- rank `#9` -> `10`
+- rank `#6` -> `13`
+- rank `#5` -> `14`
+
+Cross-check on other saves:
+
+- earlier/mid-game style saves:
+  - `fixture-g` -> `0x4C = 7`
+  - `GaySIgm` -> `0x4C = 7`
+  - `fixture-c` -> `0x4C = 7`
+- late-game style saves:
+  - `fixture-i` -> `0x4C = 17`
+  - `fixture-a` -> `0x4C = 17`
+  - `fixture-e` -> `0x4C = 17`
+  - `fixture-f` -> `0x4C = 17`
+
+Practical interpretation:
+
+- `0x4C` is now a strong save-level candidate for current blacklist progression / player-rank-like
+  state
+- this progression almost certainly participates in global unlock logic, including police heat caps
+
+Important negative result:
+
+- changing **only** `0x4C` on `fixture-g` (`7 -> 10 -> 14 -> 17`) did **not** unlock correct gameplay
+  heat behavior
+- pursuit still behaved like the original capped save, despite the patched progression value
+
+Implication:
+
+- `0x4C` is useful and likely real, but it is **not sufficient by itself**
+- heat-cap progression is therefore controlled by:
+  - either multiple save fields
+  - or `0x4C` plus one or more companion unlock flags/state blocks
+- future RE should treat progression as a multi-field model rather than a single-rank scalar
+
+## Save-hopping progression bug candidate (`KSWD(Base)` -> bugged `KSWD`, 2026-04-10)
+
+New comparison target:
+
+- clean baseline: `KSWD(Base)` (byte-identical to `KSWD(Before_beating_Earl)`)
+- bugged save: `KSWD`
+
+Observed in-game:
+
+- loading a later-progression save first, then loading `KSWD`, can mark Earl as already defeated and
+  expose upgrades that should still be locked
+
+Binary diff result:
+
+- total payload diff is tiny: only `26` bytes differ
+- meaningful non-checksum diff is isolated to:
+  - `0x4040..0x4041`
+- exact change:
+  - baseline: `03 08` (`u16 = 0x0803 = 2051`)
+  - bugged: `F7 1D` (`u16 = 0x1DF7 = 7671`)
+- all other semantic profile markers checked so far stayed the same:
+  - `0x4C = 9`
+  - money unchanged
+  - active car unchanged
+  - career vehicle table unchanged
+  - pursuit record count unchanged
+
+Cross-check against clean blacklist progression pairs:
+
+- `Before/After Vic`, `Before/After Earl`, `Before/After Webster` all keep:
+  - `0x4040 = 0x0803`
+- therefore `0x4040` is **not** the same field as the clean blacklist-rank marker `0x4C`
+
+Practical interpretation:
+
+- `0x4040..0x4041` is now a strong candidate for a small profile-wide unlock / defeated-state
+  bitfield or sticky cache block
+- the save-hopping bug appears to overwrite this small state while leaving normal rank/progression
+  fields intact
+- the exact bugged value `0x1DF7` also appears on several later / modified saves, including
+  `fixture-f`, which matches the reproduced load order that triggered the bug
+
+Current working model:
+
+- `0x4C` = broad blacklist progression / current-rank style field
+- `0x4040` = separate companion unlock-state / sticky state candidate
+- future progression-cap RE should treat both as part of a multi-field model
+
+## `fixture-g` free-roam vs active-pursuit heat mismatch (2026-04-10)
+
+Additional in-game observation on `fixture-g`:
+
+- outside active pursuit, in free roam, the minimap/HUD can still show the edited local car heat
+  correctly (example observed: `x4` after passive decay from edited `x5`)
+- the moment a cop detects the player and active pursuit starts, the visible heat immediately clamps
+  down to `x3`
+
+Practical interpretation:
+
+- free-roam display can still reflect the per-car pursuit heat stored in the save
+- active pursuit startup applies a second gameplay-facing cap / unlock rule
+- this strongly supports the two-layer model:
+  - local per-car heat in the pursuit record
+  - separate global progression / unlock-state gate applied when pursuit actually begins
+
+Important follow-up:
+
+- `fixture-g` already carries the late-style `0x4040 = 0x1DF7`, the same value seen on `fixture-i`,
+  `fixture-f`, and the bugged `KSWD`
+- therefore `0x4040` alone is **not** sufficient to explain the pursuit-time clamp
+- next test pack should patch combinations of:
+  - `0x4C`
+  - nearby small profile bytes around `0x4038` / `0x403D..0x4041`
+  - known working late-game donor values
+
+## `fixture-g` progression gate test pack results (2026-04-10)
+
+Test pack used:
+
+- `fixture-g_test_00_baseline`
+- `fixture-g_test_01_rank_only_0x4C_17`
+- `fixture-g_test_02_fixture-i_profile_block_only`
+- `fixture-g_test_03_rank_17_plus_fixture-i_profile_block`
+- `fixture-g_test_04_webster_threshold_block`
+
+In-game validation results:
+
+- `00` baseline:
+  - no change
+- `01` (`0x4C` only):
+  - no visible change
+  - therefore `0x4C` alone does not drive cars / cops / unlock behavior
+- `02` (fixture-i-style small profile block only):
+  - game behaves like post-Razor / endgame
+  - cars are fully unlocked
+  - cops keep `x5` correctly in active pursuit
+- `03` (`0x4C = 17` plus same small fixture-i block):
+  - same result as `02`
+  - extra confirmation that `0x4C` is not the authoritative gate here
+- `04` (Webster-threshold style block):
+  - game behaves like current blacklist target is `JV` (`#4`)
+  - boss is **not** incorrectly crossed out
+  - dealership cars unlock correctly for that later story point
+  - cops keep `x5` correctly in active pursuit
+  - performance upgrades remain on the old lower-story unlock state (example observed: still gated at
+    blacklist `#11`)
+
+Practical interpretation:
+
+- the byte immediately before money, `0x4038`, is now the strongest save-level candidate for
+  `player rank` / current blacklist target
+  - this matches old CE lore that rank was a `1 byte` field directly before money
+  - changing it from `0x0B` to `0x04` on `fixture-g` produces a game state that behaves like blacklist
+    `#4` (`JV`)
+- `0x4C` remains useful as a progression marker, but is not authoritative for:
+  - police heat cap
+  - dealership car unlocks
+- `0x4040..0x4041` still looks like a separate defeated-state / sticky unlock-state candidate
+  - it explains the `KSWD` load-hopping bug
+  - but it is not sufficient by itself for the `fixture-g` pursuit clamp
+
+New working model:
+
+- `0x4038` = likely `player rank` / current blacklist member
+- `0x4040..0x4041` = companion defeated-state / sticky progression cache
+- `0x4C` = broader progression counter / derived story marker
+- performance-parts unlocks are controlled by at least one additional field outside this small profile
+  block
+
+Current product implication:
+
+- police heat cap and dealership car unlocks now look much more likely to follow `0x4038`-style
+  progression than `0x4C`
+- parts/performance unlock editing should be treated as a separate RE target
+
+## `KSWD_only_0x4040_patched_from_base` gameplay confirmation (2026-04-10)
+
+Controlled file:
+
+- `KSWD_only_0x4040_patched_from_base`
+- this file was produced from clean `KSWD(Base)` by changing **only** `0x4040..0x4041`
+  from `0x0803` to `0x1DF7`, then recomputing integrity
+- it is byte-identical to the naturally bugged `KSWD`
+
+In-game validation result:
+
+- Earl is shown as already defeated / crossed out
+- story progression becomes a dead-end:
+  - current boss still appears to be Earl
+  - Earl cannot actually be raced again
+  - the next blacklist slot does not advance normally
+- performance parts unlock all the way up to late-game / near-endgame tiers
+- dealership cars remain on the older Earl-era story gate
+  - cars still look like the game believes progression is around Earl / blacklist `#9`
+
+Practical interpretation:
+
+- `0x4040..0x4041` is now strongly confirmed as a **separate sticky unlock-state / defeated-state**
+  block
+- changing only this block is sufficient to:
+  - mark a boss as already defeated
+  - over-unlock performance parts
+  - create a softlocked / contradictory story state
+- but it is **not** sufficient to move dealership car progression forward
+
+This gives a cleaner progression split:
+
+- `0x4038` = likely current blacklist target / player rank
+- `0x4040..0x4041` = defeated-state / sticky unlock cache with strong impact on parts unlocks
+- dealership car availability follows a different progression layer than the late-game parts unlocks
+
+## `KSWD` rank-byte-only test pack results (`0x4038`, 2026-04-11)
+
+Controlled pack:
+
+- `KSWD_rankbyte_09_baseline`
+- `KSWD_rankbyte_0B_biglou_only`
+- `KSWD_rankbyte_04_jv_only`
+- `KSWD_rankbyte_01_razor_only`
+
+All files were produced from clean `KSWD(Base)` by changing **only** `0x4038`, keeping:
+
+- `0x4040 = 0x0803`
+- `0x4C = 9`
+
+In-game validation results:
+
+- baseline `0x4038 = 9`:
+  - normal Earl `#9` state
+  - cars, parts, and cops all behave as expected for that progression point
+- `0x4038 = 11` (`Big Lou`):
+  - current boss changes to `Big Lou #11`
+  - boss requirements appear fulfilled but `Challenge Rival` button is missing
+  - dealership cars are limited to the `#11` story point
+  - parts remain on the original Earl-era state
+  - current owned car can appear self-locked in garage rotation
+  - cops remain baseline (`x3`), which is still correct for that story point
+- `0x4038 = 4` (`JV`):
+  - game behaves like Webster `#5` was just beaten
+  - post-Webster phone call triggers
+  - dealership cars unlock correctly up to the `#4` story point
+  - cops / heat progression move beyond the old `x3` cap and behave as if higher heat is unlocked
+  - parts stay on the older Earl-era state (`#9`)
+- `0x4038 = 1` (`Razor`):
+  - game behaves like Bull `#2` was just beaten
+  - all dealership cars are available
+  - cops / heat progression behave like late-game / `x5`-cap state
+  - parts still remain on the older Earl-era state (`#9`)
+
+Side observation:
+
+- on the forward-patched story states (`JV`, `Razor`), milestone icons stay visually padlocked in the
+  blacklist screen, but the game still appears willing to let the player attempt them
+
+Practical interpretation:
+
+- `0x4038` is now strongly supported as the save-level field for:
+  - current blacklist target / player rank
+  - dealership car availability
+  - police heat-cap progression
+- `0x4038` alone does **not** control:
+  - performance-parts unlocks
+  - some readiness / UI availability logic such as the missing `Challenge Rival` button
+  - milestone lock icon presentation
+
+Updated progression split:
+
+- `0x4038` = current boss / player-rank-like story pointer
+- `0x4040..0x4041` = defeated-state / sticky unlock cache with strong influence on parts unlocks
+- at least one additional field still controls:
+  - rival-challenge readiness
+  - milestone icon-lock state
+  - or other blacklist screen gating details
+
+## New performance candidate block (`0x42F0..0x4C5F`, 2026-04-11)
+
+Current best candidate for the **normal** performance-upgrade unlock tables is the dense table-like region
+`0x42F0..0x4C5F`.
+
+Why this range is now the leading candidate:
+
+- `0x4038`-only rank tests do **not** change it, even though:
+  - current boss changes
+  - dealership cars change
+  - cop heat-cap progression changes
+- `0x4040`-only bug reproduction also leaves it untouched, even though the sticky cache can still over-unlock parts
+- clean `KSWD(After_beating_Earl)` changes only a sparse subset of this range
+- clean `KSWD(After_beating_Webster)` populates a much larger subset of the same range
+
+This makes the range a much better candidate for **normal performance progression** than:
+
+- `0x55D0..0x55E7`, which user testing already showed belongs to the visual/body-parts unlock family
+- `0x0C80..0x0CA0` / `0x0C8C..0x0C8E`, which currently look more like volatile event / queue / session state than clean unlock tables
+
+Working model:
+
+- `0x42F0..0x4C5F` = normal performance-unlock tables or a closely related family of upgrade gates
+- `0x4040..0x4041` = separate defeated-state / sticky override that can over-unlock performance without touching the normal tables
+
+Prepared test pack:
+
+- `local test pack: kswd_performance_unlock_test`
+
+Variants:
+
+- `KSWD_perf_00_baseline`
+- `KSWD_perf_01_after_earl_sparse_region`
+- `KSWD_perf_02_after_webster_sparse_region`
+- `KSWD_perf_03_after_webster_frontblock_42F0_48BF`
+- `KSWD_perf_04_after_webster_tailblock_4B40_4C5F`
+
+## `0x42F0..0x4C5F` failed as performance candidate; new family at `0xA7F0..0xAC5F` (2026-04-12)
+
+User testing of the first performance-unlock pack showed:
+
+- performance upgrades stayed baseline in every variant
+- dealership cars stayed baseline
+- police heat / cops stayed baseline
+- only the front half of the range (`0x42F0..0x48BF`) caused a side effect:
+  - current boss stayed `Earl`
+  - `Challenge Rival` button disappeared
+  - story became softlocked
+
+Practical interpretation:
+
+- `0x42F0..0x4C5F` is **not** the normal performance-upgrade gate
+- `0x42F0..0x48BF` is more likely blacklist / rival-readiness / challenge-availability state
+- `0x4B40..0x4C5F` showed no useful visible effect in isolation
+
+Follow-up candidate search isolated a new late-game-populated family around:
+
+- `0xA7F0..0xA92F`
+- `0xAA90..0xAACF`
+- `0xAB20..0xAC5F`
+
+Why this family is stronger:
+
+- clean `KSWD(Base)` / `KSWD(Before_beating_Earl)` keep this area mostly empty / sparse
+- clean `KSWD(After_beating_Webster)` populates it heavily with structured values
+- `fixture-i` also carries a populated late-game version of the same family
+- `fixture-g` carries an earlier / smaller-state version
+
+Working model:
+
+- `0x5580..0x561F` family = normal visual/body-parts unlock tables
+- `0x42F0..0x48BF` = blacklist challenge-readiness / UI gating companion state
+- `0xA7F0..0xAC5F` = new leading candidate family for normal performance-upgrade unlocks
+
+Prepared second test pack:
+
+- `local test pack: kswd_performance_unlock_test_v2`
+
+Variants:
+
+- `KSWD_perf2_00_baseline`
+- `KSWD_perf2_01_after_webster_A7F0_A92F`
+- `KSWD_perf2_02_after_webster_AA90_AACF`
+- `KSWD_perf2_03_after_webster_AB20_AC5F`
+- `KSWD_perf2_04_after_webster_full_A7F0_AC5F`
+- `KSWD_perf2_05_fixture-i_full_A7F0_AC5F`
+
+## `0xA7F0..0xAC5F` also failed; compact candidate at `0xA775..0xA790` (2026-04-12)
+
+User testing of `kswd_performance_unlock_test_v2` showed:
+
+- baseline remained baseline
+- all patched variants still kept:
+  - current boss = `Earl`
+  - dealership cars = baseline
+  - cops / heat = baseline
+  - performance upgrades = baseline
+  - visual/body parts = baseline
+  - paint = baseline
+
+So the populated late-game family at `0xA7F0..0xAC5F` is **not** the normal performance-upgrade gate.
+
+Follow-up scan on clean `KSWD` progression saves exposed a much smaller progression-like table
+immediately before that failed family:
+
+- `0xA775`
+- `0xA779`
+- `0xA77D`
+- `0xA781`
+- `0xA785`
+- `0xA78D`
+
+This behaves like six small zero-based counters:
+
+- `Before/After Vic`: `[0, 0, 0, 0, 0, 0]` with the last value also `0`
+- `Before/After Earl`: `[1, 1, 1, 1, 1, 2]`
+- `Before/After Webster`: `[2, 2, 2, 2, 2, 3]`
+
+That shape is much more plausible for a compact upgrade-tier table than the previously tested large blocks.
+
+Prepared third test pack:
+
+- `local test pack: kswd_performance_unlock_test_v3`
+
+Variants:
+
+- `KSWD_perf3_00_baseline`
+- `KSWD_perf3_01_after_webster_values_A775_A78F`
+- `KSWD_perf3_02_after_webster_full_A760_A79F`
+- `KSWD_perf3_03_fixture-i_values_A775_A78F`
+- `KSWD_perf3_04_fixture-i_full_A760_A79F`
+
+## `0xA775..0xA790` is installed-parts data, not unlock state (2026-04-12)
+
+In-game validation exposed the actual behavior of `kswd_performance_unlock_test_v3`:
+
+- parts remained padlocked by story progression
+- but the currently viewed / installed performance packages on the car changed
+
+That matches the save layout exactly:
+
+- `PARTS_BLOCK_BASE_OFFSET = 0x9CCD`
+- `PARTS_BLOCK_SIZE = 0x198`
+- `PARTS_LEVELS_BASE_OFFSET = 0x118`
+- `0xA775 = 0x9CCD + 6 * 0x198 + 0x118`
+
+So `0xA775` lands exactly at the **levels table** of parts slot `37`:
+
+- slot index `37`
+- inside the confirmed installed performance-level payload, not in global unlock state
+
+Practical interpretation:
+
+- the `0xA775..0xA790` six-counter pattern is real, but it is per-car installed parts data
+- it is not the performance-upgrade unlock gate
+- `kswd_performance_unlock_test_v3` should be treated as a false lead and does not need further gameplay testing
+
+## Global keyed record-table candidate for normal parts/performance unlocks (2026-04-12)
+
+After excluding per-car parts regions and the failed profile-block candidates, a stronger
+global progression table was isolated in the early profile area.
+
+### Shape
+
+- save-specific starts observed via stable 8-byte key `BC 64 0A 85 D9 1D C7 78`
+  - `KSWD(Before_beating_Vic)`: `0x0494`
+  - `KSWD(After_beating_Vic)`: `0x0484`
+  - `KSWD(Before_beating_Earl)`: `0x04B4`
+  - `KSWD(After_beating_Earl)`: `0x04C4`
+  - `KSWD(Before_beating_Webster)`: `0x04F4`
+  - `KSWD(After_beating_Webster)`: `0x0504`
+  - `fixture-g`: `0x0494`
+  - `fixture-i(base_heat_level5)`: `0x04C4`
+- record stride: `0x14`
+- stable logical record count before structure break: `55`
+- record layout:
+  - `key[0:8]`
+  - `fld[8:12]`
+  - `tail[12:20]`
+
+### Why this is stronger
+
+- untouched by:
+  - `0x4038`-only rank-byte tests
+  - `0x4040..0x4041` defeated-state/cache corruption
+- therefore it is separate from:
+  - current boss / dealership cars / cops heat cap
+  - sticky defeated-state / broken late-game override
+- progression changes appear in `fld[0]` with a clean three-state pattern:
+  - `1` = future / locked
+  - `2` = current tier
+  - `4` = past / completed tier
+
+### Clean KSWD ladder pattern
+
+- `Before_beating_Vic` baseline:
+  - groups `1..15` mostly stay at `fld[0] = 1`
+- `After_beating_Vic`:
+  - indices `43..45` (`group 12`) become `2`
+- `Before_beating_Earl`:
+  - indices `32..45` (`groups 9..12`) become `4`
+- `After_beating_Earl`:
+  - indices `28..31` (`group 8`) become `2`
+- `Before_beating_Webster`:
+  - indices `16..31` (`groups 5..8`) become `4`
+- `After_beating_Webster`:
+  - indices `12..15` (`group 4`) become `2`
+- `fixture-i(base_heat_level5)`:
+  - indices `0..54` effectively carry the fully late-game `4` state
+
+This is the cleanest global progression registry found so far that is still independent
+from `0x4038` and `0x4040`.
+
+### New proof-test pack
+
+Prepared from clean `KSWD(Base)` by patching only `fld[0]` of this keyed table:
+
+- `local test pack: kswd_unlocktable_test`
+  - `KSWD_unlocktable_00_baseline`
+  - `KSWD_unlocktable_01_after_earl_grp8_current`
+    - patched indices: `28..31`
+  - `KSWD_unlocktable_02_before_web_grp5_8_past`
+    - patched indices: `16..31`
+  - `KSWD_unlocktable_03_after_web_grp4_current_grp5_8_past`
+    - patched indices: `12..31`
+  - `KSWD_unlocktable_04_fixture-i_all_groups_late`
+    - patched indices: `0..31`
+
+All variants were saved through `SaveFile.save(...)` and validated `MD5/CRC1/CRC2 OK`.
+
+Current goal:
+
+- determine whether this table drives the normal parts/performance unlock layer while
+  leaving:
+  - boss/story state
+  - dealership cars
+  - cops/heat
+  untouched at baseline
+
+## `kswd_unlocktable_test` outcome: blacklist summary / career-progress layer, not parts/performance (2026-04-12)
+
+In-game validation results for:
+
+- `KSWD_unlocktable_01_after_earl_grp8_current`
+- `KSWD_unlocktable_02_before_web_grp5_8_past`
+- `KSWD_unlocktable_03_after_web_grp4_current_grp5_8_past`
+- `KSWD_unlocktable_04_fixture-i_all_groups_late`
+
+Observed behavior:
+
+- current boss still shows correctly as `Earl`
+- `Challenge Rival` button remains available
+- dealership cars stay baseline
+- cops / heat stay baseline
+- visual/body parts stay baseline
+- performance upgrades stay baseline
+- but earlier blacklist rivals show broken summary counters:
+  - `Race Wins = 0`
+  - `Milestones Completed = 0`
+  - bounty remains intact because it is global
+- race-event grids still show completed races
+- milestone icons show padlocks even though milestones remain playable
+- overall career completion percentage drops (`36% -> 26%` observed)
+
+Practical interpretation:
+
+- the keyed early-profile record table is **not** the normal parts/performance unlock gate
+- it is a separate blacklist summary / milestone-count / career-progress presentation layer
+- it likely feeds:
+  - rival summary counters on blacklist cards
+  - milestone lock presentation
+  - aggregate career completion percentage
+- it does **not** appear to be the authoritative source for:
+  - race completion flags
+  - dealership cars
+  - cops/heat progression
+  - performance shop unlocks
+
+## New compact profile-entry candidate for late unlocks at `0x412C..0x4260` (2026-04-12)
+
+After excluding the keyed summary table, a separate family of fixed 4-byte entries in the
+profile block remains a strong candidate for normal shop unlocks.
+
+### Structure
+
+Within `0x4060..0x4270`, data is laid out as 4-byte entries that look like:
+
+- `[state_word_lo, state_word_hi, 0x00, entry_id]`
+
+Observed examples in clean `KSWD(Base)`:
+
+- `0x412C`: `00 00 00 3B`
+- `0x4130`: `00 00 00 3C`
+- `0x4258`: `00 00 00 86`
+
+Observed examples in clean `KSWD(Before_beating_Webster)`:
+
+- `0x412C`: `04 29 00 3B`
+- `0x4130`: `04 2A 00 3C`
+- `0x4258`: `04 32 00 86`
+
+So this family behaves like fixed entry IDs whose state words transition from `0x0000`
+to non-zero `0x??04` values as progression advances.
+
+### Clean ladder behavior
+
+Compared with `KSWD(Base)` / `KSWD(Before_beating_Earl)`:
+
+- `KSWD(After_beating_Earl)` enables only:
+  - `0x412C = 0x2904`
+- `KSWD(Before_beating_Webster)` and `KSWD(After_beating_Webster)` additionally enable:
+  - `0x4130 = 0x2A04`
+  - `0x4134 = 0x2B04`
+  - `0x4138 = 0x2C04`
+  - `0x4140 = 0x2D04`
+  - `0x4144 = 0x2E04`
+  - `0x4148 = 0x3004`
+  - `0x414C = 0x2F04`
+  - `0x4158 = 0x3304`
+  - `0x415C = 0x3404`
+  - `0x4164 = 0x3704`
+  - `0x4168 = 0x3804`
+  - `0x4174 = 0x3A04`
+  - `0x41D4 = 0x3604`
+  - `0x41D8 = 0x3904`
+  - `0x4258 = 0x3204`
+  - `0x425C = 0x3104`
+  - `0x4260 = 0x3504`
+- `fixture-i(base_heat_level5)` matches the same late-state words for this family.
+
+### Why it is still promising
+
+- unaffected by:
+  - `0x4038`-only rank-byte tests
+  - `0x4040..0x4041` defeated-state/cache corruption
+  - the false-lead keyed summary table patch
+- compact and fixed-addressed, unlike the sliding keyed table
+- clean late-stage enables line up with Webster-era progression rather than random save noise
+
+### New proof-test pack
+
+Prepared from clean `KSWD(Base)` by patching only the 2-byte state words:
+
+- `local test pack: kswd_profile_entry_test`
+  - `KSWD_entry_00_baseline`
+  - `KSWD_entry_01_after_earl_single_412C`
+  - `KSWD_entry_02_before_web_main_cluster`
+  - `KSWD_entry_03_before_web_tail_cluster`
+  - `KSWD_entry_04_before_web_combined`
+  - `KSWD_entry_05_fixture-i_combined`
+
+Cluster definitions:
+
+- main cluster:
+  - `0x412C`
+  - `0x4130`
+  - `0x4134`
+  - `0x4138`
+  - `0x4140`
+  - `0x4144`
+  - `0x4148`
+  - `0x414C`
+  - `0x4158`
+  - `0x415C`
+  - `0x4164`
+  - `0x4168`
+  - `0x4174`
+  - `0x41D4`
+  - `0x41D8`
+- tail cluster:
+  - `0x4258`
+  - `0x425C`
+  - `0x4260`
+
+All variants were written through `SaveFile.save(...)` and validated `MD5/CRC1/CRC2 OK`.
+
+## `kswd_profile_entry_test` outcome: fixed profile-entry family is not the unlock gate (2026-04-12)
+
+In-game validation results for:
+
+- `KSWD_entry_01_after_earl_single_412C`
+- `KSWD_entry_02_before_web_main_cluster`
+- `KSWD_entry_03_before_web_tail_cluster`
+- `KSWD_entry_04_before_web_combined`
+- `KSWD_entry_05_fixture-i_combined`
+
+Observed behavior:
+
+- all variants behaved exactly like baseline
+- no visible change to:
+  - current boss / challenge flow
+  - dealership cars
+  - cops / heat
+  - performance upgrades
+  - visual/body parts
+  - paint
+
+Practical interpretation:
+
+- the fixed `0x412C..0x4260` entry family is not the normal parts/performance unlock gate
+- it is either:
+  - an inactive/unused profile table,
+  - a companion table that requires another authoritative source,
+  - or a non-shop layer with no visible effect in the tested contexts
+
+This closes the current `0x412C..0x4260` hypothesis as another false lead.
+
+## New sliding registry candidate at roughly `0x920..0xC1F` for normal performance unlocks (2026-04-12)
+
+After closing the fixed-entry family, a stronger profile-level candidate remains in a
+sliding table around `0x920..0xC1F`.
+
+### Shape
+
+- record stride: `0x14`
+- aligned by stable 4-byte record id at offset `+0x04`
+- practical starts per save:
+  - `fixture-g`: `0x0920`
+  - `KSWD(Base)` / `KSWD(Before_beating_Earl)`: `0x0940`
+  - `KSWD(Before_beating_Webster)`: `0x0980`
+  - `KSWD(After_beating_Webster)`: `0x0990`
+  - `fixture-i(base_heat_level5)`: `0x0950`
+- record layout:
+  - `u16 a`
+  - `u16 b`
+  - `u32 id`
+  - `u32 zero_or_unused`
+  - `f32 e`
+  - `f32 f`
+
+### Why it is promising
+
+- unlike prior false leads, this table is:
+  - global profile-level data
+  - not in car blocks
+  - not in parts blocks
+  - not in the keyed blacklist-summary layer
+- it is also untouched by:
+  - `0x4038`-only rank-byte tests
+  - `0x4040..0x4041` defeated-state/cache corruption
+
+### Clean ladder behavior
+
+Compared with `KSWD(Base)`:
+
+- baseline / `fixture-g`:
+  - groups `b=2..8`: `a=0`, `f=0`
+  - groups `b=9..15`: `a=5`, `f!=0`
+- `KSWD(Before_beating_Webster)`:
+  - groups `b=5..8` switch from:
+    - `a=0 -> 5`
+    - `f=0 -> non-zero`
+  - groups `b=9..15` remain effectively active
+- `KSWD(After_beating_Webster)`:
+  - groups `b=4` switch to:
+    - `a=3`
+    - `f` stays `0`
+  - groups `b=5..8` stay active (`a=5`, `f!=0`)
+- `fixture-i(base_heat_level5)`:
+  - groups `b=2..15` are active (`a=5`, `f!=0`)
+
+This progression pattern is the closest match so far to a normal staged unlock registry:
+
+- early save: only late/easy groups active
+- mid-game: additional groups `5..8` activate
+- later: group `4` transitions into a distinct current-state (`a=3`)
+- endgame: everything down to `2` is active
+
+### New proof-test pack
+
+Prepared from clean `KSWD(Base)`:
+
+- `local test pack: kswd_perf_registry_test`
+  - `KSWD_perfreg_00_baseline`
+  - `KSWD_perfreg_01_before_web_groups_5_8`
+  - `KSWD_perfreg_02_after_web_groups_4_8`
+  - `KSWD_perfreg_03_fixture-i_groups_2_8`
+  - `KSWD_perfreg_04_fixture-i_full_registry`
+
+Patch strategy:
+
+- only records from this sliding registry are copied by aligned record index
+- all story fields, cache fields, garage, cars, parts blocks, and keyed summary blocks remain untouched
+- all variants validated `MD5/CRC1/CRC2 OK`
+
 ## Practical validation summary
 
 Validated against real saves:
@@ -760,3 +1544,279 @@ Confirmed in code:
 - filler records in the car block are ignored
 - Parts Viewer v2 can decode confirmed performance levels and Junkman categories
 - Parts Editor v1 can stage and write only the confirmed parts fields, with Turbo/NOS Junkman prerequisites enforced
+
+## 2026-04-12 - `kswd_perf_registry_test` failed; sliding registry is another summary/completion layer
+
+- In-game validation results for:
+  - `KSWD_perfreg_01_before_web_groups_5_8`
+  - `KSWD_perfreg_02_after_web_groups_4_8`
+  - `KSWD_perfreg_03_fixture-i_groups_2_8`
+  - `KSWD_perfreg_04_fixture-i_full_registry`
+- Result:
+  - boss stayed baseline
+  - dealership cars stayed baseline
+  - cops / heat stayed baseline
+  - performance stayed baseline
+  - visual/body stayed baseline
+  - career completion dropped from `36%` to `26%`
+  - old blacklist rivals lost displayed race/milestone counters
+- Refined interpretation:
+  - the sliding registry near `0x920..0xC1F` is not the normal performance unlock gate
+  - it is another presentation/progression-summary layer, likely tied to:
+    - blacklist rival card counters
+    - milestone lock presentation
+    - career completion
+
+## 2026-04-12 - New profile-tail candidate at `0x5620..0x57AF` plus `0x5B60..0x5B67`
+
+After excluding:
+- story/current-boss field `0x4038`
+- sticky defeated cache `0x4040..0x4041`
+- keyed blacklist summary table
+- fixed entry family `0x412C..0x4260`
+- sliding registry near `0x920..0xC1F`
+- visual/body unlock subfamily around `0x55D0..0x55E7`
+
+the strongest remaining clean progression candidate is a compact profile tail:
+- main table: `0x5620..0x5737`
+- small counters/tail: `0x5738..0x57AF`
+- 8-byte marker block: `0x5B60..0x5B67`
+
+### Clean ladder behavior
+
+- `Before_beating_Vic`:
+  - base table mostly `... FF 00`
+  - marker cluster `0x56B1/0x56B5 = 3`
+  - counters:
+    - `0x5769 = 5`
+    - `0x5771 = 1`
+- `After_beating_Vic`:
+  - local table flips near `0x56C9..0x56E6`
+  - counters:
+    - `0x5775 = 7`
+    - `0x577D = 1`
+    - `0x5781 = 0x0D`
+    - `0x5789 = 1`
+- `Before_beating_Earl`:
+  - broad main-table activation:
+    - repeating `0x..23/2B/33/.../73/.../B3/... = 2`
+  - marker cluster `0x56B1/0x56B5 = 5`
+  - marker byte `0x56B6 = 5`
+- `After_beating_Earl`:
+  - same Earl-era main table
+  - marker byte `0x56B6 = FF`
+  - counters:
+    - `0x5769 = 4`
+    - `0x5771 = 1`
+    - `0x5775 = 0x0D`
+    - `0x577D = 1`
+- `Before_beating_Webster`:
+  - broad main-table shift:
+    - repeating `2 -> 1`
+  - marker cluster `0x56B1/0x56B5 = 6`
+  - marker byte `0x56B6 = FF`
+  - counters:
+    - `0x5769 = 4`
+    - `0x5771 = 1`
+    - `0x5775 = 0x14`
+    - `0x577D = 1`
+    - `0x5781 = 6`
+    - `0x5789 = 1`
+    - `0x578D = 5`
+    - `0x5795 = 1`
+- `After_beating_Webster`:
+  - same main table as `Before_beating_Webster`
+  - extra counter block:
+    - `0x5799 = 4`
+    - `0x57A1 = 1`
+    - `0x57A5 = 9`
+    - `0x57AD = 1`
+- `fixture-i(base_heat_level5)`:
+  - main table shifts one step further:
+    - repeating `2 -> 0`
+    - paired neighboring `0 -> 1` flips
+  - counters:
+    - `0x5769 = 0x14`
+    - `0x5771 = 1`
+    - `0x5781 = 0x15`
+    - `0x5789 = 1`
+
+### New proof-test pack
+
+Prepared from clean `KSWD(Base)`:
+
+- `local test pack: kswd_tail_unlock_test`
+  - `KSWD_tail_00_baseline`
+  - `KSWD_tail_01_before_web_main_5620_5737`
+  - `KSWD_tail_02_before_web_tail_5738_57AF_and_5B60`
+  - `KSWD_tail_03_before_web_combined`
+  - `KSWD_tail_04_after_web_combined`
+  - `KSWD_tail_05_fixture-i_combined`
+
+Patch strategy:
+
+- only this profile-tail candidate is copied
+- `0x4038`, `0x4040..0x4041`, garage, cars, pursuit, parts blocks, and prior summary tables remain untouched
+- all variants validated `MD5/CRC1/CRC2 OK`
+
+## 2026-04-13 - `kswd_tail_unlock_test` is not the normal performance gate
+
+- In-game validation results:
+  - `KSWD_tail_01_before_web_main_5620_5737`:
+    - full baseline
+  - `KSWD_tail_02_before_web_tail_5738_57AF_and_5B60`:
+    - baseline except backroom/unique performance packages changed
+    - this matched direct per-car package changes, i.e. not the desired global shop gate
+  - `KSWD_tail_03_before_web_combined`:
+    - same as `tail-only`
+  - `KSWD_tail_04_after_web_combined`:
+    - same backroom/unique changes as above
+    - plus extra `Parts -> Hoods`
+    - plus `Visual -> Paint` and `Body Vinyls` opened fully (past `#8`)
+  - `KSWD_tail_05_fixture-i_combined`:
+    - same visual unlock expansion as `04`
+    - no extra unique hood effect
+- Refined interpretation:
+  - `0x5620..0x5737` main table alone is not visibly authoritative
+  - `0x5738..0x57AF` + `0x5B60..0x5B67` affect:
+    - backroom / unique package availability
+    - some visual/body subcategories
+  - this family is still not the clean global `performance upgrades unlock` gate
+
+## 2026-04-13 - New `8-byte` sliding table candidate at `0xC20..0xD57`
+
+With prior false leads excluded, the next strongest remaining candidate is a compact
+sliding table in `0xC20..0xD57`.
+
+### Shape
+
+- practical aligned list in clean saves uses `8-byte` records:
+  - `u16 id`
+  - `u16 kind` (always `4` in the aligned list)
+  - `u16 x`
+  - `u16 y`
+- clean baseline (`KSWD(Base)`) aligned list:
+  - starts at `0xC50`
+  - length `0xA8` (`21` records)
+  - marker tail at `0xD00..0xD17`
+- later saves prepend extra records in front of the aligned list:
+  - `Before_beating_Webster`: prelude `0xC20..0xC8F`, list `0xC90..0xD37`, markers `0xD40..0xD57`
+  - `After_beating_Webster`: prelude `0xC20..0xC9F`, list `0xCA0..0xD47`, markers `0xD50..0xD67`
+  - `fixture-i(base_heat_level5)`: list `0xC60..0xD07`, markers `0xD10..0xD27`
+
+### Baseline aligned list (`KSWD(Base)`)
+
+Aligned records in order:
+
+- `20,4,0,0`
+- `8,4,0,0`
+- `19,4,0,0`
+- `18,4,0,0`
+- `4,4,0,0`
+- `5,4,0,0`
+- `15,4,4,3`
+- `6,4,0,0`
+- `1,4,0,0`
+- `9,4,7,8`
+- `2,4,0,0`
+- `3,4,0,0`
+- `16,4,0,0`
+- `21,4,0,0`
+- `13,4,5,7`
+- `11,4,5,8`
+- `14,4,5,6`
+- `12,4,5,7`
+- `10,4,7,8`
+- `7,4,0,0`
+
+### Clean ladder progression
+
+- `Before_beating_Webster` aligned list differs from baseline by several IDs:
+  - `8 -> (7,7)`
+  - `5 -> (7,10)`
+  - `6 -> (7,11)`
+  - `9 -> (7,8)` unchanged from Earl-era baseline
+  - `7 -> (7,10)`
+- `After_beating_Webster` keeps the same late list, but also adds a prelude and shifted markers
+- `fixture-i(base_heat_level5)` changes the aligned list more broadly:
+  - `8 -> (7,5)`
+  - `4 -> (7,8)`
+  - `5 -> (7,8)`
+  - `6 -> (7,7)`
+  - `1 -> (7,11)`
+  - `9 -> (7,5)`
+  - `2 -> (7,8)`
+  - `3 -> (7,8)`
+  - `13 -> (5,4)`
+  - `11 -> (5,5)`
+  - `14 -> (5,4)`
+  - `12 -> (5,5)`
+  - `10 -> (7,5)`
+  - `7 -> (7,7)`
+
+### New proof-test pack
+
+Prepared from clean `KSWD(Base)`:
+
+- `local test pack: kswd_perf8_table_test`
+  - `KSWD_perf8_00_baseline`
+  - `KSWD_perf8_01_before_web_list_only`
+  - `KSWD_perf8_02_before_web_prelude_only`
+  - `KSWD_perf8_03_before_web_combined`
+  - `KSWD_perf8_04_after_web_combined`
+  - `KSWD_perf8_05_fixture-i_combined`
+
+Patch strategy:
+
+- `list_only` copies only the aligned `21 x 8-byte` list into the baseline list slot
+- `prelude_only` copies only the source prelude into `0xC20..`
+- `combined` copies:
+  - prelude
+  - aligned list
+  - trailing marker records
+- all story/cache/garage/car/parts-block/keyed-summary/summary-registry data remain untouched
+- all variants validated `MD5/CRC1/CRC2 OK`
+
+## 2026-04-13 - Career garage crash root cause: partially dirty pursuit slots, not `0x5577`
+
+In-game reproduction on `fixture-g` narrowed the remaining crash to `Career`-linked Blacklist cars:
+
+- after fixing injected Blacklist records from `0x02` to `0x42`, `My Cars` variants loaded fine
+- the same cars still crashed in `Career` during `Car Select` / `Free Roam`
+- copying donor `fixture-e` table `0x5577` into `fixture-g` did **not** change the crash behavior
+
+The decisive diff came from raw pursuit-slot inspection at `0xE2ED`:
+
+- some reusable tail slots already contained structurally dirty garage records before injection
+- example on `fixture-g.bak_20260413_204918`:
+  - slot `2`: first byte stayed `0xFF` instead of slot id `0x02`
+  - slot `2`: heat float stayed `0.27070346` (`A5 99 8A 3E`) instead of baseline `1.0`
+  - slot `4`: first byte stayed `0xFF`
+  - slot `4`: heat float stayed `0.0`
+- after Blacklist injection, new `Career` / `Pink Slip` owned records were linked to these partially dirty pursuit slots
+
+Why `My Cars` stayed safe:
+
+- `My Cars` cars do not use the linked pursuit/garage slot path during garage rotation
+- `Career` cars do, so the game consumed the malformed `0xE2ED` payload and crashed
+
+Root cause in editor logic:
+
+- `clear_pursuit_slot(...)` only zeroed selected fields (`heat`, `bounty`, `escaped`, `busted`)
+- it did **not** fully canonicalize an already-detected dirty slot
+- if a slot passed `_is_garage_slot(...)` but still carried placeholder-style garbage (`raw[0] = 0xFF`, bad heat float), the injector reused it as-is
+
+Fix:
+
+- `clear_pursuit_slot(...)` now rewrites the entire `0x38` pursuit record using `_build_zero_pursuit_slot_payload(...)`
+- this guarantees:
+  - byte `0` = actual `career_slot`
+  - valid garage signatures
+  - baseline heat `1.0`
+  - zero bounty / escape / bust values
+
+Validation outcome:
+
+- after normalizing the linked pursuit slots in `fixture-g`, `Career garage` scrolling across the full range stopped crashing
+- `Free Roam` load also stopped crashing on the same save
+- practical conclusion: the remaining crash was caused by malformed pursuit-slot state, not by unresolved visual table `0x5577`

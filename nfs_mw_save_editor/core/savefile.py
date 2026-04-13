@@ -977,10 +977,7 @@ class SaveFile:
     def clear_pursuit_slot(self, career_slot: int) -> None:
         wanted = int(career_slot)
         abs_off = self._ensure_pursuit_slot_initialized(wanted)
-        self._write_pursuit_heat_fields(abs_off, self.GARAGE_HEAT_BASELINE)
-        self._write_u32(abs_off + self.GARAGE_BOUNTY_OFFSET, 0)
-        self._write_u16(abs_off + self.GARAGE_ESCAPED_OFFSET, 0)
-        self._write_u16(abs_off + self.GARAGE_BUSTED_OFFSET, 0)
+        self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE] = self._build_zero_pursuit_slot_payload(wanted)
 
     def plan_owned_car_transfer(
         self,
@@ -1385,6 +1382,27 @@ class SaveFile:
                 return status, nxt, saw_primary
         return None, None, saw_primary
 
+    @classmethod
+    def _snapshot_target_location_bits(
+        cls,
+        snapshot: SnapshotLibraryEntry,
+        target_mode: str,
+    ) -> int:
+        target = str(target_mode)
+        if target == "my_cars":
+            return cls.MY_CARS_FLAG
+        if target != "career":
+            raise ValueError(f"Unsupported injector target: {target}")
+
+        template = snapshot.primary_owned_record_template
+        source_flags = int(template.location_bits)
+        source_kind = " ".join(
+            str(template.source_kind or snapshot.source_kind or "").strip().lower().split()
+        )
+        if source_flags == (cls.CAREER_FLAG | cls.PINK_SLIP_FLAG) or source_kind == "pink slip":
+            return cls.CAREER_FLAG | cls.PINK_SLIP_FLAG
+        return cls.CAREER_FLAG
+
     def plan_snapshot_injection(
         self,
         snapshot: SnapshotLibraryEntry,
@@ -1411,7 +1429,7 @@ class SaveFile:
         if target not in ("my_cars", "career"):
             refusal = f"Unsupported injector target: {target}"
         else:
-            target_location_bits = self.MY_CARS_FLAG if target == "my_cars" else self.CAREER_FLAG
+            target_location_bits = self._snapshot_target_location_bits(snapshot, target)
             if snapshot.requires_unresolved_global_visual_state:
                 warnings.append("Global visual table 0x5577 is not injected in v1.")
             if snapshot.has_visual_sidecar:

@@ -60,3 +60,9 @@ skills-lock.json
 # Local developer-only files
 dev_assets/
 artifacts/
+
+
+
+# Local test artifacts
+/tests/
+
