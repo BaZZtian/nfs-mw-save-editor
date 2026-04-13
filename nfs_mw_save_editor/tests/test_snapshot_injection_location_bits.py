@@ -3,8 +3,8 @@ import sys
 import unittest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "nfs_mw_save_editor"))
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PACKAGE_ROOT))
 
 from core.models import OwnedCarTemplate, SnapshotLibraryEntry
 from core.savefile import SaveFile

@@ -515,7 +515,8 @@ class SaveFile:
         else:
             payload = bytearray(self.GARAGE_SLOT_SIZE)
         payload[0] = int(career_slot) & 0xFF
-        payload[1:4] = self.GARAGE_SIGNATURE_A
+        if not pursuits:
+            payload[1:4] = self.GARAGE_SIGNATURE_A
         payload[8:12] = self.GARAGE_SIGNATURE_B
         self._write_pursuit_heat_fields_into(payload, self.GARAGE_HEAT_BASELINE)
         payload[self.GARAGE_BOUNTY_OFFSET:self.GARAGE_BOUNTY_OFFSET + 4] = b"\x00" * 4
@@ -849,16 +850,21 @@ class SaveFile:
             raw = bytes(self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE])
             if not self._is_blank_pursuit_tail_slot(raw):
                 break
-            reusable = True
+            linked = linked_counts.get(next_slot, 0)
+            reusable = linked == 0
             blocked_reason = None
-            if next_slot in reserved_career_slots:
+            if next_slot in reserved_career_slots and reusable:
                 reusable = False
                 blocked_reason = "Reserved by staged injector"
+            elif linked > 1:
+                blocked_reason = f"Ambiguous: {linked} cars target this career slot"
+            elif linked == 1:
+                blocked_reason = "Already targeted by a staged Career car"
             statuses.append(
                 CareerSlotStatus(
                     career_slot=next_slot,
                     abs_off=abs_off,
-                    linked_car_count=0,
+                    linked_car_count=linked,
                     reusable=reusable,
                     blocked_reason=blocked_reason,
                     bounty=0,
@@ -1084,6 +1090,7 @@ class SaveFile:
         allow_restore_to_nonvalidated_slot: bool = False,
     ) -> OwnedCarTransferPlan:
         current_active_car_number = self.get_active_career_car_number()
+        pursuit_slots = {record.career_slot for record in self.get_pursuit_records()}
         plan = self.plan_owned_car_transfer(
             abs_off,
             target_mode,
@@ -1094,6 +1101,19 @@ class SaveFile:
             raise ValueError(plan.refusal_reason)
         if plan.clears_pursuit_slot and plan.cleared_source_career_slot is not None:
             self.clear_pursuit_slot(plan.cleared_source_career_slot)
+        target_is_career_like = (
+            int(plan.target_location_bits) in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG)
+            and plan.target_career_slot is not None
+        )
+        source_had_pursuit_link = (
+            int(plan.source_location_bits) in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG)
+            and int(plan.source_career_slot) != self.EMPTY_CAREER_SLOT
+            and int(plan.source_career_slot) in pursuit_slots
+        )
+        if target_is_career_like and (
+            not source_had_pursuit_link or int(plan.target_career_slot) != int(plan.source_career_slot)
+        ):
+            self.clear_pursuit_slot(int(plan.target_career_slot))
         self.set_owned_car_location(plan.source_abs_off, plan.target_location_bits, plan.target_misc_bits)
         if plan.target_career_slot is None:
             self.clear_owned_car_career_slot(plan.source_abs_off)
@@ -1103,10 +1123,6 @@ class SaveFile:
             int(plan.source_location_bits) in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG)
             and int(plan.source_career_slot) != self.EMPTY_CAREER_SLOT
             and int(current_active_car_number) == int(self._read_u32(plan.source_abs_off))
-        )
-        target_is_career_like = (
-            int(plan.target_location_bits) in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG)
-            and plan.target_career_slot is not None
         )
         if source_was_active_career and not target_is_career_like:
             fallback = self.choose_fallback_active_career_record()

@@ -1820,3 +1820,51 @@ Validation outcome:
 - after normalizing the linked pursuit slots in `fixture-g`, `Career garage` scrolling across the full range stopped crashing
 - `Free Roam` load also stopped crashing on the same save
 - practical conclusion: the remaining crash was caused by malformed pursuit-slot state, not by unresolved visual table `0x5577`
+
+## 2026-04-14 - `My Cars -> Career` tail-slot crash root cause on `fixture-h`
+
+New reproduction on `fixture-h` showed a second, different `Career garage` crash after moving all
+`My Cars` vehicles into `Career`.
+
+Observed broken state on the latest `fixture-h`:
+
+- `24` career cars existed, but only `16` detected pursuit records
+- `career_slot 16` was assigned to multiple cars at once
+- all overflow cars beyond the first `16` had no valid linked `0xE2ED` pursuit record
+
+This was **not** the earlier `0x5577` visual-state issue and not the same dirty-slot reuse bug from
+`fixture-g`.
+
+Root cause turned out to be a two-part editor logic bug:
+
+- `get_career_slot_statuses(...)` exposed blank pursuit-tail placeholders (`FF CD ... 00`) as
+  reusable future career slots
+- but that tail-slot path did **not** consult staged `linked_counts`, so once one staged transfer
+  claimed slot `16`, later staged transfers still saw slot `16` as reusable and stacked onto it
+- independently, `transfer_owned_car(...)` did not initialize a target pursuit slot when moving a
+  car from `My Cars` into `Career`
+- so even unique tail slots `16+` would have remained blank placeholders instead of valid
+  garage/pursuit records unless something else initialized them first
+
+Fix:
+
+- tail-slot statuses now carry the staged `linked_car_count`
+- a blank tail slot is no longer reusable once a staged career car already targets it
+- `transfer_owned_car(...)` now calls `clear_pursuit_slot(target_slot)` whenever the target
+  career slot does not already have a real linked pursuit record
+- `_build_zero_pursuit_slot_payload(...)` now preserves the signature variant copied from the
+  chosen template pursuit slot instead of always forcing `CD 03 00`
+
+Validation:
+
+- on `fixture-h.bak_20260414_001044`, sequential `My Cars -> Career` planning now allocates:
+  - `0`
+  - `8`
+  - `11..23`
+- applying the transfers in memory yields:
+  - `24` career cars
+  - `24` pursuit records
+  - no duplicate `career_slot`
+  - no career cars missing a pursuit link
+- latest `fixture-h` was repaired in place by redistributing the duplicated slot `16` cars to
+  `17..23` and initializing the missing pursuit slots
