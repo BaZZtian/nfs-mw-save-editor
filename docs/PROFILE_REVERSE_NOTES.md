@@ -1868,3 +1868,183 @@ Validation:
   - no career cars missing a pursuit link
 - latest `fixture-h` was repaired in place by redistributing the duplicated slot `16` cars to
   `17..23` and initializing the missing pursuit slots
+
+Follow-up on the repaired latest `fixture-h`:
+
+- some occupied slots still came from older pre-fix transfers and retained placeholder byte
+  `raw[0] = 0xFF` even though they were now linked to real career cars
+- affected occupied slots were:
+  - `0`
+  - `8`
+  - `11..15`
+- this matched the earlier dirty-slot pattern from `fixture-g`, just on already-occupied legacy
+  records instead of newly allocated tail slots
+- canonicalizing those occupied pursuit records in place removed the remaining structural
+  mismatch (`raw[0]` now equals `career_slot` on every occupied slot)
+
+## 2026-04-14 - Native dealership / sale lifecycle for pursuit, owned, and parts records
+
+Controlled native save chains were compared on both `fixture-g` and `fixture-h`:
+
+- `copy -> baseline` (many native sales)
+- `baseline -> bought_*` (native dealership purchase of one stock car)
+- `bought_* -> sold_*` (native sale of the freshly bought active car)
+- extra non-active sale:
+  - `fixture-g`: sell `VW Golf GTI`
+  - `fixture-h`: sell `Ford Mustang GT`
+
+### Pursuit slot (`0xE2ED`) behavior
+
+Observed native rule on both profiles:
+
+- buying a stock car into an empty reusable career slot changes only byte `+0x00` of the target
+  pursuit record:
+  - before: `FF CD 03 00 ... 00 00 80 3F ...`
+  - after:  `<slot> CD 03 00 ... 00 00 80 3F ...`
+- selling that car changes only byte `+0x00` back to `FF`
+- the rest of the `0x38` pursuit payload is preserved verbatim
+
+Examples:
+
+- `fixture-g(baseline) -> fixture-g(bought_cobbaltss)`:
+  - slot `2`: `FF -> 02`
+- `fixture-g(bought_cobbaltss) -> fixture-g(sold_thebought_cobbaltss)`:
+  - slot `2`: `02 -> FF`
+- `fixture-h(baseline) -> fixture-h(bought_lexusis300_pointeronit)`:
+  - slot `0`: `FF -> 00`
+- `fixture-h(bought_lexusis300_pointeronit) -> fixture-h(sold_lexusis300_pointeron_auditt)`:
+  - slot `0`: `00 -> FF`
+
+Important nuance:
+
+- native sale does **not** reinitialize the pursuit record
+- it only flips the occupancy sentinel byte
+- therefore any non-default garbage already present in the rest of the slot would survive native
+  sell / rebuy cycles
+
+### Owned-car record (`0x6219`) behavior
+
+Observed native rule on sale:
+
+- only `car_number` (`+0x00..+0x03`) changes to `FF FF FF FF`
+- signature, flags, `parts_slot`, and `career_slot` stay as-is
+
+Examples:
+
+- sold `VW Golf GTI` in `fixture-g`:
+  - before: `73 00 00 00 ... 42 00 0F 00 41 0F CD CD`
+  - after:  `FF FF FF FF ... 42 00 0F 00 41 0F CD CD`
+- sold bought `Lexus IS300` in `fixture-h`:
+  - before: `51 00 00 00 ... 02 00 0F 00 1F 00 CD CD`
+  - after:  `FF FF FF FF ... 02 00 0F 00 1F 00 CD CD`
+
+Observed native rule on purchase:
+
+- the target owned slot is reused even if it is not a canonical zeroed empty record
+- the game writes the new car data into that slot and sets a real `career_slot`
+
+### Parts block behavior
+
+Observed native rule on sale:
+
+- only the marker byte at `+0x194` flips from `<parts_slot>` to `FF`
+- the rest of the `0x198` payload is preserved
+
+Examples:
+
+- `fixture-g` sold `VW Golf GTI`:
+  - marker `41 CD CD CD -> FF CD CD CD`
+  - only `1` byte changed in the full block
+- `fixture-h` sold bought `Lexus IS300`:
+  - marker `1F CD CD CD -> FF CD CD CD`
+  - only `1` byte changed in the full block
+
+Observed native rule on purchase:
+
+- the game fully writes the purchased stock build into the target parts block
+- marker becomes `<parts_slot> CD CD CD`
+
+### Active-car pointer (`0x4034`) behavior during native sale / purchase
+
+Observed native behavior:
+
+- buying a car makes the newly bought car active
+- selling an active car retargets `0x4034` to another surviving career car
+- selling a non-active car leaves `0x4034` unchanged
+
+Examples:
+
+- `fixture-g(baseline) -> bought_cobbaltss`: active `101 -> 81`
+- `fixture-g(sold_golfgti) -> sold_thebought_cobbaltss)`: active `81 -> 114`
+- `fixture-h(baseline) -> bought_lexusis300_pointeronit`: active `85 -> 81`
+- `fixture-h(bought_lexusis300_pointeronit) -> sold_lexusis300_pointeron_auditt`: active `81 -> 85`
+
+### Practical implication for editor parity
+
+Native MW appears to treat these structures as sentinel-based, not fully scrubbed:
+
+- pursuit occupancy sentinel: `raw[0]`
+- owned-slot occupancy sentinel: `car_number`
+- parts-block occupancy sentinel: marker byte at `+0x194`
+
+This explains why the game can natively reuse records that still look "dirty" under a strict
+zeroed-empty model, and why editor-side canonicalization is safer than assuming native save data is
+fully scrubbed.
+
+## 2026-04-14 - `native-empty` vs `canonical-empty` vs `canonical-occupied`
+
+The buy/sell diffs above are enough to separate three different notions that the editor should not
+mix together.
+
+### `native-empty`
+
+What the game appears to accept as empty / reusable in a real save, even if payload bytes still
+look dirty:
+
+- owned-car record (`0x6219`):
+  - `car_number == 0xFFFFFFFF`
+  - signature / flags / `parts_slot` / `career_slot` may still contain old values
+- parts block:
+  - marker at `+0x194..+0x197` is `FF CD CD CD`
+  - the rest of the `0x198` block may still contain the old build payload
+- initialized pursuit slot inside the active garage block:
+  - slot still matches a valid pursuit-record signature
+  - `raw[0] == 0xFF`
+  - the rest of the `0x38` payload may still contain old nonzero bytes
+
+### `canonical-empty`
+
+What the editor prefers to maintain as a safe normalized empty state:
+
+- owned-car slot:
+  - fully reusable empty owned record
+- parts block:
+  - normalized blank block with `FF CD CD CD` marker
+- pursuit slot:
+  - normalized valid pursuit payload with:
+    - `raw[0] = 0xFF`
+    - valid signature bytes
+    - baseline heat `1.0`
+    - zero bounty / escaped / busted
+
+### `canonical-occupied`
+
+What the editor should guarantee whenever it creates or rebinds a live career car:
+
+- owned-car record contains real car payload
+- parts block carries the real marker `<parts_slot> CD CD CD`
+- pursuit slot is canonicalized with:
+  - `raw[0] == career_slot`
+  - valid pursuit signature
+  - baseline heat `1.0` unless explicitly overridden later
+  - zero bounty / escaped / busted unless explicitly restored from a real source
+
+### Practical editor rule
+
+- allocator parity with native MW may accept `native-empty`
+- editor write paths should still normalize to `canonical-occupied`
+- repair / diagnostics should flag occupied pursuit slots where:
+  - `raw[0] != career_slot`
+
+This distinction is important because native MW tolerates dirty reusable records, while the editor
+needs stronger invariants to avoid writing crash-prone occupied slots.

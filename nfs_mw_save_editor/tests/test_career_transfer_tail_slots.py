@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import unittest
+import struct
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +100,35 @@ class TransferOwnedCarPursuitInitTests(unittest.TestCase):
         self.assertIn(("clear_pursuit_slot", 16, None), calls)
         self.assertIn(("set_owned_car_location", 0x6219, SaveFile.CAREER_FLAG), calls)
         self.assertIn(("set_owned_car_career_slot", 0x6219, 16), calls)
+
+
+class PursuitSlotCanonicalizationTests(unittest.TestCase):
+    def test_clear_pursuit_slot_restores_slot_byte_and_baseline_heat(self) -> None:
+        sf = object.__new__(SaveFile)
+        sf.data = bytearray(SaveFile.GARAGE_BASE_OFFSET + SaveFile.GARAGE_SLOT_SIZE * 2)
+
+        for slot in range(2):
+            abs_off = SaveFile.GARAGE_BASE_OFFSET + slot * SaveFile.GARAGE_SLOT_SIZE
+            payload = bytearray(SaveFile.GARAGE_SLOT_SIZE)
+            payload[0] = slot & 0xFF
+            payload[1:4] = SaveFile.GARAGE_SIGNATURE_A
+            payload[8:12] = SaveFile.GARAGE_SIGNATURE_B
+            SaveFile._write_pursuit_heat_fields_into(payload, SaveFile.GARAGE_HEAT_BASELINE)
+            sf.data[abs_off:abs_off + SaveFile.GARAGE_SLOT_SIZE] = payload
+
+        dirty_off = SaveFile.GARAGE_BASE_OFFSET + SaveFile.GARAGE_SLOT_SIZE
+        sf.data[dirty_off] = 0xFF
+        struct.pack_into("<f", sf.data, dirty_off + SaveFile.GARAGE_HEAT_FLOAT_OFFSET, 3.5)
+
+        sf.clear_pursuit_slot(1)
+
+        repaired = bytes(sf.data[dirty_off:dirty_off + SaveFile.GARAGE_SLOT_SIZE])
+        repaired_heat = struct.unpack_from("<f", repaired, SaveFile.GARAGE_HEAT_FLOAT_OFFSET)[0]
+
+        self.assertEqual(repaired[0], 1)
+        self.assertEqual(repaired[1:4], SaveFile.GARAGE_SIGNATURE_A)
+        self.assertEqual(repaired[8:12], SaveFile.GARAGE_SIGNATURE_B)
+        self.assertAlmostEqual(repaired_heat, SaveFile.GARAGE_HEAT_BASELINE)
 
 
 if __name__ == "__main__":
