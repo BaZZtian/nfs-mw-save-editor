@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class GarageCardVm:
     slot: ResolvedTransferCarEntry
+    projected_slot: ResolvedTransferCarEntry
     changed: bool
     is_active: bool
     current_bounty: int
@@ -361,7 +362,7 @@ class GarageMixin:
         )
 
     def _garage_card_entries(self) -> List[ResolvedTransferCarEntry]:
-        entries = list(self._current_transfer_entries())
+        entries = list(self.garage_transfer_entries)
         term = self.garage_search.text().strip().lower() if hasattr(self, "garage_search") else ""
         source = self.garage_filter
         filtered: List[ResolvedTransferCarEntry] = []
@@ -553,6 +554,9 @@ class GarageMixin:
         if not self.savefile or self.garage_detection_error:
             return []
         target_entries = list(entries) if entries is not None else self._garage_card_entries()
+        projected_entries_by_abs_off = {
+            int(entry.abs_off): entry for entry in self._current_transfer_entries()
+        }
         current_locations = self._current_owned_locations()
         current_career_slots = self._current_owned_career_slots()
         cleared_slots = self._current_cleared_pursuit_slots()
@@ -560,24 +564,23 @@ class GarageMixin:
         staged_career_vehicle_count = self._staged_career_vehicle_count()
         current_bounties = self._current_slot_bounties()
         current_heats = self._current_slot_heats()
-        projected_active_car_number = self.savefile.get_projected_active_career_car_number(
-            location_overrides=current_locations,
-            career_slot_overrides=current_career_slots,
-        )
+        active_car_number = self.savefile.get_active_career_car_number()
 
         view_models: List[GarageCardVm] = []
         for slot in target_entries:
+            projected_slot = projected_entries_by_abs_off.get(int(slot.abs_off), slot)
             career_slot = slot.career_slot
             view_models.append(
                 GarageCardVm(
                     slot=slot,
+                    projected_slot=projected_slot,
                     changed=self._garage_transfer_changed(slot.abs_off) or (
                         career_slot != SaveFile.EMPTY_CAREER_SLOT and self._garage_card_changed(career_slot)
                     ),
                     is_active=(
-                        projected_active_car_number is not None
+                        active_car_number is not None
                         and not slot.is_my_cars
-                        and int(slot.car_number) == int(projected_active_car_number)
+                        and int(slot.car_number) == int(active_car_number)
                     ),
                     current_bounty=current_bounties.get(career_slot, int(slot.bounty or 0)),
                     have_bounty=self.have_slot_bounties.get(career_slot, int(slot.bounty or 0)),
@@ -611,7 +614,7 @@ class GarageMixin:
 
     def _garage_visible_vm_map(self) -> Dict[int, GarageCardVm]:
         entry_by_abs_off = {
-            int(entry.abs_off): entry for entry in self._current_transfer_entries()
+            int(entry.abs_off): entry for entry in self.garage_transfer_entries
         }
         frozen_entries = [
             entry_by_abs_off[key]
@@ -619,6 +622,20 @@ class GarageMixin:
             if key in entry_by_abs_off
         ]
         return {vm.slot.abs_off: vm for vm in self._garage_card_view_models(frozen_entries)}
+
+    def _garage_pending_transfer_summary(
+        self,
+        slot: ResolvedTransferCarEntry,
+        projected_slot: ResolvedTransferCarEntry,
+    ) -> Optional[Tuple[str, str]]:
+        if not self._garage_transfer_changed(slot.abs_off):
+            return None
+        if projected_slot.is_my_cars or projected_slot.career_slot == SaveFile.EMPTY_CAREER_SLOT:
+            return "Pending -> My Cars", "Will move to My Cars on Apply."
+        slot_text = f"Career Slot {projected_slot.career_slot + 1}"
+        if projected_slot.is_pink_slip:
+            return "Pending -> Pink Slip", f"Will move to Pink Slip {slot_text} on Apply."
+        return "Pending -> Career", f"Will move to {slot_text} on Apply."
 
     def _apply_garage_source_badge(self, label: QLabel, source_kind: str) -> None:
         if source_kind == "Career":
@@ -661,7 +678,11 @@ class GarageMixin:
 
     def _garage_utility_summary(self, vm: GarageCardVm) -> Tuple[str, str]:
         slot = vm.slot
-        visible_plan = vm.plan_career if slot.is_my_cars else vm.plan_my_cars
+        projected_slot = vm.projected_slot
+        pending_transfer = self._garage_pending_transfer_summary(slot, projected_slot)
+        if pending_transfer is not None:
+            return pending_transfer
+        visible_plan = vm.plan_career if projected_slot.is_my_cars else vm.plan_my_cars
         if visible_plan.refusal_reason:
             return "Blocked", str(visible_plan.refusal_reason)
         if visible_plan.warnings:
@@ -670,15 +691,16 @@ class GarageMixin:
             detail = f"Moving to My Cars frees Career Slot {vm.plan_my_cars.cleared_source_career_slot + 1}."
             return f"Frees Slot {vm.plan_my_cars.cleared_source_career_slot + 1}", detail
         if (
-            not slot.is_my_cars
-            and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
-            and not slot.has_pursuit_link
+            not projected_slot.is_my_cars
+            and projected_slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+            and not projected_slot.has_pursuit_link
         ):
             return "No pursuit link", "No pursuit record is linked to this car."
         return "Ready", "Action state is valid."
 
     def _apply_garage_card_vm(self, handle: GarageCardHandle, vm: GarageCardVm) -> None:
         slot = vm.slot
+        projected_slot = vm.projected_slot
         slot_text = (
             f"Career Slot {slot.career_slot + 1}"
             if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
@@ -700,13 +722,13 @@ class GarageMixin:
         handle.misc_badge.setText(f"Misc 0x{slot.misc_bits:02X}")
         handle.card.setToolTip(self._garage_card_tooltip(slot))
 
-        handle.move_my_cars_btn.setVisible(not slot.is_my_cars)
+        handle.move_my_cars_btn.setVisible(not projected_slot.is_my_cars)
         handle.move_my_cars_btn.setEnabled(vm.plan_my_cars.refusal_reason is None)
-        handle.move_my_cars_btn.setToolTip(self._garage_action_tooltip(slot, "my_cars", vm.plan_my_cars))
+        handle.move_my_cars_btn.setToolTip(self._garage_action_tooltip(projected_slot, "my_cars", vm.plan_my_cars))
 
-        handle.move_career_btn.setVisible(slot.is_my_cars)
+        handle.move_career_btn.setVisible(projected_slot.is_my_cars)
         handle.move_career_btn.setEnabled(vm.plan_career.refusal_reason is None)
-        handle.move_career_btn.setToolTip(self._garage_action_tooltip(slot, "career", vm.plan_career))
+        handle.move_career_btn.setToolTip(self._garage_action_tooltip(projected_slot, "career", vm.plan_career))
 
         utility_text, utility_tooltip = self._garage_utility_summary(vm)
         handle.utility_label.setText(utility_text)
@@ -714,9 +736,9 @@ class GarageMixin:
 
         if handle.bounty_edit is not None and handle.bounty_current_label is not None:
             edit_enabled = (
-                not slot.is_my_cars
-                and slot.has_pursuit_link
-                and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+                not projected_slot.is_my_cars
+                and projected_slot.has_pursuit_link
+                and projected_slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
             )
             handle.bounty_edit.setEnabled(edit_enabled)
             if edit_enabled:
@@ -725,9 +747,9 @@ class GarageMixin:
 
         if handle.heat_btns is not None:
             btn_enabled = (
-                not slot.is_my_cars
-                and slot.has_pursuit_link
-                and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+                not projected_slot.is_my_cars
+                and projected_slot.has_pursuit_link
+                and projected_slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
             )
             lvl = vm.current_heat_level or 1
             for i, btn in enumerate(handle.heat_btns):
