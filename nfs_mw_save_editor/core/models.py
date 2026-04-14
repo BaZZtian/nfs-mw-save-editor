@@ -267,6 +267,7 @@ class OwnedCarTransferPlan:
     target_owned_abs_off: int
     requires_relocation: bool
     refusal_reason: Optional[str]
+    warnings: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

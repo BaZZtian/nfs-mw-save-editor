@@ -7,7 +7,7 @@ import struct
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from core.models import CareerSlotStatus, OwnedCarRecord, OwnedCarTransferPlan, PursuitRecord
+from core.models import CareerSlotStatus, GarageAllocatorSnapshot, OwnedCarRecord, OwnedCarTransferPlan, PursuitRecord
 from core.savefile import SaveFile
 
 
@@ -100,6 +100,57 @@ class TransferOwnedCarPursuitInitTests(unittest.TestCase):
         self.assertIn(("clear_pursuit_slot", 16, None), calls)
         self.assertIn(("set_owned_car_location", 0x6219, SaveFile.CAREER_FLAG), calls)
         self.assertIn(("set_owned_car_career_slot", 0x6219, 16), calls)
+
+    def test_my_cars_to_career_warns_when_filling_last_confirmed_career_slot(self) -> None:
+        sf = object.__new__(SaveFile)
+        source_abs_off = 0x7000
+        source = OwnedCarRecord(
+            car_number=300,
+            signature=b"\xAA" * 8,
+            location_bits=SaveFile.MY_CARS_FLAG,
+            misc_bits=0,
+            parts_slot=55,
+            career_slot=SaveFile.EMPTY_CAREER_SLOT,
+            abs_off=source_abs_off,
+        )
+
+        sf._owned_record_by_abs_off = lambda abs_off, **kwargs: source
+        sf.get_pursuit_records = lambda: []
+        sf.get_owned_car_records = lambda: [
+            OwnedCarRecord(
+                car_number=100 + slot,
+                signature=bytes([slot & 0xFF]) * 8,
+                location_bits=SaveFile.CAREER_FLAG,
+                misc_bits=0,
+                parts_slot=31 + slot,
+                career_slot=slot,
+                abs_off=0x6219 + slot * SaveFile.CAREER_VEHICLE_SIZE,
+            )
+            for slot in range(SaveFile.CONFIRMED_MAX_CAREER_LIKE_CARS - 1)
+        ] + [source]
+        sf.get_garage_allocator_snapshot = lambda **kwargs: GarageAllocatorSnapshot(
+            owned_slots=(),
+            career_slots=(
+                CareerSlotStatus(
+                    career_slot=24,
+                    abs_off=SaveFile.GARAGE_BASE_OFFSET + 24 * SaveFile.GARAGE_SLOT_SIZE,
+                    linked_car_count=0,
+                    reusable=True,
+                    blocked_reason=None,
+                    bounty=0,
+                    escaped=0,
+                    busted=0,
+                    is_zero=True,
+                ),
+            ),
+        )
+
+        plan = sf.plan_owned_car_transfer(source_abs_off, "career")
+
+        self.assertIsNone(plan.refusal_reason)
+        self.assertEqual(plan.target_career_slot, 24)
+        self.assertTrue(plan.warnings)
+        self.assertIn("25/25", plan.warnings[0])
 
 
 class PursuitSlotCanonicalizationTests(unittest.TestCase):

@@ -401,6 +401,8 @@ class PresetsMixin:
 
     def _snapshot_library_utility_summary(self, vm: SnapshotLibraryCardVm) -> tuple[str, str]:
         tooltip_parts: List[str] = []
+        blocked_parts: List[str] = []
+        warning_parts: List[str] = []
         if not self.savefile:
             return "Open a save to stage", "Open a save to stage an injection."
         if vm.staged_mode is not None:
@@ -419,21 +421,33 @@ class PresetsMixin:
             if vm.staged_plan is not None and vm.staged_plan.refusal_reason:
                 tooltip_parts.append(f"Staged result blocked: {vm.staged_plan.refusal_reason}")
                 return "Staged blocked", "\n".join(tooltip_parts)
+            if vm.staged_plan is not None and vm.staged_plan.warnings:
+                warning_parts.extend(f"Warning: {warning}" for warning in vm.staged_plan.warnings)
+                tooltip_parts.extend(warning_parts)
+                return "Staged warning", "\n".join(tooltip_parts)
             return (
                 "Staged to My Cars" if vm.staged_mode == "my_cars" else "Staged to Career",
                 "\n".join(tooltip_parts) or "Injection is staged.",
             )
         if vm.plan_my is not None and vm.plan_my.refusal_reason:
-            tooltip_parts.append(f"My Cars blocked: {vm.plan_my.refusal_reason}")
+            blocked_parts.append(f"My Cars blocked: {vm.plan_my.refusal_reason}")
         if vm.plan_career is not None and vm.plan_career.refusal_reason:
-            tooltip_parts.append(f"Career blocked: {vm.plan_career.refusal_reason}")
-        if tooltip_parts:
-            if len(tooltip_parts) == 2:
+            blocked_parts.append(f"Career blocked: {vm.plan_career.refusal_reason}")
+        if vm.plan_my is not None and vm.plan_my.warnings:
+            warning_parts.extend(f"My Cars warning: {warning}" for warning in vm.plan_my.warnings)
+        if vm.plan_career is not None and vm.plan_career.warnings:
+            warning_parts.extend(f"Career warning: {warning}" for warning in vm.plan_career.warnings)
+        if blocked_parts:
+            tooltip_parts.extend(blocked_parts)
+            tooltip_parts.extend(warning_parts)
+            if len(blocked_parts) == 2:
                 return "All targets blocked", "\n".join(tooltip_parts)
             return (
-                "My Cars blocked" if tooltip_parts[0].startswith("My Cars") else "Career blocked",
+                "My Cars blocked" if blocked_parts[0].startswith("My Cars") else "Career blocked",
                 "\n".join(tooltip_parts),
             )
+        if warning_parts:
+            return "Ready with warning", "\n".join(warning_parts)
         return "Ready to stage", "Both injection targets are currently available."
 
     def _snapshot_library_card_tooltip(self, vm: SnapshotLibraryCardVm) -> str:

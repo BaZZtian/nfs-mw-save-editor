@@ -149,6 +149,12 @@ class GarageMixin:
         alloc_row.addStretch(1)
         layout.addWidget(self.garage_alloc_frame)
 
+        self.garage_warning_label = QLabel()
+        self.garage_warning_label.setObjectName("partsCardNote")
+        self.garage_warning_label.setWordWrap(True)
+        self.garage_warning_label.setVisible(False)
+        layout.addWidget(self.garage_warning_label)
+
         self.garage_cards = QWidget()
         self.garage_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.garage_cards_layout = QGridLayout(self.garage_cards)
@@ -642,18 +648,24 @@ class GarageMixin:
         if plan.refusal_reason:
             return str(plan.refusal_reason)
         if target_mode == "my_cars":
-            return (
+            base = (
                 "Move this car to My Cars and free its linked Career slot."
                 if slot.has_pursuit_link
                 else "Move this car to My Cars."
             )
-        return "Move this car into the next validated Career slot."
+        else:
+            base = "Move this car into the next validated Career slot."
+        if plan.warnings:
+            return base + "\nWarning: " + "\n".join(plan.warnings)
+        return base
 
     def _garage_utility_summary(self, vm: GarageCardVm) -> Tuple[str, str]:
         slot = vm.slot
         visible_plan = vm.plan_career if slot.is_my_cars else vm.plan_my_cars
         if visible_plan.refusal_reason:
             return "Blocked", str(visible_plan.refusal_reason)
+        if visible_plan.warnings:
+            return "Warning", "\n".join(visible_plan.warnings)
         if vm.plan_my_cars.clears_pursuit_slot and vm.plan_my_cars.cleared_source_career_slot is not None:
             detail = f"Moving to My Cars frees Career Slot {vm.plan_my_cars.cleared_source_career_slot + 1}."
             return f"Frees Slot {vm.plan_my_cars.cleared_source_career_slot + 1}", detail
@@ -971,11 +983,22 @@ class GarageMixin:
             self.garage_alloc_owned.setText("Owned empty: -")
             self.garage_alloc_career.setText("Career empty: -")
             self.garage_alloc_blocked.setText("Blocked: -")
+            if hasattr(self, "garage_warning_label"):
+                self.garage_warning_label.clear()
+                self.garage_warning_label.setVisible(False)
         else:
             self.garage_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
             self.garage_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
             blocked_total = len(snapshot.blocked_owned_slots) + len(snapshot.blocked_career_slots)
             self.garage_alloc_blocked.setText(f"Blocked: {blocked_total}")
+            if hasattr(self, "garage_warning_label"):
+                warning = SaveFile.career_pool_warning_text(self._staged_career_vehicle_count())
+                if warning:
+                    self.garage_warning_label.setText(warning)
+                    self.garage_warning_label.setVisible(True)
+                else:
+                    self.garage_warning_label.clear()
+                    self.garage_warning_label.setVisible(False)
         self._sync_garage_diagnostics_visibility()
         self._refresh_garage_diagnostics_text()
 

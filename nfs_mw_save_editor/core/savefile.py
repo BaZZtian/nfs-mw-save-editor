@@ -106,6 +106,7 @@ class SaveFile:
     CAREER_FLAG = 0x02
     MY_CARS_FLAG = 0x04
     PINK_SLIP_FLAG = 0x40
+    CONFIRMED_MAX_CAREER_LIKE_CARS = 25
     PARTS_BLOCK_BASE_OFFSET = 0x9CCD
     PARTS_BLOCK_SLOT_BASE = 31
     PARTS_BLOCK_SIZE = 0x198
@@ -635,6 +636,45 @@ class SaveFile:
             return "Pink Slip"
         return f"Unknown (0x{flags:02X})"
 
+    @classmethod
+    def is_career_like_location_bits(cls, location_bits: int) -> bool:
+        return int(location_bits) in (cls.CAREER_FLAG, cls.CAREER_FLAG | cls.PINK_SLIP_FLAG)
+
+    @classmethod
+    def career_pool_warning_text(cls, career_like_count: int, *, projected: bool = False) -> Optional[str]:
+        count = int(career_like_count)
+        limit = int(cls.CONFIRMED_MAX_CAREER_LIKE_CARS)
+        if count < limit:
+            return None
+        if projected:
+            return (
+                f"This will fill the Career garage to {count}/{limit}. "
+                "The editor allows this, but winning another Blacklist Pink Slip in-game may cause a crash."
+            )
+        return (
+            f"Career garage is full ({count}/{limit}). "
+            "The editor allows this, but winning another Blacklist Pink Slip in-game may cause a crash."
+        )
+
+    def count_career_like_owned_records(
+        self,
+        *,
+        location_overrides: Optional[Dict[int, int]] = None,
+        career_slot_overrides: Optional[Dict[int, int]] = None,
+    ) -> int:
+        current_location = location_overrides or {}
+        current_career_slot = career_slot_overrides or {}
+        count = 0
+        for record in self.get_owned_car_records():
+            loc = current_location.get(record.abs_off, record.location_bits)
+            slot = current_career_slot.get(record.abs_off, record.career_slot)
+            if slot == self.EMPTY_CAREER_SLOT:
+                continue
+            if not self.is_career_like_location_bits(loc):
+                continue
+            count += 1
+        return count
+
     def _owned_record_by_abs_off(
         self,
         abs_off: int,
@@ -1017,6 +1057,7 @@ class SaveFile:
         cleared_source_career_slot: Optional[int] = None
         clears_pursuit_slot = False
         refusal: Optional[str] = None
+        warnings: List[str] = []
 
         if target == "my_cars":
             if source.location_bits == self.MY_CARS_FLAG and source.career_slot == self.EMPTY_CAREER_SLOT:
@@ -1064,6 +1105,28 @@ class SaveFile:
         else:
             refusal = f"Unsupported transfer target: {target}"
 
+        source_is_career_like = (
+            self.is_career_like_location_bits(source.location_bits)
+            and int(source.career_slot) != self.EMPTY_CAREER_SLOT
+        )
+        target_is_career_like = (
+            target_location_bits is not None
+            and self.is_career_like_location_bits(int(target_location_bits))
+            and target_career_slot is not None
+        )
+        if refusal is None and target_is_career_like and not source_is_career_like:
+            projected_count = (
+                self.count_career_like_owned_records(
+                    location_overrides=location_overrides,
+                    career_slot_overrides=career_slot_overrides,
+                )
+                + len({int(slot) for slot in (reserved_career_slots or set())})
+                + 1
+            )
+            warning = self.career_pool_warning_text(projected_count, projected=True)
+            if warning is not None:
+                warnings.append(warning)
+
         return OwnedCarTransferPlan(
             source_abs_off=source.abs_off,
             source_display_name=display_name,
@@ -1079,6 +1142,7 @@ class SaveFile:
             target_owned_abs_off=target_owned_abs_off,
             requires_relocation=False,
             refusal_reason=refusal,
+            warnings=tuple(warnings),
         )
 
     def transfer_owned_car(
@@ -1512,6 +1576,18 @@ class SaveFile:
                     target_career_slot = sorted(reusable_career)[0]
                 else:
                     refusal = "No validated empty career slots available"
+                if refusal is None:
+                    projected_count = (
+                        self.count_career_like_owned_records(
+                            location_overrides=location_overrides,
+                            career_slot_overrides=career_slot_overrides,
+                        )
+                        + len({int(slot) for slot in (reserved_career_slots or set())})
+                        + 1
+                    )
+                    warning = self.career_pool_warning_text(projected_count, projected=True)
+                    if warning is not None:
+                        warnings.append(warning)
 
         return SnapshotInjectionPlan(
             snapshot_id=snapshot.snapshot_id,

@@ -627,7 +627,7 @@ class JunkmanMixin:
                 slot_text = f"owned 0x{plan.target_owned_abs_off:05X}, parts {plan.target_parts_slot}"
                 if plan.target_career_slot is not None:
                     slot_text += f", career {plan.target_career_slot + 1}"
-                warn_text = " [0x5577 ignored]" if plan.warnings else ""
+                warn_text = f" [warning: {'; '.join(plan.warnings)}]" if plan.warnings else ""
                 injection_changes.append(f"{entry.display_name}: inject to {target_mode} -> {slot_text}{warn_text}")
         money_want = self.want_money if self.want_money is not None else self.have_money
         alias_want = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
