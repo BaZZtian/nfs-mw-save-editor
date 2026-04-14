@@ -2048,3 +2048,27 @@ What the editor should guarantee whenever it creates or rebinds a live career ca
 
 This distinction is important because native MW tolerates dirty reusable records, while the editor
 needs stronger invariants to avoid writing crash-prone occupied slots.
+
+## 2026-04-14 - Native reward path crashes on 26th career-like car
+
+A controlled in-game overflow test now confirms the practical limit of the career/pursuit namespace:
+
+- baseline save filled all confirmed career-like slots `0..24` (`25 / 25`) using editor-injected
+  `Pink Slip` career cars
+- then Sonny (`#15`) was defeated in-game and selected the `Pink Slip` reward marker
+- the game crashed immediately while trying to award the extra car
+- no post-reward save was produced
+
+Practical conclusion:
+
+- the native reward path does **not** appear to guard against overflow beyond the confirmed
+  `25` career-like slots
+- `Pink Slip` rewards do **not** use a separate hidden slot pool
+- from the game's point of view, ordinary `Career` cars (`0x02`) and `Pink Slip` cars (`0x42`)
+  both consume the same total pool of `25` career/pursuit slots
+
+Editor implication:
+
+- treat `25 total career-like cars` as a hard safety limit for user-facing workflows
+- do not assume the player can safely keep `25 / 25` injected cars and later win another
+  blacklist `Pink Slip` in-game
