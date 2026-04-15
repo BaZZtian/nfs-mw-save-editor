@@ -875,6 +875,12 @@ class GarageMixin:
                 btn = QPushButton(f"x{lvl}")
                 btn.setCheckable(True)
                 btn.setObjectName("heatBtn")
+                if lvl == 1:
+                    btn.setProperty("segmentPos", "first")
+                elif lvl == 5:
+                    btn.setProperty("segmentPos", "last")
+                else:
+                    btn.setProperty("segmentPos", "middle")
                 btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
                 if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT:
                     btn.clicked.connect(lambda _, s=slot.career_slot, l=lvl: self.on_garage_heat_changed(s, l))

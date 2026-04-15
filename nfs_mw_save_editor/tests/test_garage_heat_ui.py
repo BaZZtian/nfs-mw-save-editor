@@ -115,16 +115,21 @@ class GarageHeatUiTests(unittest.TestCase):
         self.assertIsNotNone(heat_row)
         self.assertEqual(heat_row.objectName(), "garageHeatRow")
         self.assertEqual(heat_row.layout().spacing(), 4)
+        self.assertEqual([btn.property("segmentPos") for btn in heat_buttons], ["first", "middle", "middle", "middle", "last"])
 
         stylesheet = build_page_stylesheet("Blueprint")
         self.assertIn(
             "QFrame#garageCard QWidget#garageHeatRow {\n    background: transparent;\n}",
             stylesheet,
         )
+        self.assertIn('QPushButton#heatBtn[segmentPos="first"] {', stylesheet)
+        self.assertIn('QPushButton#heatBtn[segmentPos="middle"] {', stylesheet)
+        self.assertIn('QPushButton#heatBtn[segmentPos="last"] {', stylesheet)
 
     def test_heat_button_checked_uses_text_on_accent_token(self) -> None:
         tokens = resolve_theme_tokens("Catppuccin")
         stylesheet = build_page_stylesheet("Catppuccin")
+        self.assertIn(f"background: {tokens['HEAT_SEGMENT_FILL']};", stylesheet)
         match = re.search(
             r"QPushButton#heatBtn:checked\s*\{(?P<body>.*?)\}",
             stylesheet,
