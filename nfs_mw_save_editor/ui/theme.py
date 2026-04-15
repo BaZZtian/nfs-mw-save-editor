@@ -455,6 +455,7 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
             "CARD_CHANGED_BG": _rgba(accent, 0.12),
             "CARD_CHANGED_HOVER_BG": _rgba(_mix(accent, text, 0.18), 0.16),
             "HEAT_SEGMENT_FILL": _rgba(text, 0.06),
+            "HEAT_SEGMENT_ACTIVE_BG": _rgba(accent, 0.78),
             "DISABLED_TEXT": _mix(text, bg, 0.60),
             "DISABLED_BORDER": _mix(bg, text, 0.10),
             "MUTED_DARK": _mix(text, bg, 0.52),
@@ -474,6 +475,10 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
     tokens.setdefault(
         "HEAT_SEGMENT_FILL",
         _rgba(tokens["TEXT"], 0.06),
+    )
+    tokens.setdefault(
+        "HEAT_SEGMENT_ACTIVE_BG",
+        _rgba(tokens["ACCENT"], 0.78),
     )
     dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
     if preset.text_on_accent_mode == "dark":
@@ -1203,28 +1208,14 @@ QLabel#garageCardStatBadge {{
 QPushButton#heatBtn {{
     background: {HEAT_SEGMENT_FILL};
     border: 1px solid {BORDER};
+    border-radius: 4px;
     padding: 3px 4px;
     color: {MUTED};
     font-size: 11px;
     font-weight: 600;
 }}
-QPushButton#heatBtn[segmentPos="first"] {{
-    border-top-left-radius: {RADIUS_SM};
-    border-bottom-left-radius: {RADIUS_SM};
-    border-top-right-radius: 0px;
-    border-bottom-right-radius: 0px;
-}}
-QPushButton#heatBtn[segmentPos="middle"] {{
-    border-radius: 0px;
-}}
-QPushButton#heatBtn[segmentPos="last"] {{
-    border-top-left-radius: 0px;
-    border-bottom-left-radius: 0px;
-    border-top-right-radius: {RADIUS_SM};
-    border-bottom-right-radius: {RADIUS_SM};
-}}
 QPushButton#heatBtn:checked {{
-    background: {ACCENT};
+    background: {HEAT_SEGMENT_ACTIVE_BG};
     border-color: {BORDER_NAV_ACTIVE};
     color: {TEXT_ON_ACCENT};
 }}

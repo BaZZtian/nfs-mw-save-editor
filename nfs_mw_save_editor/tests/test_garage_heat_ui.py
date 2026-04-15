@@ -122,9 +122,17 @@ class GarageHeatUiTests(unittest.TestCase):
             "QFrame#garageCard QWidget#garageHeatRow {\n    background: transparent;\n}",
             stylesheet,
         )
-        self.assertIn('QPushButton#heatBtn[segmentPos="first"] {', stylesheet)
-        self.assertIn('QPushButton#heatBtn[segmentPos="middle"] {', stylesheet)
-        self.assertIn('QPushButton#heatBtn[segmentPos="last"] {', stylesheet)
+        match = re.search(
+            r"QPushButton#heatBtn\s*\{(?P<body>.*?)\}",
+            stylesheet,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        body = match.group("body")
+        self.assertIn("border-radius: 4px;", body)
+        self.assertNotIn('[segmentPos="first"]', stylesheet)
+        self.assertNotIn('[segmentPos="middle"]', stylesheet)
+        self.assertNotIn('[segmentPos="last"]', stylesheet)
 
     def test_heat_button_checked_uses_text_on_accent_token(self) -> None:
         tokens = resolve_theme_tokens("Catppuccin")
@@ -138,7 +146,9 @@ class GarageHeatUiTests(unittest.TestCase):
 
         self.assertIsNotNone(match)
         body = match.group("body")
+        self.assertIn(f"background: {tokens['HEAT_SEGMENT_ACTIVE_BG']};", body)
         self.assertIn(f"color: {tokens['TEXT_ON_ACCENT']};", body)
+        self.assertNotIn(f"background: {tokens['ACCENT']};", body)
         self.assertNotIn(f"color: {tokens['TEXT_NAV_ACTIVE']};", body)
 
 
