@@ -8,7 +8,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Dict, List
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -526,6 +526,29 @@ class PresetsMixin:
             "Presets Library interactive patch: %d card(s) in %d ms",
             patched,
             int((perf_counter() - started) * 1000),
+        )
+
+    def _restore_snapshot_library_scroll(self, value: int) -> None:
+        if not hasattr(self, "snapshot_library_scroll"):
+            return
+        scrollbar = self.snapshot_library_scroll.verticalScrollBar()
+        if scrollbar is None:
+            return
+        target = max(int(scrollbar.minimum()), min(int(value), int(scrollbar.maximum())))
+        scrollbar.setValue(target)
+
+    def _patch_snapshot_library_cards_preserving_scroll(self) -> None:
+        scrollbar = None
+        restore_value = 0
+        if hasattr(self, "snapshot_library_scroll"):
+            scrollbar = self.snapshot_library_scroll.verticalScrollBar()
+            if scrollbar is not None:
+                restore_value = int(scrollbar.value())
+        self._patch_snapshot_library_cards_in_place()
+        self._restore_snapshot_library_scroll(restore_value)
+        QTimer.singleShot(
+            0,
+            lambda value=restore_value: self._restore_snapshot_library_scroll(value),
         )
 
     # ── Library cards ───────────────────────────────────────────
@@ -1267,7 +1290,7 @@ class PresetsMixin:
                 and not controller.is_rendering
                 and columns == controller.current_columns
             ):
-                self._patch_snapshot_library_cards_in_place()
+                self._patch_snapshot_library_cards_preserving_scroll()
                 controller.replay_visible_reveal()
                 return
             self._rebuild_snapshot_library_cards(
@@ -1313,7 +1336,7 @@ class PresetsMixin:
         self.want_snapshot_injections[entry.snapshot_id] = str(target_mode)
         self._snapshot_library_cards_dirty = True
         self._mark_garage_cards_dirty()
-        self._patch_snapshot_library_cards_in_place()
+        self._patch_snapshot_library_cards_preserving_scroll()
         self._update_action_states()
 
     def on_clear_snapshot_injection(self, snapshot_id: str) -> None:
@@ -1321,5 +1344,5 @@ class PresetsMixin:
             self.want_snapshot_injections.pop(str(snapshot_id), None)
             self._snapshot_library_cards_dirty = True
             self._mark_garage_cards_dirty()
-            self._patch_snapshot_library_cards_in_place()
+            self._patch_snapshot_library_cards_preserving_scroll()
             self._update_action_states()

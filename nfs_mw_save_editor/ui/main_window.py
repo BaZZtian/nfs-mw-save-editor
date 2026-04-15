@@ -55,6 +55,7 @@ from ui.pages.presets_mixin import PresetsMixin
 from ui.pages.profile_mixin import ProfileMixin
 from ui.pages.settings_mixin import SettingsMixin
 from ui.theme import (
+    _SCOPED_POPUP_THEME_APPLYING_PROPERTY,
     apply_popup_theme,
     apply_theme_palette,
     build_page_stylesheet,
@@ -1110,13 +1111,15 @@ class MainWindow(
             overlay.start()
 
     def eventFilter(self, watched, event):
-        if (
-            event is not None
-            and event.type() in {QEvent.Type.Polish, QEvent.Type.Show}
-            and isinstance(watched, (QDialog, QMessageBox))
-            and not isinstance(watched, QFileDialog)
-            and self._popup_owned_by_main_window(watched)
-        ):
+        if not isinstance(watched, (QDialog, QMessageBox)):
+            return super().eventFilter(watched, event)
+        if isinstance(watched, QFileDialog):
+            return super().eventFilter(watched, event)
+        if not self._popup_owned_by_main_window(watched):
+            return super().eventFilter(watched, event)
+        if bool(watched.property(_SCOPED_POPUP_THEME_APPLYING_PROPERTY)):
+            return super().eventFilter(watched, event)
+        if event is not None and event.type() in {QEvent.Type.Polish, QEvent.Type.Show}:
             apply_popup_theme(watched, self.theme_name)
         return super().eventFilter(watched, event)
 

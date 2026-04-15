@@ -22,6 +22,7 @@ class ThemePreset:
 
 DEFAULT_THEME_NAME = "Blueprint"
 _SETTINGS_FILENAME = "ui_settings.json"
+_SCOPED_POPUP_THEME_APPLYING_PROPERTY = "_scopedPopupThemeApplying"
 
 THEME_PRESETS: dict[str, ThemePreset] = {
     "Ayu": ThemePreset("Ayu", "#E6B450", "#0B0E14", "#BFBDB6"),
@@ -1403,13 +1404,19 @@ def apply_popup_theme(widget, theme_name: str | None = None) -> str:
             app = None
         app_theme = app.property("themeName") if app is not None else None
         resolved_name = app_theme if isinstance(app_theme, str) and app_theme else load_saved_theme_name()
+    if bool(widget.property(_SCOPED_POPUP_THEME_APPLYING_PROPERTY)):
+        return resolved_name
     stylesheet = build_popup_stylesheet(resolved_name)
     applied_name = widget.property("_scopedThemeName")
     if applied_name == resolved_name and widget.styleSheet() == stylesheet:
         return resolved_name
-    widget.setStyleSheet(stylesheet)
-    widget.setProperty("_scopedThemeName", resolved_name)
-    return resolved_name
+    widget.setProperty(_SCOPED_POPUP_THEME_APPLYING_PROPERTY, True)
+    try:
+        widget.setStyleSheet(stylesheet)
+        widget.setProperty("_scopedThemeName", resolved_name)
+        return resolved_name
+    finally:
+        widget.setProperty(_SCOPED_POPUP_THEME_APPLYING_PROPERTY, False)
 
 
 def ensure_scoped_theme_mode(app) -> bool:

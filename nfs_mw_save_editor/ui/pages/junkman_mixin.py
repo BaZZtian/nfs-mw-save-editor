@@ -524,7 +524,7 @@ class JunkmanMixin:
             self._refresh_garage_page(reason="reset_reveal")
         elif current_page == "Tuning":
             self._refresh_parts_page(reason="reset_reveal")
-        elif current_page == "Presets":
+        elif current_page == "Builds":
             self._refresh_presets_page(reason="reset_reveal")
         self.refresh_cards()
         ToastNotification.show_toast(self, "Want reset to Have")
