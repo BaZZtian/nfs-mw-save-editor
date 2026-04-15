@@ -121,6 +121,11 @@ class PresetsMixin:
         self.presets_search.setPlaceholderText("Search build library...")
         self.presets_search.textChanged.connect(self._on_presets_search_changed)
         controls.addWidget(self.presets_search, 1)
+        self.presets_free_career_badge = self._make_stat_badge("Free Career Slots: -")
+        self.presets_free_career_badge.setToolTip(
+            "Validated empty Career slots currently available for Add to Career."
+        )
+        controls.addWidget(self.presets_free_career_badge, 0, Qt.AlignRight)
         self.btn_open_my_builds_folder = QPushButton("Open folder")
         self.btn_open_my_builds_folder.setObjectName("partsBulkBtn")
         self.btn_open_my_builds_folder.clicked.connect(self.on_open_user_builds_folder)
@@ -196,6 +201,8 @@ class PresetsMixin:
         is_library = view == "Library"
         for btn in self.snapshot_library_filter_buttons.values():
             btn.setVisible(is_library)
+        if hasattr(self, "presets_free_career_badge"):
+            self.presets_free_career_badge.setVisible(is_library)
         if hasattr(self, "btn_open_my_builds_folder"):
             self.btn_open_my_builds_folder.setVisible(is_library and self.snapshot_library_filter == "User")
         self.presets_stack.setCurrentIndex(0 if is_library else 1)
@@ -1241,6 +1248,9 @@ class PresetsMixin:
         if hasattr(self, "presets_view_buttons"):
             for label, button in self.presets_view_buttons.items():
                 button.setChecked(label == current_view)
+        if hasattr(self, "presets_free_career_badge"):
+            self.presets_free_career_badge.setVisible(is_library)
+            self._refresh_presets_career_slots_badge()
         if hasattr(self, "snapshot_library_filter_buttons"):
             for label, button in self.snapshot_library_filter_buttons.items():
                 button.setVisible(is_library)
@@ -1316,6 +1326,23 @@ class PresetsMixin:
         self._rebuild_snapshot_cards(
             animate=reason in {"page_enter", "filter_change", "reset_reveal", "save_load_visible"},
             reset_scroll=reason in {"search_change", "filter_change"},
+        )
+
+    def _refresh_presets_career_slots_badge(self) -> None:
+        if not hasattr(self, "presets_free_career_badge"):
+            return
+        if not self.savefile:
+            self.presets_free_career_badge.setText("Free Career Slots: -")
+            return
+        try:
+            snapshot = self._current_allocator_snapshot()
+        except Exception:
+            snapshot = None
+        if snapshot is None:
+            self.presets_free_career_badge.setText("Free Career Slots: -")
+            return
+        self.presets_free_career_badge.setText(
+            f"Free Career Slots: {len(snapshot.reusable_career_slots)}"
         )
 
     def on_stage_snapshot_injection(self, snapshot_id: str, target_mode: str) -> None:
