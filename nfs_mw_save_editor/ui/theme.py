@@ -1015,6 +1015,9 @@ QFrame#partsCard[changed="true"] {{
     border: 1px solid {CARD_CHANGED_BORDER};
     background: {CARD_CHANGED_BG};
 }}
+QFrame#garageCard QWidget#garageHeatRow {{
+    background: transparent;
+}}
 /* Parts level bar rows */
 QWidget#partsLevelRow {{
     background: transparent;
@@ -1204,7 +1207,7 @@ QPushButton#heatBtn {{
 QPushButton#heatBtn:checked {{
     background: {ACCENT};
     border-color: {BORDER_NAV_ACTIVE};
-    color: {TEXT_NAV_ACTIVE};
+    color: {TEXT_ON_ACCENT};
 }}
 QPushButton#heatBtn:hover:!checked {{
     background: {BG_BULK_HOVER};

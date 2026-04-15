@@ -862,6 +862,7 @@ class GarageMixin:
             card_layout.addWidget(heat_label)
 
             heat_row = QWidget()
+            heat_row.setObjectName("garageHeatRow")
             heat_row_layout = QHBoxLayout(heat_row)
             heat_row_layout.setContentsMargins(0, 0, 0, 0)
             heat_row_layout.setSpacing(4)
