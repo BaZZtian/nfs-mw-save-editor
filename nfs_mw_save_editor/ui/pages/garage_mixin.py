@@ -35,6 +35,7 @@ from core.savefile import SaveFile
 from resources import resource_path
 from ui.pages.constants import *
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
+from ui.widgets import ToastNotification
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,30 @@ class GarageMixin:
                     reserved_career.add(plan.target_career_slot)
         return plans, reserved_owned, reserved_parts, reserved_career
 
+    def _snapshot_injection_reallocation_messages(
+        self,
+        before_plans: Dict[str, SnapshotInjectionPlan],
+        after_plans: Dict[str, SnapshotInjectionPlan],
+    ) -> List[Tuple[str, bool]]:
+        messages: List[Tuple[str, bool]] = []
+        library_by_id = self._snapshot_library_by_id()
+        for snapshot_id, target_mode in self._ordered_snapshot_injection_items():
+            if str(target_mode) != "career":
+                continue
+            entry = library_by_id.get(snapshot_id)
+            before = before_plans.get(snapshot_id)
+            after = after_plans.get(snapshot_id)
+            if entry is None or before is None or after is None:
+                continue
+            before_success = before.refusal_reason is None
+            after_success = after.refusal_reason is None
+            if before_success and after_success:
+                if before.target_career_slot != after.target_career_slot and after.target_career_slot is not None:
+                    messages.append((f"Build {entry.display_name} moved to slot {after.target_career_slot + 1}", False))
+            elif before_success and not after_success:
+                messages.append((f"Build {entry.display_name} blocked: no free slots", True))
+        return messages
+
     def _current_allocator_snapshot(self) -> Optional[GarageAllocatorSnapshot]:
         if not self.savefile:
             return None
@@ -345,8 +370,12 @@ class GarageMixin:
         target_mode: str,
         desired_career_slot: Optional[int] = None,
         allow_restore_to_nonvalidated_slot: bool = False,
+        reserved_career_slots_override: Optional[Set[int]] = None,
     ) -> OwnedCarTransferPlan:
-        _, _, _, reserved_career = self._current_snapshot_injection_plans()
+        if reserved_career_slots_override is None:
+            _, _, _, reserved_career = self._current_snapshot_injection_plans()
+        else:
+            reserved_career = set(reserved_career_slots_override)
         return self._garage_transfer_plan_with_context(
             abs_off,
             target_mode,
@@ -1114,6 +1143,9 @@ class GarageMixin:
         desired_slot = None
         effective_target = str(target_mode)
         allow_nonvalidated_restore = False
+        restore_wins = False
+        before_snapshot_plans: Dict[str, SnapshotInjectionPlan] = {}
+        reserved_career_override: Optional[Set[int]] = None
         if effective_target == "career":
             have_loc = int(self.have_owned_locations.get(abs_off, 0))
             have_slot = int(self.have_owned_career_slots.get(abs_off, SaveFile.EMPTY_CAREER_SLOT))
@@ -1129,12 +1161,17 @@ class GarageMixin:
                 effective_target = "pink_slip" if have_loc == (SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG) else "career"
                 original_entry = next((item for item in self.garage_transfer_entries if item.abs_off == abs_off), None)
                 allow_nonvalidated_restore = bool(original_entry is not None and not original_entry.has_pursuit_link)
+                before_snapshot_plans, _, _, reserved_career = self._current_snapshot_injection_plans()
+                reserved_career_override = set(reserved_career)
+                reserved_career_override.discard(desired_slot)
+                restore_wins = True
         try:
             plan = self._garage_transfer_plan_for(
                 abs_off,
                 effective_target,
                 desired_career_slot=desired_slot,
                 allow_restore_to_nonvalidated_slot=allow_nonvalidated_restore,
+                reserved_career_slots_override=reserved_career_override,
             )
         except Exception as exc:
             QMessageBox.warning(self, UI_TITLE_UNAVAILABLE, str(exc))
@@ -1150,12 +1187,22 @@ class GarageMixin:
         self.want_owned_career_slots[abs_off] = (
             SaveFile.EMPTY_CAREER_SLOT if plan.target_career_slot is None else int(plan.target_career_slot)
         )
+        after_snapshot_plans: Dict[str, SnapshotInjectionPlan] = {}
+        if restore_wins:
+            after_snapshot_plans, _, _, _ = self._current_snapshot_injection_plans()
         self._garage_cards_dirty = True
         self._mark_parts_cards_dirty()
         self._mark_presets_cards_dirty(library=True, snapshot=False)
         self._sync_garage_summary_chrome(loaded=True)
+        self._sync_presets_summary_chrome(loaded=True)
         self._patch_garage_cards_in_place()
         self._update_action_states()
+        if restore_wins:
+            for message, is_error in self._snapshot_injection_reallocation_messages(
+                before_snapshot_plans,
+                after_snapshot_plans,
+            ):
+                ToastNotification.show_toast(self, message, is_error=is_error)
 
     def on_garage_slot_edit_finished(self, slot_index: int) -> None:
         if self._profile_refreshing or not self.savefile or self.garage_detection_error:
