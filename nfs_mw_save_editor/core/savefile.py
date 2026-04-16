@@ -491,6 +491,14 @@ class SaveFile:
             and raw[24:] == (b"\x00" * (cls.GARAGE_SLOT_SIZE - 24))
         )
 
+    @classmethod
+    def _is_native_empty_pursuit_slot(cls, raw: bytes) -> bool:
+        return (
+            len(raw) == cls.GARAGE_SLOT_SIZE
+            and cls._is_garage_slot(raw)
+            and raw[:1] == b"\xFF"
+        )
+
     def _garage_slot_abs_off(self, career_slot: int) -> int:
         wanted = int(career_slot)
         if wanted < 0:
@@ -722,19 +730,10 @@ class SaveFile:
             flags2 = self._read_u16(base_off + self.CAREER_VEHICLE_FLAGS2_OFFSET)
             parts_slot = self._read_u8(base_off + self.CAREER_VEHICLE_PARTS_SLOT_OFFSET)
             career_slot = self._read_u8(base_off + self.CAREER_VEHICLE_SLOT_OFFSET)
-            occupied = car_number != self.EMPTY_CAR_NUMBER or signature != (b"\x00" * self.CAREER_VEHICLE_SIGNATURE_SIZE)
-            reusable = (
-                car_number == self.EMPTY_CAR_NUMBER
-                and signature == (b"\x00" * self.CAREER_VEHICLE_SIGNATURE_SIZE)
-                and career_slot == self.EMPTY_CAREER_SLOT
-                and flags == 0
-                and flags2 == 0
-                and parts_slot == 0xFF
-            )
+            occupied = car_number != self.EMPTY_CAR_NUMBER
+            reusable = car_number == self.EMPTY_CAR_NUMBER
             blocked_reason = None
-            if not occupied and not reusable:
-                blocked_reason = "Partially dirty empty owned-car slot"
-            elif reusable and base_off in reserved:
+            if reusable and base_off in reserved:
                 reusable = False
                 blocked_reason = "Reserved by staged injector"
             statuses.append(
@@ -850,6 +849,8 @@ class SaveFile:
         statuses: List[CareerSlotStatus] = []
         for record in self.get_pursuit_records():
             linked = linked_counts.get(record.career_slot, 0)
+            raw = bytes(self.data[record.abs_off:record.abs_off + self.GARAGE_SLOT_SIZE])
+            native_empty = linked == 0 and self._is_native_empty_pursuit_slot(raw)
             if record.career_slot in staged_cleared_slots:
                 bounty = 0
                 escaped = 0
@@ -859,12 +860,12 @@ class SaveFile:
                 escaped = record.escaped
                 busted = record.busted
             is_zero = (bounty, escaped, busted) == (0, 0, 0)
-            reusable = linked == 0 and is_zero
+            reusable = linked == 0 and (native_empty or is_zero)
             blocked_reason = None
             if record.career_slot in reserved_career_slots and reusable:
                 reusable = False
                 blocked_reason = "Reserved by staged injector"
-            elif linked == 0 and not is_zero:
+            elif linked == 0 and not (native_empty or is_zero):
                 blocked_reason = "Unlinked pursuit stats present"
             elif linked > 1:
                 blocked_reason = f"Ambiguous: {linked} cars target this career slot"

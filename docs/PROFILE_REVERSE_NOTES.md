@@ -2049,6 +2049,45 @@ What the editor should guarantee whenever it creates or rebinds a live career ca
 This distinction is important because native MW tolerates dirty reusable records, while the editor
 needs stronger invariants to avoid writing crash-prone occupied slots.
 
+## 2026-04-16 - Phase 1 native-empty pursuit parity
+
+- `Career` allocator parity is now relaxed only for initialized pursuit slots.
+- Reusable rule:
+  - slot still parses as a valid garage record
+  - occupancy sentinel byte is `0xFF`
+  - no owned car currently links to that `career_slot`
+- Result:
+  - dirty native sold-car pursuit slots now count as reusable even when heat / bounty / escaped /
+    busted are nonzero
+  - the old false-positive blocked reason `Unlinked pursuit stats present` is no longer used for
+    those native-empty slots
+- Compatibility note:
+  - zeroed initialized pursuit slots with `raw[0] == career_slot` also remain reusable
+  - this preserves behavior for older editor-produced saves that were normalized through the
+    historical `clear_pursuit_slot()` path instead of native `0xFF` empty sentinels
+- Limits of this phase:
+  - blank tail-slot logic is unchanged
+  - ambiguous / reserved career-slot logic is unchanged
+  - write paths still normalize live slots to `canonical-occupied`
+  - owned-car and parts-slot parity are intentionally deferred to later phases
+
+## 2026-04-16 - Phase 2 native-empty owned-slot parity
+
+- `Owned-car` allocator parity is now relaxed for parsed native-empty owned slots.
+- Reusable rule:
+  - owned record still parses inside the normal `0x6219` record array
+  - `car_number == 0xFFFFFFFF`
+  - stale signature / flags / `parts_slot` / `career_slot` no longer block reuse by themselves
+- Result:
+  - native sold-car owned slots now count as reusable even when the old payload remains dirty
+  - the old false-positive `Partially dirty empty owned-car slot` no longer appears for parsed empty owned slots
+  - `Garage -> Owned empty` can now increase after native sale, instead of staying flat
+- Safety / compatibility:
+  - staged injector reservation still wins over native-empty reuse
+  - scan boundaries are unchanged; tail garbage beyond the parsed owned-record area is still ignored
+  - write paths still normalize reused slots to `canonical-occupied`
+  - this phase does not change parts-slot parity; stale `parts_slot` bytes on empty owned records are tolerated only on allocator/read-path
+
 ## 2026-04-14 - Native reward path crashes on 26th career-like car
 
 A controlled in-game overflow test now confirms the practical limit of the career/pursuit namespace:
