@@ -26,6 +26,13 @@ _SCOPED_POPUP_THEME_APPLYING_PROPERTY = "_scopedPopupThemeApplying"
 
 THEME_PRESETS: dict[str, ThemePreset] = {
     "Ayu": ThemePreset("Ayu", "#E6B450", "#0B0E14", "#BFBDB6"),
+    "Banana": ThemePreset(
+        "Banana",
+        "#F0C441",
+        "#2E2E15",
+        "#F5E6C4",
+        text_on_accent_mode="dark",
+    ),
     "Blueprint": ThemePreset(
         "Blueprint",
         "#4A6B94",
@@ -77,6 +84,7 @@ THEME_PRESETS: dict[str, ThemePreset] = {
         "#CDD6F4",
         text_on_accent_mode="dark",
     ),
+    "Cherry": ThemePreset("Cherry", "#A61E3C", "#2A0F18", "#FBE9EE", text_on_accent_mode="light"),
     "Claude": ThemePreset("Claude", "#CC7D5E", "#2D2D2B", "#F9F9F7"),
     "Codex": ThemePreset("Codex", "#0169CC", "#111111", "#FCFCFC"),
     "Dracula": ThemePreset("Dracula", "#FF79C6", "#282A36", "#F8F8F2"),
@@ -88,8 +96,16 @@ THEME_PRESETS: dict[str, ThemePreset] = {
         text_on_accent_mode="dark",
     ),
     "GitHub": ThemePreset("GitHub", "#1F6FEB", "#0D1117", "#E6EDF3"),
+    "Kiwi": ThemePreset(
+        "Kiwi",
+        "#7CB342",
+        "#141A14",
+        "#E8F0E4",
+        text_on_accent_mode="dark",
+    ),
     "Gruvbox": ThemePreset("Gruvbox", "#458588", "#282828", "#EBDBB2"),
     "Linear": ThemePreset("Linear", "#5E6AD2", "#17181D", "#E6E9EF"),
+    "Mango": ThemePreset("Mango", "#E8522D", "#1F1611", "#FFF0D8", text_on_accent_mode="light"),
     "Lobster": ThemePreset("Lobster", "#FF5C5C", "#111827", "#E4E4E7"),
     "Material": ThemePreset("Material", "#80CBC4", "#212121", "#EEFFFF"),
     "Matrix": ThemePreset("Matrix", "#1EFF5A", "#040805", "#B8FFCA"),
