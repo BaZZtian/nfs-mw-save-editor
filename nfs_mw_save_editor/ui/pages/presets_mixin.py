@@ -1280,9 +1280,9 @@ class PresetsMixin:
         if hasattr(self, "presets_view_buttons"):
             for label, button in self.presets_view_buttons.items():
                 button.setChecked(label == current_view)
+        self._sync_presets_summary_chrome(loaded=bool(self.savefile))
         if hasattr(self, "presets_free_career_badge"):
             self.presets_free_career_badge.setVisible(is_library)
-            self._refresh_presets_career_slots_badge()
         if hasattr(self, "snapshot_library_filter_buttons"):
             for label, button in self.snapshot_library_filter_buttons.items():
                 button.setVisible(is_library)
@@ -1360,10 +1360,10 @@ class PresetsMixin:
             reset_scroll=reason in {"search_change", "filter_change"},
         )
 
-    def _refresh_presets_career_slots_badge(self) -> None:
+    def _sync_presets_summary_chrome(self, *, loaded: bool) -> None:
         if not hasattr(self, "presets_free_career_badge"):
             return
-        if not self.savefile:
+        if not loaded or not self.savefile:
             self.presets_free_career_badge.setText("Free Career Slots: -")
             return
         try:
@@ -1395,6 +1395,7 @@ class PresetsMixin:
         self.want_snapshot_injections[entry.snapshot_id] = str(target_mode)
         self._snapshot_library_cards_dirty = True
         self._mark_garage_cards_dirty()
+        self._sync_presets_summary_chrome(loaded=True)
         self._patch_snapshot_library_cards_preserving_scroll()
         self._update_action_states()
 
@@ -1403,6 +1404,7 @@ class PresetsMixin:
             self.want_snapshot_injections.pop(str(snapshot_id), None)
             self._snapshot_library_cards_dirty = True
             self._mark_garage_cards_dirty()
+            self._sync_presets_summary_chrome(loaded=True)
             self._patch_snapshot_library_cards_preserving_scroll()
             self._update_action_states()
 
