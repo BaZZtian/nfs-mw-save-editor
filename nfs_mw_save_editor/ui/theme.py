@@ -960,6 +960,18 @@ QFrame#statTile {{
     border-radius: {RADIUS_XL};
     padding: 0px;
 }}
+QFrame#pageControlsRow {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+    padding: 0px;
+}}
+QFrame#pageControlsRow QWidget#pageControlsSection {{
+    background: transparent;
+}}
+QFrame#pageControlsRow QWidget#pageControlsSearchHost {{
+    background: transparent;
+}}
 QLabel#statTileHeading {{
     background: {BG_INPUT};
     border: 1px solid {BORDER};

@@ -1,4 +1,4 @@
-"""Builds page: library injection, user snapshot saves, save snapshot export."""
+﻿"""Builds page: library injection, user snapshot saves, save snapshot export."""
 from __future__ import annotations
 
 import json
@@ -64,7 +64,7 @@ class SnapshotLibraryCardHandle:
 
 
 class PresetsMixin:
-    # ── Page builder ────────────────────────────────────────────
+    # -- Page builder --------------------------------------------
 
     def _preset_bucket_ui_label(self, bucket: str) -> str:
         if str(bucket) == "Main":
@@ -79,32 +79,13 @@ class PresetsMixin:
         layout.setContentsMargins(10, 6, 10, 8)
         layout.setSpacing(10)
 
-        # ── 1. Junkman Presets compact strip ──────────────────
+        controls_frame, controls = self._make_page_controls_bar()
+        filter_host = QWidget()
+        filter_host.setObjectName("pageControlsSection")
+        filter_row = QHBoxLayout(filter_host)
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        filter_row.setSpacing(6)
 
-        # ── 2. Car Builds header + view toggle ─────────────────
-        header_row = QHBoxLayout()
-        header_row.setSpacing(8)
-        boss_label = QLabel("Builds")
-        boss_label.setObjectName("sectionLabel")
-        header_row.addWidget(boss_label)
-        header_row.addStretch(1)
-        self.presets_view_group = QButtonGroup(self)
-        self.presets_view_group.setExclusive(True)
-        self.presets_view_buttons: Dict[str, QPushButton] = {}
-        for name in ["Library", "My Save"]:
-            btn = QPushButton(name)
-            btn.setCheckable(True)
-            btn.setObjectName("garageFilterBtn")
-            btn.clicked.connect(lambda _, v=name: self._on_presets_view_changed(v))
-            self.presets_view_group.addButton(btn)
-            self.presets_view_buttons[name] = btn
-            header_row.addWidget(btn)
-        self.presets_view_buttons["Library"].setChecked(True)
-        layout.addLayout(header_row)
-
-        # ── 3. Library sub-filters + unified search ───────────
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
         self.snapshot_library_filter_group = QButtonGroup(self)
         self.snapshot_library_filter_group.setExclusive(True)
         self.snapshot_library_filter_buttons: Dict[str, QPushButton] = {}
@@ -115,25 +96,57 @@ class PresetsMixin:
             btn.clicked.connect(lambda _, v=filter_value: self.on_snapshot_library_filter_changed(v))
             self.snapshot_library_filter_group.addButton(btn)
             self.snapshot_library_filter_buttons[filter_value] = btn
-            controls.addWidget(btn)
+            filter_row.addWidget(btn)
         self.snapshot_library_filter_buttons["Main"].setChecked(True)
+
+        self.snapshot_save_filter_group = QButtonGroup(self)
+        self.snapshot_save_filter_group.setExclusive(True)
+        self.snapshot_save_filter_buttons: Dict[str, QPushButton] = {}
+        for filter_value in ["All", "Career", "My Cars"]:
+            btn = QPushButton(filter_value)
+            btn.setCheckable(True)
+            btn.setObjectName("garageFilterBtn")
+            btn.clicked.connect(lambda _, v=filter_value: self._select_snapshot_save_filter(v))
+            self.snapshot_save_filter_group.addButton(btn)
+            self.snapshot_save_filter_buttons[filter_value] = btn
+            filter_row.addWidget(btn)
+            btn.setVisible(False)
+        self.snapshot_save_filter_buttons["All"].setChecked(True)
+
+        controls.addWidget(filter_host, 0)
+
         self.presets_search = QLineEdit()
         self.presets_search.setPlaceholderText("Search build library...")
         self.presets_search.textChanged.connect(self._on_presets_search_changed)
-        controls.addWidget(self.presets_search, 1)
+        controls.addWidget(self._make_centered_search_host(self.presets_search), 1)
+
+        right_host = QWidget()
+        right_host.setObjectName("pageControlsSection")
+        right_row = QHBoxLayout(right_host)
+        right_row.setContentsMargins(0, 0, 0, 0)
+        right_row.setSpacing(8)
         self.presets_free_career_badge = self._make_stat_badge("Free Career Slots: -")
         self.presets_free_career_badge.setToolTip(
             "Validated empty Career slots currently available for Add to Career."
         )
-        controls.addWidget(self.presets_free_career_badge, 0, Qt.AlignRight)
-        self.btn_open_my_builds_folder = QPushButton("Open folder")
-        self.btn_open_my_builds_folder.setObjectName("partsBulkBtn")
-        self.btn_open_my_builds_folder.clicked.connect(self.on_open_user_builds_folder)
-        self.btn_open_my_builds_folder.setVisible(False)
-        controls.addWidget(self.btn_open_my_builds_folder)
-        layout.addLayout(controls)
+        right_row.addWidget(self.presets_free_career_badge, 0, Qt.AlignRight)
 
-        # ── 4. QStackedWidget: Library / My Save ──────────────
+        self.presets_view_group = QButtonGroup(self)
+        self.presets_view_group.setExclusive(True)
+        self.presets_view_buttons: Dict[str, QPushButton] = {}
+        for name in ["Library", "My Save"]:
+            btn = QPushButton(name)
+            btn.setCheckable(True)
+            btn.setObjectName("garageFilterBtn")
+            btn.clicked.connect(lambda _, v=name: self._on_presets_view_changed(v))
+            self.presets_view_group.addButton(btn)
+            self.presets_view_buttons[name] = btn
+            right_row.addWidget(btn)
+        self.presets_view_buttons["Library"].setChecked(True)
+        controls.addWidget(right_host, 0, Qt.AlignRight)
+        layout.addWidget(controls_frame)
+
+        # -- QStackedWidget: Library / My Save -----------------
         self.presets_stack = QStackedWidget()
 
         # Page 0: Library cards
@@ -194,17 +207,17 @@ class PresetsMixin:
     def _presets_page_visible(self) -> bool:
         return hasattr(self, "stack") and hasattr(self, "page_presets") and self.stack.currentWidget() is self.page_presets
 
-    # ── View toggle / search ────────────────────────────────────
+    # -- View toggle / search ------------------------------------
 
     def _on_presets_view_changed(self, view: str) -> None:
         self.presets_view = view
         is_library = view == "Library"
         for btn in self.snapshot_library_filter_buttons.values():
             btn.setVisible(is_library)
+        for btn in self.snapshot_save_filter_buttons.values():
+            btn.setVisible(not is_library)
         if hasattr(self, "presets_free_career_badge"):
             self.presets_free_career_badge.setVisible(is_library)
-        if hasattr(self, "btn_open_my_builds_folder"):
-            self.btn_open_my_builds_folder.setVisible(is_library and self.snapshot_library_filter == "User")
         self.presets_stack.setCurrentIndex(0 if is_library else 1)
         self.presets_search.setPlaceholderText(
             "Search build library..." if is_library else "Search builds in this save...",
@@ -220,14 +233,17 @@ class PresetsMixin:
         self.snapshot_library_filter = str(value)
         for label, button in self.snapshot_library_filter_buttons.items():
             button.setChecked(label == self.snapshot_library_filter)
-        if hasattr(self, "btn_open_my_builds_folder"):
-            self.btn_open_my_builds_folder.setVisible(
-                self.presets_view == "Library" and self.snapshot_library_filter == "User"
-            )
         self._mark_presets_cards_dirty(library=True, snapshot=False)
         self._refresh_presets_page(reason="filter_change")
 
-    # ── Shared perf grid (read-only) ────────────────────────────
+    def _select_snapshot_save_filter(self, value: str) -> None:
+        self.snapshot_save_filter = str(value)
+        for label, button in self.snapshot_save_filter_buttons.items():
+            button.setChecked(label == self.snapshot_save_filter)
+        self._mark_presets_cards_dirty(library=False, snapshot=True)
+        self._refresh_presets_page(reason="filter_change")
+
+    # -- Shared perf grid (read-only) ----------------------------
 
     def _add_presets_perf_grid(self, parent: QVBoxLayout, performance_levels, model_name: str = "") -> None:
         grid = QGridLayout()
@@ -284,7 +300,7 @@ class PresetsMixin:
         row_layout.addWidget(current_host)
         return row_w
 
-    # ── Library card columns / reflow ───────────────────────────
+    # -- Library card columns / reflow ---------------------------
 
     def _detect_library_card_columns(self) -> int:
         return self._detect_col_count("snapshot_library_scroll", LIBRARY_TILE_MIN_WIDTH, ((1100, 2),))
@@ -302,7 +318,7 @@ class PresetsMixin:
             return
         self._snapshot_library_render_controller.reflow(columns)
 
-    # ── Library entries filter ──────────────────────────────────
+    # -- Library entries filter ----------------------------------
 
     def _snapshot_library_entries(self) -> List[SnapshotLibraryEntry]:
         query = ""
@@ -558,7 +574,7 @@ class PresetsMixin:
             lambda value=restore_value: self._restore_snapshot_library_scroll(value),
         )
 
-    # ── Library cards ───────────────────────────────────────────
+    # -- Library cards -------------------------------------------
 
     def _rebuild_snapshot_library_cards(self) -> None:
         if not hasattr(self, "snapshot_library_cards_layout"):
@@ -732,7 +748,7 @@ class PresetsMixin:
         for col in range(columns):
             self.snapshot_library_cards_layout.setColumnStretch(col, 1)
 
-    # ── Snapshot card columns / reflow ──────────────────────────
+    # -- Snapshot card columns / reflow --------------------------
 
     def _detect_snapshot_card_columns(self) -> int:
         return self._detect_col_count("snapshot_cards_scroll", SNAPSHOT_TILE_MIN_WIDTH, ((1100, 2),))
@@ -750,18 +766,34 @@ class PresetsMixin:
             return
         self._snapshot_render_controller.reflow(columns)
 
-    # ── Snapshot entries filter ─────────────────────────────────
+    # -- Snapshot entries filter ---------------------------------
 
     def _snapshot_card_entries(self) -> List[FullCarBuildSnapshot]:
         query = ""
         if hasattr(self, "presets_search"):
             query = self.presets_search.text().strip().lower()
         entries = list(self.build_snapshots)
+        current_filter = getattr(self, "snapshot_save_filter", "All")
+        if current_filter == "Career":
+            entries = [
+                entry for entry in entries
+                if entry.career_slot != SaveFile.EMPTY_CAREER_SLOT
+                and entry.location_bits in (
+                    SaveFile.CAREER_FLAG,
+                    SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG,
+                )
+            ]
+        elif current_filter == "My Cars":
+            entries = [
+                entry for entry in entries
+                if entry.career_slot == SaveFile.EMPTY_CAREER_SLOT
+                and entry.location_bits == SaveFile.MY_CARS_FLAG
+            ]
         if query:
             entries = [entry for entry in entries if query in entry.display_name.lower()]
         return entries
 
-    # ── Snapshot cards (My Save view) ───────────────────────────
+    # -- Snapshot cards (My Save view) ---------------------------
 
     def _rebuild_snapshot_cards(self) -> None:
         if not hasattr(self, "snapshot_cards_layout"):
@@ -893,7 +925,7 @@ class PresetsMixin:
         for col in range(columns):
             self.snapshot_cards_layout.setColumnStretch(col, 1)
 
-    # ── Helpers ─────────────────────────────────────────────────
+    # -- Helpers -------------------------------------------------
 
     def _snapshot_filename_slug(self, text: str) -> str:
         safe = "".join(ch if ch.isalnum() else "_" for ch in text.strip())
@@ -1255,10 +1287,10 @@ class PresetsMixin:
             for label, button in self.snapshot_library_filter_buttons.items():
                 button.setVisible(is_library)
                 button.setChecked(label == getattr(self, "snapshot_library_filter", "Main"))
-        if hasattr(self, "btn_open_my_builds_folder"):
-            self.btn_open_my_builds_folder.setVisible(
-                is_library and getattr(self, "snapshot_library_filter", "Main") == "User"
-            )
+        if hasattr(self, "snapshot_save_filter_buttons"):
+            for label, button in self.snapshot_save_filter_buttons.items():
+                button.setVisible(not is_library)
+                button.setChecked(label == getattr(self, "snapshot_save_filter", "All"))
         if hasattr(self, "presets_stack"):
             self.presets_stack.setCurrentIndex(0 if is_library else 1)
         if hasattr(self, "presets_search"):
@@ -1373,3 +1405,4 @@ class PresetsMixin:
             self._mark_garage_cards_dirty()
             self._patch_snapshot_library_cards_preserving_scroll()
             self._update_action_states()
+

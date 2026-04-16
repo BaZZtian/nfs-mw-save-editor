@@ -370,23 +370,25 @@ class PartsMixin:
         layout = QVBoxLayout(w)
         layout.setContentsMargins(10, 6, 10, 8)
         layout.setSpacing(10)
+        hint_row = QHBoxLayout()
+        hint_row.setSpacing(8)
         hint = QLabel("Tune Career and My Cars builds in one place. Changes stay staged until you Apply.")
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
-        layout.addWidget(hint)
+        hint_row.addWidget(hint, 1)
+        self.chk_show_parts_diagnostics = QCheckBox("Show tuning diagnostics")
+        self.chk_show_parts_diagnostics.stateChanged.connect(self.on_toggle_parts_diagnostics)
+        hint_row.addWidget(self.chk_show_parts_diagnostics, 0, Qt.AlignRight)
+        layout.addLayout(hint_row)
 
-        controls = QHBoxLayout()
-        controls.setSpacing(8)
+        controls_frame, controls = self._make_page_controls_bar()
         self.parts_search = QLineEdit()
         self.parts_search.setPlaceholderText("Search cars by model name...")
         self.parts_search.textChanged.connect(self.on_parts_search_changed)
-        controls.addWidget(self.parts_search, 1)
-        self.chk_show_parts_diagnostics = QCheckBox("Show tuning diagnostics")
-        self.chk_show_parts_diagnostics.stateChanged.connect(self.on_toggle_parts_diagnostics)
-        controls.addWidget(self.chk_show_parts_diagnostics, 0)
-        layout.addLayout(controls)
-
-        filter_row = QHBoxLayout()
+        filter_host = QWidget()
+        filter_host.setObjectName("pageControlsSection")
+        filter_row = QHBoxLayout(filter_host)
+        filter_row.setContentsMargins(0, 0, 0, 0)
         filter_row.setSpacing(6)
         self.tuning_filter_buttons: Dict[str, QPushButton] = {}
         self.tuning_filter_group = QButtonGroup(self)
@@ -400,8 +402,21 @@ class PartsMixin:
             self.tuning_filter_buttons[label] = btn
             filter_row.addWidget(btn)
         self.tuning_filter_buttons["All"].setChecked(True)
-        filter_row.addStretch(1)
-        layout.addLayout(filter_row)
+        controls.addWidget(filter_host, 0)
+        controls.addWidget(self._make_centered_search_host(self.parts_search), 1)
+        stats_host = QWidget()
+        stats_host.setObjectName("pageControlsSection")
+        stats_row = QHBoxLayout(stats_host)
+        stats_row.setContentsMargins(0, 0, 0, 0)
+        stats_row.setSpacing(8)
+        self.parts_alloc_owned = self._make_stat_badge("Owned empty: -")
+        self.parts_alloc_career = self._make_stat_badge("Career empty: -")
+        self.parts_alloc_blocked = self._make_stat_badge("Blocked: -")
+        stats_row.addWidget(self.parts_alloc_owned, 0, Qt.AlignLeft)
+        stats_row.addWidget(self.parts_alloc_career, 0, Qt.AlignLeft)
+        stats_row.addWidget(self.parts_alloc_blocked, 0, Qt.AlignLeft)
+        controls.addWidget(stats_host, 0, Qt.AlignRight)
+        layout.addWidget(controls_frame)
 
         self.parts_cards = QWidget()
         self.parts_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -593,6 +608,25 @@ class PartsMixin:
         label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         label.setAlignment(Qt.AlignCenter)
         return label
+
+    def _make_page_controls_bar(self) -> tuple[QFrame, QHBoxLayout]:
+        frame = QFrame()
+        frame.setObjectName("pageControlsRow")
+        layout = QHBoxLayout(frame)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(10)
+        return frame, layout
+
+    def _make_centered_search_host(self, search: QLineEdit, *, max_width: int = 460) -> QWidget:
+        search.setMinimumWidth(220)
+        search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        host = QWidget()
+        host.setObjectName("pageControlsSearchHost")
+        row = QHBoxLayout(host)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addWidget(search, 1)
+        return host
 
     def _make_tuning_status_badge(self, text: str) -> QLabel:
         object_name = self._tuning_status_object_name(text)
@@ -1413,6 +1447,7 @@ class PartsMixin:
             current = getattr(self, "tuning_filter", "All")
             for label, button in self.tuning_filter_buttons.items():
                 button.setChecked(label == current)
+        self._sync_parts_summary_chrome(loaded=loaded)
         if not self._parts_page_visible():
             self._mark_parts_cards_dirty()
             return
@@ -1461,3 +1496,17 @@ class PartsMixin:
         self.tuning_filter = source
         self._mark_parts_cards_dirty()
         self._refresh_parts_page(reason="filter_change")
+
+    def _sync_parts_summary_chrome(self, *, loaded: bool) -> None:
+        if not all(hasattr(self, attr) for attr in ("parts_alloc_owned", "parts_alloc_career", "parts_alloc_blocked")):
+            return
+        snapshot = self._current_allocator_snapshot() if loaded else None
+        if snapshot is None:
+            self.parts_alloc_owned.setText("Owned empty: -")
+            self.parts_alloc_career.setText("Career empty: -")
+            self.parts_alloc_blocked.setText("Blocked: -")
+            return
+        self.parts_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
+        self.parts_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
+        blocked_total = len(snapshot.blocked_owned_slots) + len(snapshot.blocked_career_slots)
+        self.parts_alloc_blocked.setText(f"Blocked: {blocked_total}")

@@ -191,6 +191,7 @@ class MainWindow(
         self.user_snapshot_library_root = _user_snapshot_library_path()
         self.want_snapshot_injections: Dict[str, str] = {}
         self.snapshot_library_filter = "Main"
+        self.snapshot_save_filter = "All"
         self.presets_view = "Library"
         self._garage_cards_dirty = True
         self._parts_cards_dirty = True
