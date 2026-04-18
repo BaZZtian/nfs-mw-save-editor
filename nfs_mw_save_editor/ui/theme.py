@@ -96,6 +96,7 @@ THEME_PRESETS: dict[str, ThemePreset] = {
         text_on_accent_mode="dark",
     ),
     "GitHub": ThemePreset("GitHub", "#1F6FEB", "#0D1117", "#E6EDF3"),
+    "Gruvbox": ThemePreset("Gruvbox", "#458588", "#282828", "#EBDBB2"),
     "Kiwi": ThemePreset(
         "Kiwi",
         "#7CB342",
@@ -103,12 +104,11 @@ THEME_PRESETS: dict[str, ThemePreset] = {
         "#E8F0E4",
         text_on_accent_mode="dark",
     ),
-    "Gruvbox": ThemePreset("Gruvbox", "#458588", "#282828", "#EBDBB2"),
     "Linear": ThemePreset("Linear", "#5E6AD2", "#17181D", "#E6E9EF"),
-    "Mango": ThemePreset("Mango", "#E8522D", "#1F1611", "#FFF0D8", text_on_accent_mode="light"),
     "Lobster": ThemePreset("Lobster", "#FF5C5C", "#111827", "#E4E4E7"),
+    "Mango": ThemePreset("Mango", "#E3A43A", "#0F200F", "#FFF0D8", text_on_accent_mode="light"),
     "Material": ThemePreset("Material", "#80CBC4", "#212121", "#EEFFFF"),
-    "Matrix": ThemePreset("Matrix", "#1EFF5A", "#040805", "#B8FFCA"),
+    "Matrix": ThemePreset("Matrix", "#66d98a", "#0d1210", "#e4ece6"),
     "Monokai": ThemePreset("Monokai", "#99947C", "#272822", "#F8F8F2"),
     "Night Owl": ThemePreset("Night Owl", "#44596B", "#011627", "#D6DEEB"),
     "Nord": ThemePreset(
@@ -127,6 +127,7 @@ THEME_PRESETS: dict[str, ThemePreset] = {
         "#E6E6E6",
         text_on_accent_mode="dark",
     ),
+    "Raycast": ThemePreset("Raycast", "#FF6363", "#101010", "#FEFEFE"),
     "Rose Pine": ThemePreset(
         "Rose Pine",
         "#EA9A97",
@@ -134,7 +135,6 @@ THEME_PRESETS: dict[str, ThemePreset] = {
         "#E0DEF4",
         text_on_accent_mode="dark",
     ),
-    "Raycast": ThemePreset("Raycast", "#FF6363", "#101010", "#FEFEFE"),
     "Sentry": ThemePreset("Sentry", "#7055F6", "#2D2935", "#E6DFF9"),
     "Solarized": ThemePreset("Solarized", "#D30102", "#002B36", "#839496"),
     "Temple": ThemePreset("Temple", "#E4F222", "#02120C", "#C7E6DA"),
