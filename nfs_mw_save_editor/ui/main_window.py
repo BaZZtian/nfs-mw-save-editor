@@ -170,7 +170,7 @@ class MainWindow(
         self.snapshot_library_error: Optional[str] = None
         self.show_all_garage_slots = False
         self.show_integrity_panel = False
-        self.show_unlinked_pursuits = False
+        self.show_garage_allocator_diagnostics = False
         self.show_parts_diagnostics = False
         self.tokens: List[TokenEntry] = []
         self.safe_mode = True

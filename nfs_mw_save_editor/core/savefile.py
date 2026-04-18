@@ -132,6 +132,7 @@ class SaveFile:
     EMPTY_PARTS_BLOCK_ZERO_TAIL_OFFSET = 0x190
     EMPTY_PARTS_BLOCK_MARKER = b"\xFF\xCD\xCD\xCD"
     BOUNDARY_PARTS_SLOT_BLOCKED_REASON = "Boundary parts slot is reserved until validated"
+    VISUAL_SIDECAR_PARTS_BLOCKED_REASON = "Referenced by visual sidecar record"
     PRIMARY_VISUAL_FIELDS: Tuple[Tuple[str, int, int], ...] = (
         ("Body Kit", 0x02E, 1),
         ("Spoiler", 0x058, 2),
@@ -733,9 +734,15 @@ class SaveFile:
             occupied = car_number != self.EMPTY_CAR_NUMBER
             reusable = car_number == self.EMPTY_CAR_NUMBER
             blocked_reason = None
+            status_kind = "occupied" if occupied else "reusable"
+            status_code = "occupied" if occupied else "reusable"
+            status_detail = None
             if reusable and base_off in reserved:
                 reusable = False
                 blocked_reason = "Reserved by staged injector"
+                status_kind = "reserved"
+                status_code = "reserved_by_staged_injector"
+                status_detail = blocked_reason
             statuses.append(
                 OwnedCarSlotStatus(
                     slot_index=slot_index,
@@ -743,6 +750,9 @@ class SaveFile:
                     occupied=occupied,
                     reusable=reusable,
                     blocked_reason=blocked_reason,
+                    status_kind=status_kind,
+                    status_code=status_code,
+                    status_detail=status_detail,
                     car_number=car_number,
                     location_bits=flags,
                     misc_bits=flags2,
@@ -778,6 +788,62 @@ class SaveFile:
             and raw_block[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4] == self.EMPTY_PARTS_BLOCK_MARKER
         )
 
+    def _is_native_empty_parts_block(self, raw_block: bytes) -> bool:
+        return (
+            len(raw_block) == self.PARTS_BLOCK_SIZE
+            and raw_block[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4] == self.EMPTY_PARTS_BLOCK_MARKER
+        )
+
+    def _sidecar_placeholder_parts_slots(self) -> Set[int]:
+        slots: Set[int] = set()
+        records: List[Tuple[int, bytes, int, int, int]] = []
+        base_off = self.CAREER_VEHICLE_BASE_OFFSET
+
+        while base_off + self.CAREER_VEHICLE_SIZE <= len(self.data):
+            raw = bytes(self.data[base_off:base_off + self.CAREER_VEHICLE_SIZE])
+            if raw[0x12:0x14] != self.CAREER_VEHICLE_SENTINEL:
+                break
+            records.append(
+                (
+                    self._read_u32(base_off),
+                    bytes(
+                        self.data[
+                            base_off + self.CAREER_VEHICLE_SIGNATURE_OFFSET:
+                            base_off + self.CAREER_VEHICLE_SIGNATURE_OFFSET + self.CAREER_VEHICLE_SIGNATURE_SIZE
+                        ]
+                    ),
+                    self._read_u16(base_off + self.CAREER_VEHICLE_FLAGS_OFFSET),
+                    self._read_u8(base_off + self.CAREER_VEHICLE_PARTS_SLOT_OFFSET),
+                    self._read_u8(base_off + self.CAREER_VEHICLE_SLOT_OFFSET),
+                )
+            )
+            base_off += self.CAREER_VEHICLE_SIZE
+
+        for idx in range(len(records) - 1):
+            car_number, signature, location_bits, parts_slot, _career_slot = records[idx]
+            next_car_number, next_signature, next_location_bits, next_parts_slot, next_career_slot = records[idx + 1]
+            if car_number == self.EMPTY_CAR_NUMBER:
+                continue
+            if signature == (b"\x00" * self.CAREER_VEHICLE_SIGNATURE_SIZE):
+                continue
+            if location_bits != self.MY_CARS_FLAG:
+                continue
+            if next_car_number != self.EMPTY_CAR_NUMBER:
+                continue
+            if next_signature != signature:
+                continue
+            if next_location_bits != self.MY_CARS_FLAG or next_career_slot != self.EMPTY_CAREER_SLOT:
+                continue
+            if next_parts_slot != parts_slot + 1:
+                continue
+            if next_parts_slot not in self._parts_slot_numbers():
+                continue
+            parts_abs_off = self._parts_block_abs_off(next_parts_slot)
+            raw_block = bytes(self.data[parts_abs_off:parts_abs_off + self.PARTS_BLOCK_SIZE])
+            if self._is_native_empty_parts_block(raw_block):
+                slots.add(next_parts_slot)
+        return slots
+
     def get_parts_slot_statuses(
         self,
         *,
@@ -785,6 +851,7 @@ class SaveFile:
     ) -> List[PartsSlotStatus]:
         reserved = {int(value) for value in (reserved_parts_slots or set())}
         referenced_slots = {record.parts_slot for record in self.get_owned_car_records()}
+        sidecar_placeholder_slots = self._sidecar_placeholder_parts_slots()
         boundary_slot = self._boundary_parts_slot()
         statuses: List[PartsSlotStatus] = []
         for slot in self._parts_slot_numbers():
@@ -794,17 +861,42 @@ class SaveFile:
             referenced = slot in referenced_slots
             reusable = False
             blocked_reason: Optional[str] = None
+            status_kind = "blocked"
+            status_code = "nonempty_block"
+            status_detail: Optional[str] = None
             if referenced:
                 blocked_reason = "Referenced by owned-car record"
+                status_kind = "occupied"
+                status_code = "occupied_owned_reference"
+                status_detail = blocked_reason
+            elif slot in sidecar_placeholder_slots:
+                blocked_reason = self.VISUAL_SIDECAR_PARTS_BLOCKED_REASON
+                status_kind = "placeholder"
+                status_code = "placeholder_visual_sidecar"
+                status_detail = blocked_reason
             elif slot in reserved:
                 blocked_reason = "Reserved by staged injector"
-            elif self._is_blank_parts_block(raw_block):
+                status_kind = "reserved"
+                status_code = "reserved_by_staged_injector"
+                status_detail = blocked_reason
+            elif self._is_blank_parts_block(raw_block) or self._is_native_empty_parts_block(raw_block):
                 if slot == boundary_slot:
                     blocked_reason = self.BOUNDARY_PARTS_SLOT_BLOCKED_REASON
+                    status_kind = "blocked"
+                    status_code = "boundary_reserved"
+                    status_detail = blocked_reason
                 else:
                     reusable = True
+                    status_kind = "reusable"
+                    status_code = (
+                        "reusable_blank" if self._is_blank_parts_block(raw_block) else "reusable_native_empty"
+                    )
+                    status_detail = None
             else:
                 blocked_reason = "Non-empty parts block"
+                status_kind = "blocked"
+                status_code = "nonempty_block"
+                status_detail = blocked_reason
             statuses.append(
                 PartsSlotStatus(
                     parts_slot=slot,
@@ -812,6 +904,9 @@ class SaveFile:
                     referenced_by_owned_car=referenced,
                     reusable=reusable,
                     blocked_reason=blocked_reason,
+                    status_kind=status_kind,
+                    status_code=status_code,
+                    status_detail=status_detail,
                     marker=marker,
                 )
             )
@@ -862,13 +957,25 @@ class SaveFile:
             is_zero = (bounty, escaped, busted) == (0, 0, 0)
             reusable = linked == 0 and (native_empty or is_zero)
             blocked_reason = None
+            status_kind = "occupied" if linked == 1 else ("reusable" if reusable else "blocked")
+            status_code = "occupied" if linked == 1 else ("reusable" if reusable else "unlinked_pursuit")
+            status_detail: Optional[str] = None
             if record.career_slot in reserved_career_slots and reusable:
                 reusable = False
                 blocked_reason = "Reserved by staged injector"
+                status_kind = "reserved"
+                status_code = "reserved_by_staged_injector"
+                status_detail = blocked_reason
             elif linked == 0 and not (native_empty or is_zero):
                 blocked_reason = "Unlinked pursuit stats present"
+                status_kind = "blocked"
+                status_code = "unlinked_pursuit"
+                status_detail = blocked_reason
             elif linked > 1:
                 blocked_reason = f"Ambiguous: {linked} cars target this career slot"
+                status_kind = "blocked"
+                status_code = "ambiguous_career_target"
+                status_detail = blocked_reason
             statuses.append(
                 CareerSlotStatus(
                     career_slot=record.career_slot,
@@ -876,6 +983,9 @@ class SaveFile:
                     linked_car_count=linked,
                     reusable=reusable,
                     blocked_reason=blocked_reason,
+                    status_kind=status_kind,
+                    status_code=status_code,
+                    status_detail=status_detail,
                     bounty=bounty,
                     escaped=escaped,
                     busted=busted,
@@ -894,13 +1004,25 @@ class SaveFile:
             linked = linked_counts.get(next_slot, 0)
             reusable = linked == 0
             blocked_reason = None
+            status_kind = "reusable" if reusable else "occupied"
+            status_code = "reusable" if reusable else "occupied"
+            status_detail: Optional[str] = None
             if next_slot in reserved_career_slots and reusable:
                 reusable = False
                 blocked_reason = "Reserved by staged injector"
+                status_kind = "reserved"
+                status_code = "reserved_by_staged_injector"
+                status_detail = blocked_reason
             elif linked > 1:
                 blocked_reason = f"Ambiguous: {linked} cars target this career slot"
+                status_kind = "blocked"
+                status_code = "ambiguous_career_target"
+                status_detail = blocked_reason
             elif linked == 1:
                 blocked_reason = "Already targeted by a staged Career car"
+                status_kind = "reserved"
+                status_code = "reserved_by_staged_career_target"
+                status_detail = blocked_reason
             statuses.append(
                 CareerSlotStatus(
                     career_slot=next_slot,
@@ -908,6 +1030,9 @@ class SaveFile:
                     linked_car_count=linked,
                     reusable=reusable,
                     blocked_reason=blocked_reason,
+                    status_kind=status_kind,
+                    status_code=status_code,
+                    status_detail=status_detail,
                     bounty=0,
                     escaped=0,
                     busted=0,

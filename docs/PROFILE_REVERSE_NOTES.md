@@ -2027,6 +2027,33 @@ What the editor prefers to maintain as a safe normalized empty state:
     - baseline heat `1.0`
     - zero bounty / escaped / busted
 
+### Phase 3 allocator parity: native-empty parts vs sidecar placeholders
+
+Allocator/read-path rules are now split for `parts` blocks:
+
+- `canonical-empty parts`:
+  - the existing normalized blank block
+  - remains reusable
+- `native-empty sold parts`:
+  - marker is `FF CD CD CD`
+  - payload may still contain old build bytes
+  - block is reusable if it is not referenced by a live owned-car record and not claimed by an active visual sidecar
+- `visual sidecar placeholder parts`:
+  - still use marker `FF CD CD CD`
+  - but remain blocked because they are semantically occupied by the adjacent sidecar payload
+
+Observed validation:
+
+- native sold saves (`fixture-g`, `fixture-h`) gain additional reusable `parts` slots after sale
+- sidecar fixture `fixture-a.bak_20260321_184708.bak_20260321_193340` keeps:
+  - primary `parts_slot 45` blocked as `Referenced by owned-car record`
+  - sidecar `parts_slot 46` blocked as `Referenced by visual sidecar record`
+
+Write-path policy is unchanged:
+
+- reusing a `native-empty` sold `parts` block still rewrites it canonically with `<parts_slot> CD CD CD`
+- sidecar writer still keeps placeholder marker `FF CD CD CD` for auxiliary sidecar blocks
+
 ### `canonical-occupied`
 
 What the editor should guarantee whenever it creates or rebinds a live career car:

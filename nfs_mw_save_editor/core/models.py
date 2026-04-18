@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, Literal, Optional, Tuple
 
 HashScheme = Optional[Literal["md5_saved_data", "md5_all_minus_tail"]]
+SlotStatusKind = Literal["occupied", "reusable", "reserved", "blocked", "placeholder"]
 
 
 @dataclass(frozen=True)
@@ -199,6 +200,9 @@ class OwnedCarSlotStatus:
     occupied: bool
     reusable: bool
     blocked_reason: Optional[str]
+    status_kind: SlotStatusKind
+    status_code: str
+    status_detail: Optional[str]
     car_number: int
     location_bits: int
     misc_bits: int
@@ -213,6 +217,9 @@ class CareerSlotStatus:
     linked_car_count: int
     reusable: bool
     blocked_reason: Optional[str]
+    status_kind: SlotStatusKind
+    status_code: str
+    status_detail: Optional[str]
     bounty: int
     escaped: int
     busted: int
@@ -240,6 +247,30 @@ class GarageAllocatorSnapshot:
     def blocked_career_slots(self) -> Tuple[CareerSlotStatus, ...]:
         return tuple(slot for slot in self.career_slots if not slot.reusable and slot.linked_car_count != 1)
 
+    @property
+    def reserved_owned_slots(self) -> Tuple[OwnedCarSlotStatus, ...]:
+        return tuple(slot for slot in self.owned_slots if slot.status_kind == "reserved")
+
+    @property
+    def reserved_career_slots(self) -> Tuple[CareerSlotStatus, ...]:
+        return tuple(slot for slot in self.career_slots if slot.status_kind == "reserved")
+
+    @property
+    def hard_blocked_owned_slots(self) -> Tuple[OwnedCarSlotStatus, ...]:
+        return tuple(slot for slot in self.owned_slots if slot.status_kind in {"blocked", "placeholder"})
+
+    @property
+    def hard_blocked_career_slots(self) -> Tuple[CareerSlotStatus, ...]:
+        return tuple(slot for slot in self.career_slots if slot.status_kind in {"blocked", "placeholder"})
+
+    @property
+    def unavailable_owned_slots(self) -> Tuple[OwnedCarSlotStatus, ...]:
+        return self.reserved_owned_slots + self.hard_blocked_owned_slots
+
+    @property
+    def unavailable_career_slots(self) -> Tuple[CareerSlotStatus, ...]:
+        return self.reserved_career_slots + self.hard_blocked_career_slots
+
 
 @dataclass(frozen=True)
 class PartsSlotStatus:
@@ -248,6 +279,9 @@ class PartsSlotStatus:
     referenced_by_owned_car: bool
     reusable: bool
     blocked_reason: Optional[str]
+    status_kind: SlotStatusKind
+    status_code: str
+    status_detail: Optional[str]
     marker: bytes
 
 

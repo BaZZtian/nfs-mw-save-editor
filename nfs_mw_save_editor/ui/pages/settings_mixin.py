@@ -377,12 +377,12 @@ class SettingsMixin:
         self.chk_show_integrity = QCheckBox("Show integrity panel on Profile")
         self.chk_show_integrity.setChecked(False)
         self.chk_show_integrity.stateChanged.connect(self.on_toggle_show_integrity)
-        self.chk_show_unlinked_pursuits = QCheckBox("Show pursuit diagnostics on the Garage page")
-        self.chk_show_unlinked_pursuits.setChecked(False)
-        self.chk_show_unlinked_pursuits.stateChanged.connect(self.on_toggle_unlinked_pursuits)
+        self.chk_show_garage_allocator_diagnostics = QCheckBox("Show allocator diagnostics on the Garage page")
+        self.chk_show_garage_allocator_diagnostics.setChecked(False)
+        self.chk_show_garage_allocator_diagnostics.stateChanged.connect(self.on_toggle_garage_allocator_diagnostics)
 
         layout.addWidget(self._build_settings_group("Display", [
-            self.chk_show_integrity, self.chk_show_unlinked_pursuits,
+            self.chk_show_integrity, self.chk_show_garage_allocator_diagnostics,
         ]))
 
         # Catalog

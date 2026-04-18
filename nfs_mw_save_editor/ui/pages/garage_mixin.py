@@ -142,7 +142,7 @@ class GarageMixin:
         alloc_row.setSpacing(8)
         self.garage_alloc_owned = self._make_stat_badge("Owned empty: -")
         self.garage_alloc_career = self._make_stat_badge("Career empty: -")
-        self.garage_alloc_blocked = self._make_stat_badge("Blocked: -")
+        self.garage_alloc_blocked = self._make_stat_badge("Unavailable: -")
         alloc_row.addWidget(self.garage_alloc_owned, 0, Qt.AlignLeft)
         alloc_row.addWidget(self.garage_alloc_career, 0, Qt.AlignLeft)
         alloc_row.addWidget(self.garage_alloc_blocked, 0, Qt.AlignLeft)
@@ -171,7 +171,7 @@ class GarageMixin:
         self.garage_cards_scroll.setWidget(self.garage_cards)
         layout.addWidget(self.garage_cards_scroll, 1)
 
-        self.garage_diag_label = self._section_label("Pursuit Diagnostics")
+        self.garage_diag_label = self._section_label("Allocator Diagnostics")
         layout.addWidget(self.garage_diag_label)
         self.garage_diag_text = QTextEdit()
         self.garage_diag_text.setReadOnly(True)
@@ -409,14 +409,89 @@ class GarageMixin:
             filtered.append(slot)
         return filtered
 
-    def _garage_unlinked_entries(self):
+    @staticmethod
+    def _slot_status_display_text(slot) -> str:
+        return str(slot.status_detail or slot.blocked_reason or slot.status_code)
+
+    def _garage_allocator_diagnostic_sections_legacy(self) -> List[Tuple[str, List[str]]]:
         snapshot = self._current_allocator_snapshot()
         if snapshot is None:
             return []
-        return [
-            slot for slot in snapshot.career_slots
-            if slot.blocked_reason == "Unlinked pursuit stats present"
+        sections: List[Tuple[str, List[str]]] = []
+        groups = [
+            (
+                "Career reserved",
+                [
+                    f"Career Slot {slot.career_slot + 1} — {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.reserved_career_slots
+                ],
+            ),
+            (
+                "Career blocked",
+                [
+                    f"Career Slot {slot.career_slot + 1} — {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.hard_blocked_career_slots
+                ],
+            ),
+            (
+                "Owned reserved",
+                [
+                    f"Owned Slot {slot.slot_index + 1} — {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.reserved_owned_slots
+                ],
+            ),
+            (
+                "Owned blocked",
+                [
+                    f"Owned Slot {slot.slot_index + 1} — {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.hard_blocked_owned_slots
+                ],
+            ),
         ]
+        for title, lines in groups:
+            if lines:
+                sections.append((title, lines))
+        return sections
+
+    def _garage_allocator_diagnostic_sections(self) -> List[Tuple[str, List[str]]]:
+        snapshot = self._current_allocator_snapshot()
+        if snapshot is None:
+            return []
+        sections: List[Tuple[str, List[str]]] = []
+        groups = [
+            (
+                "Career reserved",
+                [
+                    f"Career Slot {slot.career_slot + 1} - {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.reserved_career_slots
+                ],
+            ),
+            (
+                "Career blocked",
+                [
+                    f"Career Slot {slot.career_slot + 1} - {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.hard_blocked_career_slots
+                ],
+            ),
+            (
+                "Owned reserved",
+                [
+                    f"Owned Slot {slot.slot_index + 1} - {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.reserved_owned_slots
+                ],
+            ),
+            (
+                "Owned blocked",
+                [
+                    f"Owned Slot {slot.slot_index + 1} - {self._slot_status_display_text(slot)}"
+                    for slot in snapshot.hard_blocked_owned_slots
+                ],
+            ),
+        ]
+        for title, lines in groups:
+            if lines:
+                sections.append((title, lines))
+        return sections
 
     def _detect_garage_slot_columns(self) -> int:
         return self._detect_col_count("garage_cards_scroll", 300, ((1420, 3), (860, 2)))
@@ -433,7 +508,7 @@ class GarageMixin:
         self._garage_render_controller.reflow(columns)
 
     def _sync_garage_diagnostics_visibility(self) -> None:
-        visible = bool(self.show_unlinked_pursuits and self.savefile is not None)
+        visible = bool(self.show_garage_allocator_diagnostics and self.savefile is not None)
         if hasattr(self, "garage_diag_label"):
             self.garage_diag_label.setVisible(visible)
         if hasattr(self, "garage_diag_text"):
@@ -1022,31 +1097,34 @@ class GarageMixin:
         if self.savefile is None:
             self.garage_diag_text.setText("")
             return
-        entries = self._garage_unlinked_entries()
-        if not entries:
-            self.garage_diag_text.setText("No unlinked pursuit records detected.")
+        sections = self._garage_allocator_diagnostic_sections()
+        if not sections:
+            self.garage_diag_text.setText("No allocator issues detected.")
             return
-        self.garage_diag_text.setText(
-            "\n".join(
-                f"Career Slot {slot.career_slot + 1}: bounty={slot.bounty}, escaped={slot.escaped}, busted={slot.busted}"
-                for slot in entries
-            )
-        )
+        blocks = [f"{title}\n" + "\n".join(lines) for title, lines in sections]
+        self.garage_diag_text.setText("\n\n".join(blocks))
 
     def _sync_garage_summary_chrome(self, *, loaded: bool) -> None:
         snapshot = self._current_allocator_snapshot() if loaded else None
         if snapshot is None:
             self.garage_alloc_owned.setText("Owned empty: -")
             self.garage_alloc_career.setText("Career empty: -")
-            self.garage_alloc_blocked.setText("Blocked: -")
+            self.garage_alloc_blocked.setText("Unavailable: -")
+            self.garage_alloc_owned.setToolTip("")
+            self.garage_alloc_career.setToolTip("")
+            self.garage_alloc_blocked.setToolTip("")
             if hasattr(self, "garage_warning_label"):
                 self.garage_warning_label.clear()
                 self.garage_warning_label.setVisible(False)
         else:
             self.garage_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
             self.garage_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
-            blocked_total = len(snapshot.blocked_owned_slots) + len(snapshot.blocked_career_slots)
-            self.garage_alloc_blocked.setText(f"Blocked: {blocked_total}")
+            unavailable_total = len(snapshot.unavailable_owned_slots) + len(snapshot.unavailable_career_slots)
+            self.garage_alloc_blocked.setText(f"Unavailable: {unavailable_total}")
+            tooltip = self._allocator_unavailable_tooltip(snapshot)
+            self.garage_alloc_owned.setToolTip(tooltip)
+            self.garage_alloc_career.setToolTip(tooltip)
+            self.garage_alloc_blocked.setToolTip(tooltip)
             if hasattr(self, "garage_warning_label"):
                 warning = SaveFile.career_pool_warning_text(self._staged_career_vehicle_count())
                 if warning:
@@ -1077,11 +1155,11 @@ class GarageMixin:
 
     def _refresh_garage_page(self, reason: str = "data_change") -> None:
         loaded = self.savefile is not None
-        if hasattr(self, "chk_show_unlinked_pursuits"):
-            self.chk_show_unlinked_pursuits.blockSignals(True)
-            self.chk_show_unlinked_pursuits.setChecked(self.show_unlinked_pursuits)
-            self.chk_show_unlinked_pursuits.setEnabled(loaded)
-            self.chk_show_unlinked_pursuits.blockSignals(False)
+        if hasattr(self, "chk_show_garage_allocator_diagnostics"):
+            self.chk_show_garage_allocator_diagnostics.blockSignals(True)
+            self.chk_show_garage_allocator_diagnostics.setChecked(self.show_garage_allocator_diagnostics)
+            self.chk_show_garage_allocator_diagnostics.setEnabled(loaded)
+            self.chk_show_garage_allocator_diagnostics.blockSignals(False)
 
         if not self._garage_page_visible():
             self._mark_garage_cards_dirty()
@@ -1131,11 +1209,14 @@ class GarageMixin:
         self._mark_garage_cards_dirty()
         self._refresh_garage_page(reason="filter_change")
 
-    def on_toggle_unlinked_pursuits(self) -> None:
-        self.show_unlinked_pursuits = self.chk_show_unlinked_pursuits.isChecked()
+    def on_toggle_garage_allocator_diagnostics(self) -> None:
+        self.show_garage_allocator_diagnostics = self.chk_show_garage_allocator_diagnostics.isChecked()
         self._sync_garage_diagnostics_visibility()
         if self._garage_page_visible():
             self._refresh_garage_diagnostics_text()
+
+    def on_toggle_unlinked_pursuits(self) -> None:
+        self.on_toggle_garage_allocator_diagnostics()
 
     def on_garage_transfer_requested(self, abs_off: int, target_mode: str) -> None:
         if self._profile_refreshing or not self.savefile or self.garage_detection_error:

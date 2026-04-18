@@ -127,7 +127,7 @@ class PresetsMixin:
         right_row.setSpacing(8)
         self.presets_free_career_badge = self._make_stat_badge("Free Career Slots: -")
         self.presets_free_career_badge.setToolTip(
-            "Validated empty Career slots currently available for Add to Career."
+            "Validated reusable Career slots currently available for Add to Career. Reserved and unavailable slots are not counted here."
         )
         right_row.addWidget(self.presets_free_career_badge, 0, Qt.AlignRight)
 

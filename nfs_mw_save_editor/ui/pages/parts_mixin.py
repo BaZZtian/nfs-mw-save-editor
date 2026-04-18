@@ -411,7 +411,7 @@ class PartsMixin:
         stats_row.setSpacing(8)
         self.parts_alloc_owned = self._make_stat_badge("Owned empty: -")
         self.parts_alloc_career = self._make_stat_badge("Career empty: -")
-        self.parts_alloc_blocked = self._make_stat_badge("Blocked: -")
+        self.parts_alloc_blocked = self._make_stat_badge("Unavailable: -")
         stats_row.addWidget(self.parts_alloc_owned, 0, Qt.AlignLeft)
         stats_row.addWidget(self.parts_alloc_career, 0, Qt.AlignLeft)
         stats_row.addWidget(self.parts_alloc_blocked, 0, Qt.AlignLeft)
@@ -608,6 +608,26 @@ class PartsMixin:
         label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         label.setAlignment(Qt.AlignCenter)
         return label
+
+    def _allocator_unavailable_breakdown_lines(self, snapshot) -> List[str]:
+        if snapshot is None:
+            return []
+        return [
+            f"Owned reserved: {len(snapshot.reserved_owned_slots)}",
+            f"Owned blocked: {len(snapshot.hard_blocked_owned_slots)}",
+            f"Career reserved: {len(snapshot.reserved_career_slots)}",
+            f"Career blocked: {len(snapshot.hard_blocked_career_slots)}",
+        ]
+
+    def _allocator_unavailable_tooltip(self, snapshot) -> str:
+        if snapshot is None:
+            return ""
+        lines = self._allocator_unavailable_breakdown_lines(snapshot)
+        if not lines:
+            return "No allocator issues detected."
+        if all(line.endswith(": 0") for line in lines):
+            return "No allocator issues detected."
+        return "\n".join(lines)
 
     def _make_page_controls_bar(self) -> tuple[QFrame, QHBoxLayout]:
         frame = QFrame()
@@ -1504,9 +1524,16 @@ class PartsMixin:
         if snapshot is None:
             self.parts_alloc_owned.setText("Owned empty: -")
             self.parts_alloc_career.setText("Career empty: -")
-            self.parts_alloc_blocked.setText("Blocked: -")
+            self.parts_alloc_blocked.setText("Unavailable: -")
+            self.parts_alloc_owned.setToolTip("")
+            self.parts_alloc_career.setToolTip("")
+            self.parts_alloc_blocked.setToolTip("")
             return
         self.parts_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
         self.parts_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
-        blocked_total = len(snapshot.blocked_owned_slots) + len(snapshot.blocked_career_slots)
-        self.parts_alloc_blocked.setText(f"Blocked: {blocked_total}")
+        unavailable_total = len(snapshot.unavailable_owned_slots) + len(snapshot.unavailable_career_slots)
+        self.parts_alloc_blocked.setText(f"Unavailable: {unavailable_total}")
+        tooltip = self._allocator_unavailable_tooltip(snapshot)
+        self.parts_alloc_owned.setToolTip(tooltip)
+        self.parts_alloc_career.setToolTip(tooltip)
+        self.parts_alloc_blocked.setToolTip(tooltip)
