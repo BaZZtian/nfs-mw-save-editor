@@ -1113,16 +1113,16 @@ class MainWindow(
 
     def eventFilter(self, watched, event):
         if not isinstance(watched, (QDialog, QMessageBox)):
-            return super().eventFilter(watched, event)
+            return False
         if isinstance(watched, QFileDialog):
-            return super().eventFilter(watched, event)
+            return False
         if not self._popup_owned_by_main_window(watched):
-            return super().eventFilter(watched, event)
+            return False
         if bool(watched.property(_SCOPED_POPUP_THEME_APPLYING_PROPERTY)):
-            return super().eventFilter(watched, event)
+            return False
         if event is not None and event.type() in {QEvent.Type.Polish, QEvent.Type.Show}:
             apply_popup_theme(watched, self.theme_name)
-        return super().eventFilter(watched, event)
+        return False
 
     def on_open(self, filepath: str | None = None):
         path = filepath

@@ -52,6 +52,7 @@ class GarageCardVm:
     have_heat_level: Optional[int]
     plan_my_cars: OwnedCarTransferPlan
     plan_career: OwnedCarTransferPlan
+    max_heat_level: int = 5
 
 
 @dataclass
@@ -667,6 +668,11 @@ class GarageMixin:
         current_bounties = self._current_slot_bounties()
         current_heats = self._current_slot_heats()
         active_car_number = self.savefile.get_active_career_car_number()
+        max_heat_level = (
+            self.savefile.get_story_heat_cap()
+            if hasattr(self.savefile, "get_story_heat_cap")
+            else int(SaveFile.GARAGE_HEAT_MAX)
+        )
 
         view_models: List[GarageCardVm] = []
         for slot in target_entries:
@@ -688,6 +694,7 @@ class GarageMixin:
                     have_bounty=self.have_slot_bounties.get(career_slot, int(slot.bounty or 0)),
                     current_heat_level=current_heats.get(career_slot) if slot.has_pursuit_link else None,
                     have_heat_level=self.have_slot_heats.get(career_slot) if slot.has_pursuit_link else None,
+                    max_heat_level=max_heat_level,
                     plan_my_cars=self._garage_transfer_plan_with_context(
                         slot.abs_off,
                         "my_cars",
@@ -855,8 +862,13 @@ class GarageMixin:
             )
             lvl = vm.current_heat_level or 1
             for i, btn in enumerate(handle.heat_btns):
-                btn.setChecked(i + 1 == lvl)
-                btn.setEnabled(btn_enabled)
+                heat_level = i + 1
+                btn.setChecked(heat_level == lvl)
+                btn.setEnabled(btn_enabled and heat_level <= vm.max_heat_level)
+                if heat_level > vm.max_heat_level:
+                    btn.setToolTip(f"Locked until later story progression. Current cap: x{vm.max_heat_level}")
+                else:
+                    btn.setToolTip("")
 
         refresh_widget_style(handle.card)
 
@@ -994,6 +1006,11 @@ class GarageMixin:
 
             current_lvl = vm.current_heat_level or 1
             heat_buttons[current_lvl - 1].setChecked(True)
+            for i, btn in enumerate(heat_buttons):
+                heat_level = i + 1
+                if heat_level > vm.max_heat_level:
+                    btn.setEnabled(False)
+                    btn.setToolTip(f"Locked until later story progression. Current cap: x{vm.max_heat_level}")
             card_layout.addWidget(heat_row)
 
             bounty_label = QLabel("Bounty")
@@ -1307,6 +1324,9 @@ class GarageMixin:
 
     def on_garage_heat_changed(self, slot_index: int, level: int) -> None:
         if self._profile_refreshing or not self.savefile or self.garage_detection_error:
+            return
+        max_heat_level = self.savefile.get_story_heat_cap()
+        if int(level) > max_heat_level:
             return
         if self.want_slot_heats is None:
             self.want_slot_heats = dict(self.have_slot_heats)

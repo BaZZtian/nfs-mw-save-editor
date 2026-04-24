@@ -1545,7 +1545,7 @@ Confirmed in code:
 - Parts Viewer v2 can decode confirmed performance levels and Junkman categories
 - Parts Editor v1 can stage and write only the confirmed parts fields, with Turbo/NOS Junkman prerequisites enforced
 
-## 2026-04-12 - `kswd_perf_registry_test` failed; sliding registry is another summary/completion layer
+## 2026-04-12 `kswd_perf_registry_test` failed; sliding registry is another summary/completion layer
 
 - In-game validation results for:
   - `KSWD_perfreg_01_before_web_groups_5_8`
@@ -1567,7 +1567,7 @@ Confirmed in code:
     - milestone lock presentation
     - career completion
 
-## 2026-04-12 - New profile-tail candidate at `0x5620..0x57AF` plus `0x5B60..0x5B67`
+## 2026-04-12 New profile-tail candidate at `0x5620..0x57AF` plus `0x5B60..0x5B67`
 
 After excluding:
 - story/current-boss field `0x4038`
@@ -1659,7 +1659,7 @@ Patch strategy:
 - `0x4038`, `0x4040..0x4041`, garage, cars, pursuit, parts blocks, and prior summary tables remain untouched
 - all variants validated `MD5/CRC1/CRC2 OK`
 
-## 2026-04-13 - `kswd_tail_unlock_test` is not the normal performance gate
+## 2026-04-13 `kswd_tail_unlock_test` is not the normal performance gate
 
 - In-game validation results:
   - `KSWD_tail_01_before_web_main_5620_5737`:
@@ -1683,7 +1683,7 @@ Patch strategy:
     - some visual/body subcategories
   - this family is still not the clean global `performance upgrades unlock` gate
 
-## 2026-04-13 - New `8-byte` sliding table candidate at `0xC20..0xD57`
+## 2026-04-13 New `8-byte` sliding table candidate at `0xC20..0xD57`
 
 With prior false leads excluded, the next strongest remaining candidate is a compact
 sliding table in `0xC20..0xD57`.
@@ -1777,7 +1777,30 @@ Patch strategy:
 - all story/cache/garage/car/parts-block/keyed-summary/summary-registry data remain untouched
 - all variants validated `MD5/CRC1/CRC2 OK`
 
-## 2026-04-13 - Career garage crash root cause: partially dirty pursuit slots, not `0x5577`
+## 2026-04-24 `kswd_perf8_table_test` outcome: not the unlock/performance gate
+
+User gameplay testing of the `0xC20..0xD57` sliding `8-byte` table pack showed the target
+unlock categories stayed baseline:
+
+- normal unlocks did **not** advance
+- cars stayed baseline
+- cops / heat stayed baseline
+- performance stayed baseline
+- visual / body stayed baseline
+- paint stayed baseline
+
+The only observed side effect was the already-known progression/race-state regression where
+previously completed races for earlier bosses can disappear.
+
+Conclusion:
+
+- the `0xC20..0xD57` sliding `8-byte` table is not the normal performance unlock gate
+- it should be treated as another progression / race-summary adjacent layer, not a direct
+  dealership / cops / performance / visual unlock layer
+- no full retest of this pack is needed unless a later hypothesis requires one specific variant
+  as a control sample
+
+## 2026-04-13 Career garage crash root cause: partially dirty pursuit slots, not `0x5577`
 
 In-game reproduction on `fixture-g` narrowed the remaining crash to `Career`-linked Blacklist cars:
 
@@ -1821,7 +1844,7 @@ Validation outcome:
 - `Free Roam` load also stopped crashing on the same save
 - practical conclusion: the remaining crash was caused by malformed pursuit-slot state, not by unresolved visual table `0x5577`
 
-## 2026-04-14 - `My Cars -> Career` tail-slot crash root cause on `fixture-h`
+## 2026-04-14 `My Cars -> Career` tail-slot crash root cause on `fixture-h`
 
 New reproduction on `fixture-h` showed a second, different `Career garage` crash after moving all
 `My Cars` vehicles into `Career`.
@@ -1882,7 +1905,7 @@ Follow-up on the repaired latest `fixture-h`:
 - canonicalizing those occupied pursuit records in place removed the remaining structural
   mismatch (`raw[0]` now equals `career_slot` on every occupied slot)
 
-## 2026-04-14 - Native dealership / sale lifecycle for pursuit, owned, and parts records
+## 2026-04-14 Native dealership / sale lifecycle for pursuit, owned, and parts records
 
 Controlled native save chains were compared on both `fixture-g` and `fixture-h`:
 
@@ -1991,7 +2014,7 @@ This explains why the game can natively reuse records that still look "dirty" un
 zeroed-empty model, and why editor-side canonicalization is safer than assuming native save data is
 fully scrubbed.
 
-## 2026-04-14 - `native-empty` vs `canonical-empty` vs `canonical-occupied`
+## 2026-04-14 `native-empty` vs `canonical-empty` vs `canonical-occupied`
 
 The buy/sell diffs above are enough to separate three different notions that the editor should not
 mix together.
@@ -2076,7 +2099,7 @@ What the editor should guarantee whenever it creates or rebinds a live career ca
 This distinction is important because native MW tolerates dirty reusable records, while the editor
 needs stronger invariants to avoid writing crash-prone occupied slots.
 
-## 2026-04-16 - Phase 1 native-empty pursuit parity
+## 2026-04-16 Phase 1 native-empty pursuit parity
 
 - `Career` allocator parity is now relaxed only for initialized pursuit slots.
 - Reusable rule:
@@ -2098,7 +2121,7 @@ needs stronger invariants to avoid writing crash-prone occupied slots.
   - write paths still normalize live slots to `canonical-occupied`
   - owned-car and parts-slot parity are intentionally deferred to later phases
 
-## 2026-04-16 - Phase 2 native-empty owned-slot parity
+## 2026-04-16 Phase 2 native-empty owned-slot parity
 
 - `Owned-car` allocator parity is now relaxed for parsed native-empty owned slots.
 - Reusable rule:
@@ -2115,7 +2138,7 @@ needs stronger invariants to avoid writing crash-prone occupied slots.
   - write paths still normalize reused slots to `canonical-occupied`
   - this phase does not change parts-slot parity; stale `parts_slot` bytes on empty owned records are tolerated only on allocator/read-path
 
-## 2026-04-14 - Native reward path crashes on 26th career-like car
+## 2026-04-14 Native reward path crashes on 26th career-like car
 
 A controlled in-game overflow test now confirms the practical limit of the career/pursuit namespace:
 
@@ -2138,3 +2161,313 @@ Editor implication:
 - treat `25 total career-like cars` as a hard safety limit for user-facing workflows
 - do not assume the player can safely keep `25 / 25` injected cars and later win another
   blacklist `Pink Slip` in-game
+
+## 2026-04-24 `kswd_unlock_residual_test` pending residual unlock probe
+
+After closing the `0xC20..0xD57` sliding `8-byte` table as another false lead, the
+remaining clean diff surface was re-ranked against `KSWD(Base)`, `KSWD(Before_beating_Webster)`,
+`KSWD(After_beating_Webster)`, and `fixture-i(base_heat_level5)`.
+
+Important control observation:
+
+- clean `KSWD` ladder saves keep `0x4040..0x4041 = 0x0803`
+- only the corrupted / late override saves (`KSWD`, `KSWD(old)`, `fixture-i`) carry `0x1DF7`
+- so `0x4040..0x4041` can over-unlock performance, but it is not the clean normal
+  progression delta between the `KSWD` ladder saves
+
+New residual pack:
+
+- `local test pack: kswd_unlock_residual_test`
+- manifest: `README.md`
+
+Variants:
+
+- `KSWD_residual_00_baseline`
+- `KSWD_residual_01_before_web_prefix_00B4_048F`
+- `KSWD_residual_02_before_web_gap_0901_091F`
+- `KSWD_residual_03_before_web_prefix_plus_gap`
+- `KSWD_residual_04_before_web_postpursuit_F29A_F465`
+- `KSWD_residual_05_after_web_sparse_tail_F4B5_F84C`
+- `KSWD_residual_06_before_web_prefix_gap_postpursuit`
+- `KSWD_residual_07_fixture-i_postpursuit_F29A_F465`
+
+Patch intent:
+
+- `0x00B4..0x048F` tests the still-untested early profile prefix before the keyed
+  blacklist-summary table
+- `0x0901..0x091F` tests the narrow bridge between the keyed summary table and the
+  `0x920` sliding registry
+- `0xF29A..0xF465` tests the post-pursuit `MW-...` record cluster that advances from
+  baseline to before-Webster
+- `0xF4B5..0xF84C` tests sparse after-Webster-only tail changes
+
+All variants are based on clean `KSWD(Base)` and intentionally leave these untouched:
+
+- `0x4C`
+- `0x4038`
+- `0x4040..0x4041`
+- owned-car table
+- parts blocks
+- pursuit slots
+- all already-tested false-lead ranges
+
+Test signal:
+
+- if `performance` advances while boss / cars / cops stay baseline, the patched range is
+  likely near the missing normal shop gate
+- if only race/progression summaries regress again, classify the tested range as another
+  summary / presentation layer
+
+## 2026-04-24 `kswd_unlock_residual_test` outcome
+
+In-game validation result:
+
+- `01_before_web_prefix_00B4_048F`:
+  - reproduces the old milestone / blacklist-screen regression
+- `02_before_web_gap_0901_091F`:
+  - reproduces the same milestone / blacklist-screen regression
+- `03_before_web_prefix_plus_gap`:
+  - reproduces the same milestone / blacklist-screen regression
+- `04_before_web_postpursuit_F29A_F465`:
+  - no milestone / blacklist regression observed
+- `05_after_web_sparse_tail_F4B5_F84C`:
+  - no milestone / blacklist regression observed
+  - key bindings / control buttons changed
+- `06_before_web_prefix_gap_postpursuit`:
+  - milestone / blacklist-screen regression is present again
+- `07_fixture-i_postpursuit_F29A_F465`:
+  - no milestone / blacklist regression observed
+
+Interpretation:
+
+- `0x00B4..0x048F` and `0x0901..0x091F` belong to the same broad
+  blacklist / milestone presentation family as the earlier summary-table false leads
+- `0xF29A..0xF465` did not produce the old progression regression and did not produce a
+  reported positive unlock signal in this test
+- `0xF4B5..0xF84C` contains at least some input / key-binding state and should not be
+  treated as a clean unlock candidate
+- `06` confirms the regression comes from the prefix / gap pieces, not from the
+  post-pursuit cluster
+
+Current conclusion:
+
+- this residual pack does not identify the missing normal performance shop gate
+- the early prefix / gap ranges should be treated as another summary / presentation layer
+- the after-Webster sparse tail should be excluded from unlock probes unless intentionally
+  studying control/input settings
+
+## 2026-04-24 `kswd_profile_core_combo_test` pending small-profile probe
+
+After the residual ranges failed, the next focused hypothesis is that normal performance
+unlocking may need a small companion state near the rank byte rather than a standalone
+large table.
+
+Reason:
+
+- `0x4038` alone advances boss / dealership / cops in rank-byte tests, but leaves
+  performance at the older state
+- earlier profile-block tests changed `0x4038` together with nearby bytes
+  `0x403D..0x403E`
+- clean `KSWD` ladder saves change `0x403D..0x403E` across progression
+- `0x4040..0x4041` is intentionally excluded from this probe because changing it to
+  `0x1DF7` is already known to over-unlock performance and corrupt story state
+
+New pack:
+
+- `local test pack: kswd_profile_core_combo_test`
+- manifest: `README.md`
+
+Variants:
+
+- `KSWD_core_00_baseline`
+- `KSWD_core_01_after_web_rank_4038_only`
+- `KSWD_core_02_after_web_403D_403E_only`
+- `KSWD_core_03_after_web_rank_plus_403D_403E`
+- `KSWD_core_04_after_web_4C_rank_403D_403E`
+- `KSWD_core_05_before_web_rank_plus_403D_403E`
+- `KSWD_core_06_before_web_4C_rank_403D_403E`
+- `KSWD_core_07_fixture-i_rank_plus_403D_403E`
+- `KSWD_core_08_fixture-i_4C_rank_403D_403E`
+
+Guardrails:
+
+- every variant starts from clean `KSWD(Base)`
+- `0x4040..0x4041` stays baseline `0x0803` in every variant
+- no owned-car / parts / pursuit / large summary-table ranges are patched
+
+Key signal:
+
+- if performance advances only when `0x403D..0x403E` joins `0x4038`, those bytes are
+  part of the missing normal shop gate or a required companion state
+- if all variants keep performance baseline, the clean normal performance gate likely is
+  not represented by these small profile-core bytes
+
+## 2026-04-24 `kswd_profile_core_combo_test` outcome
+
+In-game validation result:
+
+- `01_after_web_rank_4038_only`:
+  - blacklist screen behaves like current boss is `JV` (`#4`)
+  - post-Webster victory phone call triggers on free-roam load
+  - dealership cars unlock up to the `#4` story point
+  - cops / heat progression advance beyond the baseline `x3` cap
+  - performance parts stay baseline / old `#9`-era state
+  - milestone icons still show the visual lock issue already seen in earlier rank-byte tests
+- `02_after_web_403D_403E_only`:
+  - baseline; no visible changes
+- `03_after_web_rank_plus_403D_403E`:
+  - same behavior as `01`
+  - no performance unlock movement
+- `04_after_web_4C_rank_403D_403E`:
+  - same story / cars / cops behavior as `01` and `03`
+  - plus old milestone / blacklist regression returns
+  - first attempt to load a bounty / pursuit crashed; after restarting, pursuit loaded normally
+- `05_before_web_rank_plus_403D_403E`:
+  - current boss becomes `Webster` (`#5`)
+  - Webster's own milestones are not completed
+  - previous bosses do not lose progress in this variant
+  - visual lock issue remains
+  - performance parts stay baseline
+  - dealership cars and cops match the `#5` story point
+- `06_before_web_4C_rank_403D_403E`:
+  - same as `05`
+  - plus previous bosses lose milestone / blacklist summary state again
+- `07_fixture-i_rank_plus_403D_403E`:
+  - performance parts stay baseline
+- `08_fixture-i_4C_rank_403D_403E`:
+  - performance parts stay baseline
+
+Interpretation:
+
+- `0x403D..0x403E` alone has no visible effect
+- adding `0x403D..0x403E` to `0x4038` does not move performance unlocks
+- fixture-i rank / post-money bytes without the `0x4040 = 0x1DF7` sticky override also do not
+  move performance unlocks
+- `0x4038` remains the authoritative small field for current boss / dealership cars / cop heat cap
+- the lock icons are caused by missing companion blacklist / milestone presentation state, not by
+  `0x403D..0x403E`
+- adding `0x4C` to a rank-byte patch increases inconsistency with the summary/presentation layers:
+  - old milestone regressions can return
+  - pursuit startup can become unstable
+
+Current conclusion:
+
+- the clean normal performance gate is not explained by `0x403D..0x403E`
+- `0x4C` should not be used as a casual companion for rank edits unless the matching summary /
+  milestone layers are also patched coherently
+- this closes the small profile-core hypothesis for normal performance unlocks
+- next RE should target the performance-shop lifecycle directly rather than boss-progression
+  save pairs
+
+## Next performance-shop lifecycle RE plan
+
+The accumulated negative results suggest that normal performance unlocks may not exist as a
+single clean save-table delta in the boss-progression saves tested so far.
+
+New hypothesis:
+
+- performance-shop availability may be derived / cached only after a shop visit or a purchase
+- alternatively, the only save-visible late override may be the unsafe `0x4040 = 0x1DF7`
+  sticky state, while normal shop availability is computed from runtime story state
+
+Recommended controlled native saves:
+
+- `perfshop_00_before_boss`
+  - before beating the boss that should unlock the next performance tier
+  - do not enter the performance shop after creating this save
+- `perfshop_01_after_boss_before_shop`
+  - immediately after beating the boss and returning to safehouse / free roam
+  - do not enter the performance shop yet
+- `perfshop_02_after_opening_performance_shop`
+  - enter the performance shop, view the newly available category / tier, exit, save
+  - buy nothing if possible
+- `perfshop_03_after_buying_newly_unlocked_part`
+  - buy exactly one newly unlocked performance part on a known car, exit, save
+
+Useful constraints:
+
+- use the same profile and same active car across all saves
+- avoid changing visual parts, controls, junkman inventory, garage contents, and bounty if possible
+- note the exact boss / tier expected to unlock
+- note which performance category and level becomes newly visible
+
+Expected value:
+
+- if `00 -> 01` changes no clean performance state but `01 -> 02` does, the unlock cache is
+  shop-visit generated
+- if only `02 -> 03` changes performance-related data, the save may store installed/bought state
+  rather than global availability
+- if none of these steps produce a clean global delta, global performance unlocks are likely
+  runtime-derived and should not be exposed as a normal editor feature
+
+## 2026-04-25 internet `KSWD` full-career pack scan
+
+Source pack:
+
+- `external full-career fixture`
+- 32 saves, one `KSWD` file per folder
+- every file is `63596` bytes and validates as `md5_saved_data` with file size, MD5, and all CRCs OK
+
+Useful identity checks:
+
+- `KSWD(Base)` / `KSWD(Before_beating_Earl)` is byte-identical to:
+  - `07. Final Race versus EARL - Mitsubishi Lancer Evolution VIII`
+- `KSWD(Before_beating_Webster)` is byte-identical to:
+  - `11. Final Race versus WEBSTER - Corvette C6`
+
+Clean progression fields across the pack:
+
+- `0x4038` follows the current boss / player-rank ladder cleanly:
+  - `15 -> 14 -> ... -> 1`
+- `0x4C` follows the broader progression counter:
+  - `0x02` at new career start
+  - `0x09` at `KSWD(Base)` / Earl final
+  - `0x0D` at Webster final
+  - `0x11` at Razor / final pursuit / game over
+- `0x4040..0x4041` does **not** use the unsafe `0x1DF7` value anywhere in this clean ladder:
+  - start: `0x0000`
+  - early post-Sonny / blacklist #14: `0x0802`
+  - normal career from Taz onward through Razor: `0x0803`
+  - final pursuit: `0x1803`
+  - game over: `0x1843`
+
+Important exclusion:
+
+- the earlier-adjacent fixed entry table `0x4088..0x412B` is real, but it is not the missing
+  `#9 -> later` performance gate
+- it is mostly populated before or by `KSWD(Base)` and stays identical between `KSWD(Base)` and
+  `KSWD(After_beating_Webster)` in the tested ladder controls
+- this extends the existing `0x412C..0x4260` fixed-entry false lead backward, rather than opening
+  a new performance candidate
+
+After excluding known layers:
+
+- header CRCs / tail MD5 account for `0x0014..0x001B` and `0xF85C..0xF86B`
+- early keyed/sliding summary layers account for `0x00B4..0x0D57`
+- small story fields account for `0x4038..0x4041`
+- fixed profile-entry tables account for `0x4088..0x4265`
+- the previously tested dense region accounts for `0x42F0..0x4C5F`
+- visual / tail / input false leads account for `0x5577..0x57B9`, `0x5B60..0x5B67`,
+  and `0xF29A..0xF84C`
+- owned cars, parts blocks, and pursuit records account for the large car-local diff surface
+
+Remaining late-game-only deltas are small and do not resemble a normal shop unlock table:
+
+- `0x0D58..0x0D87`: late blacklist / final-race state near the already-failed sliding table
+- `0x4260..0x4265`: edge of the fixed entry-table family, already covered by the same false-lead behavior
+- `0x429B`: monotonic progression-like byte, changes almost every save
+- `0x42B5`: final / pursuit-adjacent counter
+- `0x5573`, `0x57B1`, `0x57B9`: visual-tail adjacent
+- `0x5C71`, `0x5C73`, `0x793D..0x7955`: late/endgame-only bytes, too sparse and not aligned with
+  the observed #9 -> #5/#4 performance problem
+
+Current conclusion:
+
+- this full-career pack is useful as a clean ladder control, but it does not expose a new clean
+  performance-unlock table
+- if normal performance unlocks are written at boss victory, the save-visible state is either:
+  - inside layers already shown to be summary/presentation/local installed-parts data,
+  - a multi-layer runtime-derived state that cannot be patched by one standalone table,
+  - or cached only by entering the performance shop / buying a part
+- the next highest-value RE path remains the controlled performance-shop lifecycle chain described
+  above, not another broad boss-progression range transplant

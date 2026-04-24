@@ -57,6 +57,7 @@ class SaveFile:
     SLOT_COUNT_OFF = 0x08
     SLOT_SIZE = JunkmanInventory.SLOT_SIZE
     SLOT_MAX = 200  # upper bound for diff helpers
+    PLAYER_RANK_OFFSET = 0x4038
     MONEY_OFFSET = 0x4039
     ACTIVE_CAREER_CAR_NUMBER_OFFSET = 0x4034
     PROFILE_ALIAS_OFFSET = 0x5A31
@@ -237,6 +238,31 @@ class SaveFile:
         if heat < cls.GARAGE_HEAT_MIN or heat > cls.GARAGE_HEAT_MAX:
             raise ValueError(f"heat must be between {cls.GARAGE_HEAT_MIN:.1f} and {cls.GARAGE_HEAT_MAX:.1f}")
         return heat
+
+    @classmethod
+    def heat_cap_for_blacklist_rank(cls, rank: int) -> int:
+        current_rank = int(rank)
+        if current_rank <= 4:
+            return 5
+        if current_rank <= 8:
+            return 4
+        if current_rank <= 12:
+            return 3
+        return 2
+
+    def get_current_blacklist_rank(self) -> Optional[int]:
+        if len(self.data) <= self.PLAYER_RANK_OFFSET:
+            return None
+        rank = self._read_u8(self.PLAYER_RANK_OFFSET)
+        if rank <= 0:
+            return None
+        return int(rank)
+
+    def get_story_heat_cap(self) -> int:
+        rank = self.get_current_blacklist_rank()
+        if rank is None:
+            return int(self.GARAGE_HEAT_MAX)
+        return self.heat_cap_for_blacklist_rank(rank)
 
     @classmethod
     def _heat_level_from_value(cls, heat: float | int) -> int:
@@ -2283,9 +2309,16 @@ class SaveFile:
 
     def set_slot_heat(self, slot_index: int, value: float | int) -> None:
         wanted = int(slot_index)
+        normalized = self._normalize_heat_value(value)
+        level = self._heat_level_from_value(normalized)
+        cap = self.get_story_heat_cap()
+        if level > cap:
+            rank = self.get_current_blacklist_rank()
+            rank_text = f" for Blacklist #{rank}" if rank is not None else ""
+            raise ValueError(f"Heat x{level} is locked by story progression{rank_text}; current cap is x{cap}")
         for slot in self.get_pursuit_records():
             if slot.career_slot == wanted:
-                self._write_pursuit_heat_fields(slot.abs_off, value)
+                self._write_pursuit_heat_fields(slot.abs_off, normalized)
                 return
         raise ValueError(f"Garage slot {wanted} was not detected")
 
