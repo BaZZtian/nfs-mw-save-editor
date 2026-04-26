@@ -97,7 +97,7 @@ class PresetsMixin:
         for filter_value in ["Main", "Bonus", "User"]:
             btn = QPushButton(self._preset_bucket_ui_label(filter_value))
             btn.setCheckable(True)
-            btn.setObjectName("catButton")
+            btn.setObjectName("filterButton")
             btn.clicked.connect(lambda _, v=filter_value: self.on_snapshot_library_filter_changed(v))
             self.snapshot_library_filter_group.addButton(btn)
             self.snapshot_library_filter_buttons[filter_value] = btn
@@ -110,7 +110,7 @@ class PresetsMixin:
         for filter_value in ["All", "Career", "My Cars"]:
             btn = QPushButton(filter_value)
             btn.setCheckable(True)
-            btn.setObjectName("catButton")
+            btn.setObjectName("filterButton")
             btn.clicked.connect(lambda _, v=filter_value: self._select_snapshot_save_filter(v))
             self.snapshot_save_filter_group.addButton(btn)
             self.snapshot_save_filter_buttons[filter_value] = btn
@@ -142,7 +142,7 @@ class PresetsMixin:
         for name in ["Library", "My Save"]:
             btn = QPushButton(name)
             btn.setCheckable(True)
-            btn.setObjectName("catButton")
+            btn.setObjectName("filterButton")
             btn.clicked.connect(lambda _, v=name: self._on_presets_view_changed(v))
             self.presets_view_group.addButton(btn)
             self.presets_view_buttons[name] = btn

@@ -395,7 +395,7 @@ class PartsMixin:
         self.tuning_filter_group.setExclusive(True)
         for label in ["All", "Career", "My Cars"]:
             btn = QPushButton(label)
-            btn.setObjectName("catButton")
+            btn.setObjectName("filterButton")
             btn.setCheckable(True)
             btn.clicked.connect(lambda _, source=label: self._select_tuning_filter(source))
             self.tuning_filter_group.addButton(btn)

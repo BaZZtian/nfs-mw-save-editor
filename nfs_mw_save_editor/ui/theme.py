@@ -634,7 +634,7 @@ QPushButton#navButton:checked {{
 QPushButton#navButton:hover {{
     background: {BG_NAV_HOVER};
 }}
-QPushButton#catButton {{
+QPushButton#filterButton {{
     padding: 6px 12px;
     min-height: 28px;
     text-align: left;

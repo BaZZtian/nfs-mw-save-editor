@@ -163,7 +163,7 @@ class JunkmanMixin:
         self.cat_group.setExclusive(True)
         for cat in CAT_LIST:
             btn = QPushButton(cat)
-            btn.setObjectName("catButton")
+            btn.setObjectName("filterButton")
             btn.setCheckable(True)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setMinimumHeight(32)
