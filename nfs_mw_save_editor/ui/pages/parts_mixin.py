@@ -602,13 +602,6 @@ class PartsMixin:
     def _format_parts_raw(self, raw: bytes) -> str:
         return raw.hex(" ").upper()
 
-    def _make_stat_badge(self, text: str, object_name: str = "garageCardStatBadge") -> QLabel:
-        label = QLabel(text)
-        label.setObjectName(object_name)
-        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        label.setAlignment(Qt.AlignCenter)
-        return label
-
     def _allocator_unavailable_breakdown_lines(self, snapshot) -> List[str]:
         if snapshot is None:
             return []
@@ -628,25 +621,6 @@ class PartsMixin:
         if all(line.endswith(": 0") for line in lines):
             return "No allocator issues detected."
         return "\n".join(lines)
-
-    def _make_page_controls_bar(self) -> tuple[QFrame, QHBoxLayout]:
-        frame = QFrame()
-        frame.setObjectName("pageControlsRow")
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(10)
-        return frame, layout
-
-    def _make_centered_search_host(self, search: QLineEdit, *, max_width: int = 460) -> QWidget:
-        search.setMinimumWidth(220)
-        search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        host = QWidget()
-        host.setObjectName("pageControlsSearchHost")
-        row = QHBoxLayout(host)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(0)
-        row.addWidget(search, 1)
-        return host
 
     def _make_tuning_status_badge(self, text: str) -> QLabel:
         object_name = self._tuning_status_object_name(text)

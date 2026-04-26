@@ -47,6 +47,7 @@ from core.models import (
 from core.savefile import SaveFile
 from resources import resource_path
 from ui.icon_map import nav_icon_path
+from ui.page_chrome import PageChromeMixin
 from ui.pages.constants import *
 from ui.pages.garage_mixin import GarageMixin
 from ui.pages.junkman_mixin import JunkmanMixin
@@ -111,6 +112,7 @@ def _ensure_user_catalog_path() -> Path:
 #  MAIN WINDOW
 # ===================================================================
 class MainWindow(
+    PageChromeMixin,
     JunkmanMixin,
     ProfileMixin,
     GarageMixin,
