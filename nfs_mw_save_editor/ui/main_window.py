@@ -55,6 +55,7 @@ from ui.pages.parts_mixin import PartsMixin
 from ui.pages.presets_mixin import PresetsMixin
 from ui.pages.profile_mixin import ProfileMixin
 from ui.pages.settings_mixin import SettingsMixin
+from ui.staged_state import StagedEditState
 from ui.theme import (
     _SCOPED_POPUP_THEME_APPLYING_PROPERTY,
     apply_popup_theme,
@@ -121,6 +122,13 @@ class MainWindow(
     SettingsMixin,
     QMainWindow,
 ):
+    """Main UI controller.
+
+    Staged-state cleanup note: ``want_slot_flags`` and
+    ``want_cleared_pursuit_slots`` remain projection caches owned by
+    MainWindow refresh/garage-transfer logic, not staged helper fields.
+    """
+
     def __init__(self):
         super().__init__()
         icon_path = resource_path("assets", "icon.ico")
@@ -134,6 +142,7 @@ class MainWindow(
         self.unlock_profile_alias_16 = bool(saved_alias_unlock) if isinstance(saved_alias_unlock, bool) else False
         self._theme_transition_overlay: Optional[ThemeTransitionOverlay] = None
         self._page_transition_overlay: Optional[ThemeTransitionOverlay] = None
+        self.staged_state = StagedEditState()
 
     #  state
         self.savefile: Optional[SaveFile] = None
