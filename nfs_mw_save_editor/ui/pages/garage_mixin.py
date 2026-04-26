@@ -151,7 +151,7 @@ class GarageMixin:
         layout.addWidget(controls_frame)
 
         self.garage_warning_label = QLabel()
-        self.garage_warning_label.setObjectName("partsCardNote")
+        self.garage_warning_label.setObjectName("contentCardNote")
         self.garage_warning_label.setWordWrap(True)
         self.garage_warning_label.setVisible(False)
         layout.addWidget(self.garage_warning_label)
@@ -588,7 +588,7 @@ class GarageMixin:
         elif source_kind == "My Cars":
             label.setObjectName("myCarsSourceBadge")
         else:
-            label.setObjectName("garageCardStatBadge")
+            label.setObjectName("contentCardStatBadge")
         label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         label.setAlignment(Qt.AlignCenter)
         label.setToolTip(source_kind)
@@ -754,7 +754,7 @@ class GarageMixin:
         elif source_kind == "Pink Slip":
             label.setObjectName("pinkSlipBadgeText")
         else:
-            label.setObjectName("garageCardStatBadge")
+            label.setObjectName("contentCardStatBadge")
         label.setText(source_kind)
         label.setToolTip(source_kind)
         refresh_widget_style(label)
@@ -891,7 +891,7 @@ class GarageMixin:
             else f"Car #{slot.car_number:02X}"
         )
         slot_label = QLabel(slot_text)
-        slot_label.setObjectName("garageCardSlot")
+        slot_label.setObjectName("contentCardSlot")
         slot_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         slot_label.setAlignment(Qt.AlignCenter)
         source_label = QLabel()
@@ -909,7 +909,7 @@ class GarageMixin:
         card_layout.addLayout(header_row)
 
         name_label = QLabel(slot.display_name)
-        name_label.setObjectName("garageCardMeta")
+        name_label.setObjectName("contentCardMeta")
         name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         name_label.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(name_label, 0, Qt.AlignLeft)
@@ -917,15 +917,15 @@ class GarageMixin:
         meta_row = QHBoxLayout()
         meta_row.setSpacing(8)
         parts_badge = QLabel()
-        parts_badge.setObjectName("garageCardStatBadge")
+        parts_badge.setObjectName("contentCardStatBadge")
         parts_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         parts_badge.setAlignment(Qt.AlignCenter)
         loc_badge = QLabel()
-        loc_badge.setObjectName("garageCardStatBadge")
+        loc_badge.setObjectName("contentCardStatBadge")
         loc_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         loc_badge.setAlignment(Qt.AlignCenter)
         misc_badge = QLabel()
-        misc_badge.setObjectName("garageCardStatBadge")
+        misc_badge.setObjectName("contentCardStatBadge")
         misc_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         misc_badge.setAlignment(Qt.AlignCenter)
         for badge in [parts_badge, loc_badge, misc_badge]:
@@ -1031,11 +1031,11 @@ class GarageMixin:
             stats_row.setContentsMargins(0, 4, 0, 0)
 
             esc_lbl = QLabel(f"Escaped  {slot.escaped if slot.escaped is not None else '-'}")
-            esc_lbl.setObjectName("garageCardStatBadge")
+            esc_lbl.setObjectName("contentCardStatBadge")
             esc_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             esc_lbl.setAlignment(Qt.AlignCenter)
             bust_lbl = QLabel(f"Busted  {slot.busted if slot.busted is not None else '-'}")
-            bust_lbl.setObjectName("garageCardStatBadge")
+            bust_lbl.setObjectName("contentCardStatBadge")
             bust_lbl.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             bust_lbl.setAlignment(Qt.AlignCenter)
             stats_row.addWidget(esc_lbl, 0, Qt.AlignLeft)

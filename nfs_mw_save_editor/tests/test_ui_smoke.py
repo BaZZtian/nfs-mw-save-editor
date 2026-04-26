@@ -14,7 +14,7 @@ from core.models import OwnedCarTransferPlan, ResolvedTransferCarEntry
 from core.savefile import SaveFile
 from ui.main_window import MainWindow
 from ui.pages.garage_mixin import GarageCardVm
-from ui.theme import available_theme_names
+from ui.theme import available_theme_names, build_page_stylesheet
 
 
 SMOKE_OBJECT_NAMES = (
@@ -26,8 +26,14 @@ SMOKE_OBJECT_NAMES = (
     "pageControlsSearchHost",
     "filterButton",
     "garageCard",
-    "partsCard",
-    "partsBulkBtn",
+    "contentCard",
+    "cardActionButton",
+    "contentCardSlot",
+    "contentCardMeta",
+    "contentCardSep",
+    "contentCardFieldLabel",
+    "contentCardStatBadge",
+    "contentCardNote",
     "garageHeatRow",
     "heatBtn",
     "partsLevelRow",
@@ -170,6 +176,40 @@ class UiSmokeTests(unittest.TestCase):
         for page_name in pages:
             self._navigate(page_name)
             self._assert_smoke_objects_exist(f"{page_name} after theme switch")
+
+    def test_page_stylesheet_uses_shared_content_card_selectors(self) -> None:
+        stylesheet = build_page_stylesheet(self.window.theme_name)
+
+        expected_selectors = (
+            "QFrame#contentCard {",
+            'QFrame#contentCard[changed="true"] {',
+            "QPushButton#cardActionButton {",
+            "QPushButton#cardActionButton:hover {",
+            "QPushButton#cardActionButton:disabled {",
+            "QLabel#contentCardSlot {",
+            "QLabel#contentCardMeta {",
+            "QLabel#contentCardFieldLabel {",
+            "QFrame#contentCardSep {",
+            "QLabel#contentCardRaw {",
+            "QLabel#contentCardNote {",
+            "QLabel#contentCardStatBadge {",
+        )
+        for selector in expected_selectors:
+            self.assertIn(selector, stylesheet)
+
+        removed_selectors = (
+            "#parts" + "Card",
+            "#parts" + "BulkBtn",
+            "#garage" + "CardSlot",
+            "#garage" + "CardMeta",
+            "#garage" + "CardFieldLabel",
+            "#garage" + "CardSep",
+            "#parts" + "CardRaw",
+            "#parts" + "CardNote",
+            "#garage" + "CardStatBadge",
+        )
+        for selector in removed_selectors:
+            self.assertNotIn(selector, stylesheet)
 
 
 if __name__ == "__main__":

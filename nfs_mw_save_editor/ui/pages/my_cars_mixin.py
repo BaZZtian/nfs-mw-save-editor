@@ -118,7 +118,7 @@ class MyCarsMixin:
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
             car_label = QLabel(f"Car #{entry.car_number:02X}")
-            car_label.setObjectName("garageCardSlot")
+            car_label.setObjectName("contentCardSlot")
             car_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             car_label.setAlignment(Qt.AlignCenter)
             header_row.addWidget(car_label, 0, Qt.AlignLeft)
@@ -127,7 +127,7 @@ class MyCarsMixin:
             card_layout.addLayout(header_row)
 
             name_label = QLabel(entry.resolved_model_name)
-            name_label.setObjectName("garageCardMeta")
+            name_label.setObjectName("contentCardMeta")
             name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
@@ -139,7 +139,7 @@ class MyCarsMixin:
                 badges.append(f"Career Slot {entry.career_slot + 1}")
             for text in badges:
                 badge = QLabel(text)
-                badge.setObjectName("garageCardStatBadge")
+                badge.setObjectName("contentCardStatBadge")
                 badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
                 badge.setAlignment(Qt.AlignCenter)
                 meta_row.addWidget(badge, 0, Qt.AlignLeft)

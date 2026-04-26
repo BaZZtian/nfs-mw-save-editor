@@ -217,7 +217,7 @@ class SettingsMixin:
                 view.viewport().update()
 
     def _build_settings_group(self, title: str, widgets: list) -> QFrame:
-        """Create a garageCard-styled settings group with a title and child widgets."""
+        """Create a content-card-styled settings group with a title and child widgets."""
         group = QFrame()
         group.setObjectName("settingsGroup")
         layout = QVBoxLayout(group)

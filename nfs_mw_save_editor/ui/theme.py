@@ -1044,12 +1044,12 @@ QFrame#garageCard[changed="true"] {{
 QFrame#garageCard[occupied="false"] {{
     opacity: 0.6;
 }}
-QFrame#partsCard {{
+QFrame#contentCard {{
     background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
-QFrame#partsCard[changed="true"] {{
+QFrame#contentCard[changed="true"] {{
     border: 1px solid {CARD_CHANGED_BORDER};
     background: {CARD_CHANGED_BG};
 }}
@@ -1150,7 +1150,7 @@ QPushButton#partsJunkmanToggle:disabled {{
     border-color: {BORDER};
     color: {MUTED_DARK};
 }}
-QPushButton#partsBulkBtn {{
+QPushButton#cardActionButton {{
     background: {BG_BULK_BTN};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_MD};
@@ -1159,16 +1159,16 @@ QPushButton#partsBulkBtn {{
     font-size: 11px;
     font-weight: 600;
 }}
-QPushButton#partsBulkBtn:hover {{
+QPushButton#cardActionButton:hover {{
     background: {BG_BULK_HOVER};
     border-color: {ACCENT};
 }}
-QPushButton#partsBulkBtn:disabled {{
+QPushButton#cardActionButton:disabled {{
     background: {BG_DISABLED};
     border-color: {BORDER};
     color: {MUTED_DARK};
 }}
-QLabel#garageCardSlot {{
+QLabel#contentCardSlot {{
     background: {BG_INPUT};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_MD};
@@ -1177,7 +1177,7 @@ QLabel#garageCardSlot {{
     font-size: 10.5px;
     font-weight: 600;
 }}
-QLabel#garageCardMeta {{
+QLabel#contentCardMeta {{
     background: {BG_INPUT};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_MD};
@@ -1186,13 +1186,13 @@ QLabel#garageCardMeta {{
     font-size: 12px;
     font-weight: 700;
 }}
-QLabel#garageCardFieldLabel {{
+QLabel#contentCardFieldLabel {{
     background: transparent;
     color: {MUTED};
     font-size: 10.5px;
     font-weight: 600;
 }}
-QFrame#garageCardSep {{
+QFrame#contentCardSep {{
     color: {BORDER};
 }}
 QLineEdit#garageCardEdit {{
@@ -1209,7 +1209,7 @@ QLabel#garageCardCurrent {{
     color: {MUTED};
     font-size: 10.5px;
 }}
-QLabel#partsCardRaw {{
+QLabel#contentCardRaw {{
     background: {BG_INPUT};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_MD};
@@ -1219,12 +1219,12 @@ QLabel#partsCardRaw {{
     font-size: 11.5px;
     font-weight: 600;
 }}
-QLabel#partsCardNote {{
+QLabel#contentCardNote {{
     background: transparent;
     color: {MUTED};
     font-size: 10.5px;
 }}
-QLabel#garageCardStatBadge {{
+QLabel#contentCardStatBadge {{
     background: {STATUS_NEUTRAL_BG};
     border: 1px solid {STATUS_NEUTRAL_BORDER};
     border-radius: {RADIUS_MD};

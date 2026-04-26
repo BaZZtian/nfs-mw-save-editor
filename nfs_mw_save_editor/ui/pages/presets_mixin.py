@@ -337,7 +337,7 @@ class PresetsMixin:
             label.setWordWrap(True)
             layout.addWidget(label)
             open_btn = QPushButton("Open folder")
-            open_btn.setObjectName("partsBulkBtn")
+            open_btn.setObjectName("cardActionButton")
             open_btn.clicked.connect(self.on_open_user_builds_folder)
             layout.addWidget(open_btn, 0, Qt.AlignLeft)
             layout.addStretch(1)
@@ -606,7 +606,7 @@ class PresetsMixin:
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
             bucket_badge = QLabel(self._preset_bucket_ui_label(entry.library_bucket))
-            bucket_badge.setObjectName("garageCardSlot")
+            bucket_badge.setObjectName("contentCardSlot")
             bucket_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             bucket_badge.setAlignment(Qt.AlignCenter)
             source_badge = self._make_garage_source_badge(entry.source_kind)
@@ -617,7 +617,7 @@ class PresetsMixin:
 
             # Car name
             name_label = QLabel(entry.display_name)
-            name_label.setObjectName("garageCardMeta")
+            name_label.setObjectName("contentCardMeta")
             name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
@@ -625,7 +625,7 @@ class PresetsMixin:
             # Capability / warning badges
             if entry.has_visual_sidecar:
                 warn_badge = QLabel("Needs adjacent sidecar slots")
-                warn_badge.setObjectName("partsCardNote")
+                warn_badge.setObjectName("contentCardNote")
                 warn_badge.setWordWrap(True)
                 card_layout.addWidget(warn_badge)
             if entry.requires_unresolved_global_visual_state:
@@ -635,7 +635,7 @@ class PresetsMixin:
                     else "Uses extra 0x5577 visual state not replayed in this preview"
                 )
                 warn_badge = QLabel(mode_text)
-                warn_badge.setObjectName("partsCardNote")
+                warn_badge.setObjectName("contentCardNote")
                 warn_badge.setWordWrap(True)
                 card_layout.addWidget(warn_badge)
 
@@ -802,7 +802,7 @@ class PresetsMixin:
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
             slot_badge = QLabel(f"Parts Slot {snapshot.parts_slot}")
-            slot_badge.setObjectName("garageCardSlot")
+            slot_badge.setObjectName("contentCardSlot")
             slot_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             slot_badge.setAlignment(Qt.AlignCenter)
             source_badge = self._make_garage_source_badge(snapshot.source_kind)
@@ -813,7 +813,7 @@ class PresetsMixin:
 
             # Car name
             name_label = QLabel(snapshot.display_name)
-            name_label.setObjectName("garageCardMeta")
+            name_label.setObjectName("contentCardMeta")
             name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
@@ -826,7 +826,7 @@ class PresetsMixin:
                     else "mixed"
                 )
             )
-            mode_label.setObjectName("partsCardNote")
+            mode_label.setObjectName("contentCardNote")
             mode_label.setWordWrap(True)
             card_layout.addWidget(mode_label)
 
@@ -971,7 +971,7 @@ class PresetsMixin:
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
         bucket_badge = QLabel(self._preset_bucket_ui_label(entry.library_bucket))
-        bucket_badge.setObjectName("garageCardSlot")
+        bucket_badge.setObjectName("contentCardSlot")
         bucket_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         bucket_badge.setAlignment(Qt.AlignCenter)
         header_row.addWidget(bucket_badge, 0, Qt.AlignLeft)
@@ -983,14 +983,14 @@ class PresetsMixin:
         card_layout.addLayout(header_row)
 
         name_label = QLabel(entry.display_name)
-        name_label.setObjectName("garageCardMeta")
+        name_label.setObjectName("contentCardMeta")
         name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         name_label.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
         if entry.has_visual_sidecar:
             warn_badge = QLabel("Needs adjacent sidecar slots")
-            warn_badge.setObjectName("partsCardNote")
+            warn_badge.setObjectName("contentCardNote")
             warn_badge.setWordWrap(True)
             card_layout.addWidget(warn_badge)
         if entry.requires_unresolved_global_visual_state:
@@ -1000,7 +1000,7 @@ class PresetsMixin:
                 else "Uses extra 0x5577 visual state not replayed in this preview"
             )
             warn_badge = QLabel(mode_text)
-            warn_badge.setObjectName("partsCardNote")
+            warn_badge.setObjectName("contentCardNote")
             warn_badge.setWordWrap(True)
             card_layout.addWidget(warn_badge)
 
@@ -1111,7 +1111,7 @@ class PresetsMixin:
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
         slot_badge = QLabel(f"Parts Slot {snapshot.parts_slot}")
-        slot_badge.setObjectName("garageCardSlot")
+        slot_badge.setObjectName("contentCardSlot")
         slot_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         slot_badge.setAlignment(Qt.AlignCenter)
         header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
@@ -1120,7 +1120,7 @@ class PresetsMixin:
         card_layout.addLayout(header_row)
 
         name_label = QLabel(snapshot.display_name)
-        name_label.setObjectName("garageCardMeta")
+        name_label.setObjectName("contentCardMeta")
         name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         name_label.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(name_label, 0, Qt.AlignLeft)
@@ -1133,7 +1133,7 @@ class PresetsMixin:
                 else "mixed"
             )
         )
-        mode_label.setObjectName("partsCardNote")
+        mode_label.setObjectName("contentCardNote")
         mode_label.setWordWrap(True)
         card_layout.addWidget(mode_label)
 
@@ -1335,4 +1335,3 @@ class PresetsMixin:
             self._sync_presets_summary_chrome(loaded=True)
             self._patch_snapshot_library_cards_preserving_scroll()
             self._update_action_states()
-

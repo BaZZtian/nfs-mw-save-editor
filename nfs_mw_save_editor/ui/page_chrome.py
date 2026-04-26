@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButto
 
 
 class PageChromeMixin:
-    def _make_stat_badge(self, text: str, object_name: str = "garageCardStatBadge") -> QLabel:
+    def _make_stat_badge(self, text: str, object_name: str = "contentCardStatBadge") -> QLabel:
         label = QLabel(text)
         label.setObjectName(object_name)
         label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
@@ -35,7 +35,7 @@ class PageChromeMixin:
     def _make_card_frame(
         self,
         *,
-        object_name: str = "partsCard",
+        object_name: str = "contentCard",
         changed: bool | None = None,
         minimum_width: int | None = None,
         vertical_policy: QSizePolicy.Policy = QSizePolicy.Fixed,
@@ -56,19 +56,19 @@ class PageChromeMixin:
             layout.setSizeConstraint(size_constraint)
         return card, layout
 
-    def _make_card_separator(self, object_name: str = "garageCardSep") -> QFrame:
+    def _make_card_separator(self, object_name: str = "contentCardSep") -> QFrame:
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
         sep.setObjectName(object_name)
         return sep
 
-    def _make_card_field_label(self, text: str, object_name: str = "garageCardFieldLabel") -> QLabel:
+    def _make_card_field_label(self, text: str, object_name: str = "contentCardFieldLabel") -> QLabel:
         label = QLabel(text)
         label.setObjectName(object_name)
         label.setAlignment(Qt.AlignCenter)
         return label
 
-    def _make_card_action_button(self, text: str, object_name: str = "partsBulkBtn") -> QPushButton:
+    def _make_card_action_button(self, text: str, object_name: str = "cardActionButton") -> QPushButton:
         btn = QPushButton(text)
         btn.setObjectName(object_name)
         return btn

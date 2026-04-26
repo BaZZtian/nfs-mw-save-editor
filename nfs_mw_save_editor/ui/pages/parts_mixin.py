@@ -85,7 +85,7 @@ class ReusablePartsCardWidget(QFrame):
         self._parts_slot: Optional[int] = None
         self._in_pool = False
         self._theme_name = owner._current_parts_theme_name()
-        self.setObjectName("partsCard")
+        self.setObjectName("contentCard")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setMinimumWidth(360)
         self.setProperty("changed", False)
@@ -96,7 +96,7 @@ class ReusablePartsCardWidget(QFrame):
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
-        slot_badge = owner._make_stat_badge("", "garageCardSlot")
+        slot_badge = owner._make_stat_badge("", "contentCardSlot")
         header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
         header_row.addStretch(1)
         source_badge = QLabel()
@@ -111,7 +111,7 @@ class ReusablePartsCardWidget(QFrame):
         header_row.addWidget(active_badge, 0, Qt.AlignRight)
         card_layout.addLayout(header_row)
 
-        name_label = owner._make_stat_badge("", "garageCardMeta")
+        name_label = owner._make_stat_badge("", "contentCardMeta")
         card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
         status_row = QHBoxLayout()
@@ -181,19 +181,19 @@ class ReusablePartsCardWidget(QFrame):
             diag_marker_label.setVisible(False)
             card_layout.addWidget(diag_marker_label, 0, Qt.AlignLeft)
             diag_raw_label = QLabel("Confirmed Slice (+0x118..+0x137)")
-            diag_raw_label.setObjectName("partsCardNote")
+            diag_raw_label.setObjectName("contentCardNote")
             diag_raw_label.setAlignment(Qt.AlignCenter)
             diag_raw_label.setVisible(False)
             card_layout.addWidget(diag_raw_label)
             diag_raw_value = QLabel()
-            diag_raw_value.setObjectName("partsCardRaw")
+            diag_raw_value.setObjectName("contentCardRaw")
             diag_raw_value.setAlignment(Qt.AlignCenter)
             diag_raw_value.setWordWrap(True)
             diag_raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
             diag_raw_value.setVisible(False)
             card_layout.addWidget(diag_raw_value)
             diag_note_label = QLabel("This source type does not expose a confirmed raw diagnostic slice.")
-            diag_note_label.setObjectName("partsCardNote")
+            diag_note_label.setObjectName("contentCardNote")
             diag_note_label.setWordWrap(True)
             diag_note_label.setVisible(False)
             card_layout.addWidget(diag_note_label)
@@ -617,7 +617,7 @@ class PartsMixin:
             "Maxed": "tuningStatusMaxed",
             "Junkman": "tuningStatusJunkman",
             "Read-only": "tuningStatusReadOnly",
-        }.get(text, "garageCardStatBadge")
+        }.get(text, "contentCardStatBadge")
 
     def _normalize_tuning_entry(self, entry: object) -> TuningCardEntry:
         if isinstance(entry, ResolvedPartsEntry):
@@ -1241,7 +1241,7 @@ class PartsMixin:
             slot_text = f"Car #{card_entry.car_number:02X}"
         else:
             slot_text = f"Parts Slot {card_entry.parts_slot}"
-        slot_badge = self._make_stat_badge(slot_text, "garageCardSlot")
+        slot_badge = self._make_stat_badge(slot_text, "contentCardSlot")
         header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
         header_row.addStretch(1)
         source_badge = QLabel()
@@ -1256,7 +1256,7 @@ class PartsMixin:
         header_row.addWidget(active_badge, 0, Qt.AlignRight)
         card_layout.addLayout(header_row)
 
-        name_label = self._make_stat_badge(card_entry.display_name, "garageCardMeta")
+        name_label = self._make_stat_badge(card_entry.display_name, "contentCardMeta")
         card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
         status_row = QHBoxLayout()
@@ -1322,18 +1322,18 @@ class PartsMixin:
                 card_layout.addWidget(self._make_stat_badge(f"Marker {self._format_parts_raw(card_entry.marker)}"), 0, Qt.AlignLeft)
             if card_entry.confirmed_raw is not None:
                 raw_label = QLabel("Confirmed Slice (+0x118..+0x137)")
-                raw_label.setObjectName("partsCardNote")
+                raw_label.setObjectName("contentCardNote")
                 raw_label.setAlignment(Qt.AlignCenter)
                 card_layout.addWidget(raw_label)
                 raw_value = QLabel(self._format_parts_raw(card_entry.confirmed_raw))
-                raw_value.setObjectName("partsCardRaw")
+                raw_value.setObjectName("contentCardRaw")
                 raw_value.setAlignment(Qt.AlignCenter)
                 raw_value.setWordWrap(True)
                 raw_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
                 card_layout.addWidget(raw_value)
             else:
                 note = QLabel("This source type does not expose a confirmed raw diagnostic slice.")
-                note.setObjectName("partsCardNote")
+                note.setObjectName("contentCardNote")
                 note.setWordWrap(True)
                 card_layout.addWidget(note)
 
