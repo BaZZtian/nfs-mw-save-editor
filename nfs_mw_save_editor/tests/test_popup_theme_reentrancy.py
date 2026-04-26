@@ -70,6 +70,20 @@ class PopupThemeReentrancyTests(unittest.TestCase):
 
         apply_mock.assert_not_called()
 
+    def test_event_filter_applies_popup_theme_on_show_only(self) -> None:
+        window = _EventFilterHarness()
+        dialog = QDialog(window)
+        polish_event = QEvent(QEvent.Type.Polish)
+        show_event = QEvent(QEvent.Type.Show)
+
+        with mock.patch.object(main_window_module, "apply_popup_theme") as apply_mock:
+            window.eventFilter(dialog, polish_event)
+            apply_mock.assert_not_called()
+
+            window.eventFilter(dialog, show_event)
+
+        apply_mock.assert_called_once_with(dialog, "Blueprint")
+
 
 if __name__ == "__main__":
     unittest.main()

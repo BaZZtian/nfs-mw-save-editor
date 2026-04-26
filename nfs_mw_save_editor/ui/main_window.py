@@ -182,6 +182,7 @@ class MainWindow(
         self.tuning_filter = "All"
         self._profile_refreshing = False
         self._parts_refreshing = False
+        self._popup_theme_event_filter_applying = False
         self._garage_slot_columns = 0
         self._parts_slot_columns = 0
         self._snapshot_slot_columns = 0
@@ -1118,10 +1119,16 @@ class MainWindow(
             return False
         if not self._popup_owned_by_main_window(watched):
             return False
+        if getattr(self, "_popup_theme_event_filter_applying", False):
+            return False
         if bool(watched.property(_SCOPED_POPUP_THEME_APPLYING_PROPERTY)):
             return False
-        if event is not None and event.type() in {QEvent.Type.Polish, QEvent.Type.Show}:
-            apply_popup_theme(watched, self.theme_name)
+        if event is not None and event.type() == QEvent.Type.Show:
+            self._popup_theme_event_filter_applying = True
+            try:
+                apply_popup_theme(watched, self.theme_name)
+            finally:
+                self._popup_theme_event_filter_applying = False
         return False
 
     def on_open(self, filepath: str | None = None):
