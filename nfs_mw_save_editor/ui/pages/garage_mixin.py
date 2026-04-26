@@ -200,18 +200,18 @@ class GarageMixin:
         return hasattr(self, "stack") and hasattr(self, "page_garage") and self.stack.currentWidget() is self.page_garage
 
     def _current_owned_locations(self) -> Dict[int, int]:
-        want_map = self.want_owned_locations or {}
-        return {
-            entry.abs_off: int(want_map.get(entry.abs_off, self.have_owned_locations.get(entry.abs_off, entry.location_bits)))
+        have_map = {
+            entry.abs_off: self.have_owned_locations.get(entry.abs_off, entry.location_bits)
             for entry in self.garage_transfer_entries
         }
+        return {abs_off: int(value) for abs_off, value in self.staged_state.owned_locations.current(have_map).items()}
 
     def _current_owned_career_slots(self) -> Dict[int, int]:
-        want_map = self.want_owned_career_slots or {}
-        return {
-            entry.abs_off: int(want_map.get(entry.abs_off, self.have_owned_career_slots.get(entry.abs_off, entry.career_slot)))
+        have_map = {
+            entry.abs_off: self.have_owned_career_slots.get(entry.abs_off, entry.career_slot)
             for entry in self.garage_transfer_entries
         }
+        return {abs_off: int(value) for abs_off, value in self.staged_state.owned_career_slots.current(have_map).items()}
 
     def _current_cleared_pursuit_slots(self) -> set[int]:
         if self.savefile is None or self.garage_detection_error:
@@ -516,12 +516,12 @@ class GarageMixin:
             self.garage_diag_text.setVisible(visible)
 
     def _current_slot_heats(self) -> Dict[int, int]:
-        want_map = self.want_slot_heats or {}
-        return {
-            slot.career_slot: want_map.get(slot.career_slot, self.have_slot_heats.get(slot.career_slot, 1))
+        have_map = {
+            slot.career_slot: self.have_slot_heats.get(slot.career_slot, 1)
             for slot in self.garage_slots
             if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
         }
+        return self.staged_state.slot_heats.current(have_map)
 
     def _pending_slot_heats(self) -> Dict[int, int]:
         if self.savefile is None or self.garage_detection_error:
@@ -538,11 +538,11 @@ class GarageMixin:
         return pending
 
     def _current_slot_bounties(self) -> Dict[int, int]:
-        want_map = self.want_slot_bounties or {}
-        current = {
-            slot.career_slot: want_map.get(slot.career_slot, self.have_slot_bounties.get(slot.career_slot, 0))
+        have_map = {
+            slot.career_slot: self.have_slot_bounties.get(slot.career_slot, 0)
             for slot in self.garage_slots
         }
+        current = self.staged_state.slot_bounties.current(have_map)
         for slot_index in self._current_cleared_pursuit_slots():
             current[slot_index] = 0
         return current
@@ -1262,13 +1262,19 @@ class GarageMixin:
         if plan.refusal_reason:
             QMessageBox.warning(self, UI_TITLE_BLOCKED, plan.refusal_reason)
             return
-        if self.want_owned_locations is None:
-            self.want_owned_locations = dict(self.have_owned_locations)
-        if self.want_owned_career_slots is None:
-            self.want_owned_career_slots = dict(self.have_owned_career_slots)
-        self.want_owned_locations[abs_off] = plan.target_location_bits
-        self.want_owned_career_slots[abs_off] = (
-            SaveFile.EMPTY_CAREER_SLOT if plan.target_career_slot is None else int(plan.target_career_slot)
+        have_owned_locations = {
+            entry.abs_off: self.have_owned_locations.get(entry.abs_off, entry.location_bits)
+            for entry in self.garage_transfer_entries
+        }
+        have_owned_career_slots = {
+            entry.abs_off: self.have_owned_career_slots.get(entry.abs_off, entry.career_slot)
+            for entry in self.garage_transfer_entries
+        }
+        self.staged_state.owned_locations.set_item(abs_off, plan.target_location_bits, have_owned_locations)
+        self.staged_state.owned_career_slots.set_item(
+            abs_off,
+            SaveFile.EMPTY_CAREER_SLOT if plan.target_career_slot is None else int(plan.target_career_slot),
+            have_owned_career_slots,
         )
         after_snapshot_plans: Dict[str, SnapshotInjectionPlan] = {}
         if restore_wins:
@@ -1298,9 +1304,11 @@ class GarageMixin:
         value = self._commit_profile_edit(edit, fallback)
         if value is None:
             return
-        if self.want_slot_bounties is None:
-            self.want_slot_bounties = dict(self.have_slot_bounties)
-        self.want_slot_bounties[slot_index] = value
+        have_slot_bounties = {
+            slot.career_slot: self.have_slot_bounties.get(slot.career_slot, 0)
+            for slot in self.garage_slots
+        }
+        self.staged_state.slot_bounties.set_item(slot_index, value, have_slot_bounties)
         self._refresh_garage_totals(True)
         self._garage_cards_dirty = True
         self._sync_garage_summary_chrome(loaded=True)
@@ -1313,9 +1321,12 @@ class GarageMixin:
         max_heat_level = self.savefile.get_story_heat_cap()
         if int(level) > max_heat_level:
             return
-        if self.want_slot_heats is None:
-            self.want_slot_heats = dict(self.have_slot_heats)
-        self.want_slot_heats[slot_index] = level
+        have_slot_heats = {
+            slot.career_slot: self.have_slot_heats.get(slot.career_slot, 1)
+            for slot in self.garage_slots
+            if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
+        }
+        self.staged_state.slot_heats.set_item(slot_index, level, have_slot_heats)
         self._garage_cards_dirty = True
         self._patch_garage_cards_in_place()
         self._update_action_states()

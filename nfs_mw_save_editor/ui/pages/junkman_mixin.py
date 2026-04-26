@@ -506,11 +506,17 @@ class JunkmanMixin:
         self.staged_state.money.reset_to(self.have_money)
         self.staged_state.profile_alias.reset_to(self.have_profile_alias)
         self.profile_alias_error = None
-        self.want_slot_bounties = None if self.garage_detection_error else dict(self.have_slot_bounties)
-        self.want_slot_heats = None if self.garage_detection_error else dict(self.have_slot_heats)
+        if self.garage_detection_error:
+            self.staged_state.slot_bounties.clear()
+            self.staged_state.slot_heats.clear()
+            self.staged_state.owned_locations.clear()
+            self.staged_state.owned_career_slots.clear()
+        else:
+            self.staged_state.slot_bounties.reset_to(self.have_slot_bounties)
+            self.staged_state.slot_heats.reset_to(self.have_slot_heats)
+            self.staged_state.owned_locations.reset_to(self.have_owned_locations)
+            self.staged_state.owned_career_slots.reset_to(self.have_owned_career_slots)
         self.want_slot_flags = None if self.garage_detection_error else dict(self.have_slot_flags)
-        self.want_owned_locations = None if self.garage_detection_error else dict(self.have_owned_locations)
-        self.want_owned_career_slots = None if self.garage_detection_error else dict(self.have_owned_career_slots)
         self.want_cleared_pursuit_slots = None if self.garage_detection_error else set()
         self.want_parts_levels = None if self.parts_detection_error else {
             slot: dict(levels) for slot, levels in self.have_parts_levels.items()
@@ -557,10 +563,10 @@ class JunkmanMixin:
         slot_changes = []
         transfer_changes: List[str] = []
         if not self.garage_detection_error:
-            want_slot_bounties = self._current_slot_bounties()
+            staged_slot_bounties = self._current_slot_bounties()
             for slot in self.garage_slots:
                 have = self.have_slot_bounties.get(slot.career_slot, 0)
-                want = want_slot_bounties.get(slot.career_slot, have)
+                want = staged_slot_bounties.get(slot.career_slot, have)
                 if want != have:
                     slot_changes.append(f"Slot {slot.career_slot + 1} - {slot.display_name}: {have} -> {want}")
             current_locations = self._current_owned_locations()

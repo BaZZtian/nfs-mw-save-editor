@@ -9,6 +9,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 from core.models import OwnedCarTransferPlan, ResolvedTransferCarEntry
 from core.savefile import SaveFile
 from ui.pages.garage_mixin import GarageMixin
+from ui.staged_state import StagedEditState
 
 
 def _entry(
@@ -87,18 +88,21 @@ class _GarageHarness(GarageMixin):
         self.snapshot_library_error = None
         self.snapshot_library = []
         self.want_snapshot_injections = {}
+        self.staged_state = StagedEditState()
         self.garage_transfer_entries = list(actual_entries)
         self.garage_slots = []
         self.garage_search = _DummySearch("")
         self.garage_filter = "All"
         self.have_owned_locations = {entry.abs_off: entry.location_bits for entry in actual_entries}
         self.have_owned_career_slots = {entry.abs_off: entry.career_slot for entry in actual_entries}
-        self.want_owned_locations = {entry.abs_off: entry.location_bits for entry in projected_entries}
-        self.want_owned_career_slots = {entry.abs_off: entry.career_slot for entry in projected_entries}
+        self.staged_state.owned_locations.reset_to(
+            {entry.abs_off: entry.location_bits for entry in projected_entries}
+        )
+        self.staged_state.owned_career_slots.reset_to(
+            {entry.abs_off: entry.career_slot for entry in projected_entries}
+        )
         self.have_slot_bounties = {}
-        self.want_slot_bounties = {}
         self.have_slot_heats = {}
-        self.want_slot_heats = {}
         self._garage_visible_order = [entry.abs_off for entry in actual_entries]
 
     def _current_snapshot_injection_plans(self, extra=None):

@@ -163,15 +163,11 @@ class MainWindow(
         self.have_parts_masks: Dict[int, int] = {}
         self.want_parts_masks: Optional[Dict[int, int]] = None
         self.have_slot_bounties: Dict[int, int] = {}
-        self.want_slot_bounties: Optional[Dict[int, int]] = None
         self.have_slot_heats: Dict[int, int] = {}
-        self.want_slot_heats: Optional[Dict[int, int]] = None
         self.have_slot_flags: Dict[int, int] = {}
         self.want_slot_flags: Optional[Dict[int, int]] = None
         self.have_owned_locations: Dict[int, int] = {}
-        self.want_owned_locations: Optional[Dict[int, int]] = None
         self.have_owned_career_slots: Dict[int, int] = {}
-        self.want_owned_career_slots: Optional[Dict[int, int]] = None
         self.want_cleared_pursuit_slots: Optional[set[int]] = None
         self.garage_detection_error: Optional[str] = None
         self.parts_detection_error: Optional[str] = None
@@ -776,13 +772,13 @@ class MainWindow(
         self.have_slot_bounties = {}
         self.have_slot_heats = {}
         self.have_slot_flags = {}
-        self.want_slot_bounties = None
-        self.want_slot_heats = None
+        self.staged_state.slot_bounties.clear()
+        self.staged_state.slot_heats.clear()
         self.want_slot_flags = None
         self.have_owned_locations = {}
-        self.want_owned_locations = None
         self.have_owned_career_slots = {}
-        self.want_owned_career_slots = None
+        self.staged_state.owned_locations.clear()
+        self.staged_state.owned_career_slots.clear()
         self.want_cleared_pursuit_slots = None
         self.have_parts_levels = {}
         self.want_parts_levels = None
@@ -796,11 +792,11 @@ class MainWindow(
         self.staged_state.money.clear()
         self.staged_state.profile_alias.clear()
         self.profile_alias_error = None
-        self.want_slot_bounties = None
-        self.want_slot_heats = None
+        self.staged_state.slot_bounties.clear()
+        self.staged_state.slot_heats.clear()
         self.want_slot_flags = None
-        self.want_owned_locations = None
-        self.want_owned_career_slots = None
+        self.staged_state.owned_locations.clear()
+        self.staged_state.owned_career_slots.clear()
         self.want_cleared_pursuit_slots = None
         self.want_parts_levels = None
         self.want_parts_masks = None
@@ -929,46 +925,47 @@ class MainWindow(
             if not self.want_counts:
                 self.want_counts = dict(self.have_counts)
             if self.garage_detection_error:
-                self.want_slot_bounties = None
-                self.want_slot_heats = None
+                self.staged_state.slot_bounties.clear()
+                self.staged_state.slot_heats.clear()
                 self.want_slot_flags = None
-                self.want_owned_locations = None
-                self.want_owned_career_slots = None
+                self.staged_state.owned_locations.clear()
+                self.staged_state.owned_career_slots.clear()
                 self.want_cleared_pursuit_slots = None
-            elif self.want_slot_bounties is None:
-                self.want_slot_bounties = dict(self.have_slot_bounties)
-                self.want_slot_heats = dict(self.have_slot_heats)
-                self.want_slot_flags = dict(self.have_slot_flags)
-                self.want_owned_locations = dict(self.have_owned_locations)
-                self.want_owned_career_slots = dict(self.have_owned_career_slots)
-                self.want_cleared_pursuit_slots = set()
             else:
-                self.want_slot_bounties = {
-                    slot.career_slot: self.want_slot_bounties.get(slot.career_slot, slot.bounty)
+                have_slot_bounties = {
+                    slot.career_slot: self.have_slot_bounties.get(slot.career_slot, slot.bounty)
                     for slot in self.garage_slots
                 }
-                self.want_slot_heats = {
-                    slot.career_slot: (self.want_slot_heats or {}).get(slot.career_slot, slot.heat_level)
+                self.staged_state.slot_bounties.prune_to_keys(set(have_slot_bounties), have_slot_bounties)
+                have_slot_heats = {
+                    slot.career_slot: self.have_slot_heats.get(slot.career_slot, slot.heat_level)
                     for slot in self.garage_slots
                     if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
                 }
-                self.want_slot_flags = {
-                    slot.career_slot: self.want_slot_flags.get(slot.career_slot, slot.flags)
-                    for slot in self.garage_slots if slot.flags is not None and self.want_slot_flags is not None
-                }
-                self.want_owned_locations = {
-                    entry.abs_off: (self.want_owned_locations or {}).get(entry.abs_off, entry.location_bits)
+                self.staged_state.slot_heats.prune_to_keys(set(have_slot_heats), have_slot_heats)
+                if self.want_slot_flags is None:
+                    self.want_slot_flags = dict(self.have_slot_flags)
+                    self.want_cleared_pursuit_slots = set()
+                else:
+                    self.want_slot_flags = {
+                        slot.career_slot: self.want_slot_flags.get(slot.career_slot, slot.flags)
+                        for slot in self.garage_slots if slot.flags is not None and self.want_slot_flags is not None
+                    }
+                    self.want_cleared_pursuit_slots = {
+                        int(slot)
+                        for slot in (self.want_cleared_pursuit_slots or set())
+                        if any(garage_slot.career_slot == int(slot) for garage_slot in self.garage_slots)
+                    }
+                have_owned_locations = {
+                    entry.abs_off: self.have_owned_locations.get(entry.abs_off, entry.location_bits)
                     for entry in self.garage_transfer_entries
                 }
-                self.want_owned_career_slots = {
-                    entry.abs_off: (self.want_owned_career_slots or {}).get(entry.abs_off, entry.career_slot)
+                self.staged_state.owned_locations.prune_to_keys(set(have_owned_locations), have_owned_locations)
+                have_owned_career_slots = {
+                    entry.abs_off: self.have_owned_career_slots.get(entry.abs_off, entry.career_slot)
                     for entry in self.garage_transfer_entries
                 }
-                self.want_cleared_pursuit_slots = {
-                    int(slot)
-                    for slot in (self.want_cleared_pursuit_slots or set())
-                    if any(garage_slot.career_slot == int(slot) for garage_slot in self.garage_slots)
-                }
+                self.staged_state.owned_career_slots.prune_to_keys(set(have_owned_career_slots), have_owned_career_slots)
             if self.parts_detection_error:
                 self.want_parts_levels = None
                 self.want_parts_masks = None
