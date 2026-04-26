@@ -653,18 +653,24 @@ class PartsMixin:
         return next((e for e in (list(self.parts_entries) + list(self.my_cars_entries)) if e.parts_slot == parts_slot), None)
 
     def _current_parts_levels(self) -> Dict[int, Dict[str, int]]:
-        want_map = self.want_parts_levels or {}
         dedup: Dict[int, object] = {}
         for entry in list(self.parts_entries) + list(self.my_cars_entries):
             dedup[entry.parts_slot] = entry
-        return {entry.parts_slot: dict(want_map.get(entry.parts_slot, self.have_parts_levels.get(entry.parts_slot, self._entry_parts_levels(entry)))) for entry in dedup.values()}
+        have_map = {
+            entry.parts_slot: dict(self.have_parts_levels.get(entry.parts_slot, self._entry_parts_levels(entry)))
+            for entry in dedup.values()
+        }
+        return {parts_slot: dict(levels) for parts_slot, levels in self.staged_state.parts_levels.current(have_map).items()}
 
     def _current_parts_masks(self) -> Dict[int, int]:
-        want_map = self.want_parts_masks or {}
         dedup: Dict[int, object] = {}
         for entry in list(self.parts_entries) + list(self.my_cars_entries):
             dedup[entry.parts_slot] = entry
-        return {entry.parts_slot: int(want_map.get(entry.parts_slot, self.have_parts_masks.get(entry.parts_slot, entry.junkman_mask))) for entry in dedup.values()}
+        have_map = {
+            entry.parts_slot: self.have_parts_masks.get(entry.parts_slot, entry.junkman_mask)
+            for entry in dedup.values()
+        }
+        return {parts_slot: int(mask) for parts_slot, mask in self.staged_state.parts_masks.current(have_map).items()}
 
     def _parts_limits(self, entry) -> Optional[Dict[str, int]]:
         return get_model_tuning_limits(self._entry_model_name(entry))
@@ -690,10 +696,10 @@ class PartsMixin:
         return None
 
     def _ensure_parts_want_maps(self) -> None:
-        if self.want_parts_levels is None:
-            self.want_parts_levels = {slot: dict(levels) for slot, levels in self.have_parts_levels.items()}
-        if self.want_parts_masks is None:
-            self.want_parts_masks = dict(self.have_parts_masks)
+        self.staged_state.parts_levels.ensure(
+            {slot: dict(levels) for slot, levels in self.have_parts_levels.items()}
+        )
+        self.staged_state.parts_masks.ensure(self.have_parts_masks)
 
     def _apply_junkman_prereqs(self, levels: Dict[str, int], mask: int) -> int:
         turbo_bit = next((bit for bit, name in SaveFile.JUNKMAN_MASK_BITS if name == "Turbo"), 0)
@@ -713,17 +719,33 @@ class PartsMixin:
         current = dict(self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry)))
         for name in PERF_PART_NAMES:
             current[name] = max(0, min(int(levels.get(name, current.get(name, 0))), int(limits.get(name, 0))))
-        assert self.want_parts_levels is not None and self.want_parts_masks is not None
-        self.want_parts_levels[parts_slot] = current
-        self.want_parts_masks[parts_slot] = self._apply_junkman_prereqs(current, int(self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))))
+        self.staged_state.parts_levels.set_item(
+            parts_slot,
+            dict(current),
+            {slot: dict(levels) for slot, levels in self.have_parts_levels.items()},
+        )
+        self.staged_state.parts_masks.set_item(
+            parts_slot,
+            self._apply_junkman_prereqs(
+                current,
+                int(self._current_parts_masks().get(parts_slot, self.have_parts_masks.get(parts_slot, 0))),
+            ),
+            self.have_parts_masks,
+        )
 
     def _set_parts_slot_mask(self, parts_slot: int, mask: int) -> None:
         entry = self._entry_by_parts_slot(parts_slot)
         if entry is None:
             return
         self._ensure_parts_want_maps()
-        assert self.want_parts_masks is not None
-        self.want_parts_masks[parts_slot] = self._apply_junkman_prereqs(self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry)), int(mask))
+        self.staged_state.parts_masks.set_item(
+            parts_slot,
+            self._apply_junkman_prereqs(
+                self._current_parts_levels().get(parts_slot, self._entry_parts_levels(entry)),
+                int(mask),
+            ),
+            self.have_parts_masks,
+        )
 
     def _parts_status_labels(self, entry) -> List[str]:
         levels = self._current_parts_levels().get(entry.parts_slot, self._entry_parts_levels(entry))

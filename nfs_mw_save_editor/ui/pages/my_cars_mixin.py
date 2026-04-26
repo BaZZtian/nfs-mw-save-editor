@@ -201,10 +201,7 @@ class MyCarsMixin:
         for bit, name in SaveFile.JUNKMAN_MASK_BITS:
             if self._parts_junkman_reason(levels, name) is None:
                 mask |= bit
-        if self.want_parts_masks is None:
-            self.want_parts_masks = dict(self.have_parts_masks)
-        self.want_parts_masks[parts_slot] = mask
+        self.staged_state.parts_masks.set_item(parts_slot, mask, self.have_parts_masks)
         self._update_action_states()
         self._refresh_parts_page()
         self._refresh_my_cars_page()
-

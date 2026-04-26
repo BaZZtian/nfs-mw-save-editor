@@ -518,10 +518,14 @@ class JunkmanMixin:
             self.staged_state.owned_career_slots.reset_to(self.have_owned_career_slots)
         self.want_slot_flags = None if self.garage_detection_error else dict(self.have_slot_flags)
         self.want_cleared_pursuit_slots = None if self.garage_detection_error else set()
-        self.want_parts_levels = None if self.parts_detection_error else {
-            slot: dict(levels) for slot, levels in self.have_parts_levels.items()
-        }
-        self.want_parts_masks = None if self.parts_detection_error else dict(self.have_parts_masks)
+        if self.parts_detection_error:
+            self.staged_state.parts_levels.clear()
+            self.staged_state.parts_masks.clear()
+        else:
+            self.staged_state.parts_levels.reset_to(
+                {slot: dict(levels) for slot, levels in self.have_parts_levels.items()}
+            )
+            self.staged_state.parts_masks.reset_to(self.have_parts_masks)
         self.want_snapshot_injections = {}
         self._mark_all_heavy_pages_dirty()
         self._refresh_profile_inputs()

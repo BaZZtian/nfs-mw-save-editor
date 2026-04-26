@@ -159,9 +159,7 @@ class MainWindow(
         self.build_snapshots: List[FullCarBuildSnapshot] = []
         self.snapshot_library: List[SnapshotLibraryEntry] = []
         self.have_parts_levels: Dict[int, Dict[str, int]] = {}
-        self.want_parts_levels: Optional[Dict[int, Dict[str, int]]] = None
         self.have_parts_masks: Dict[int, int] = {}
-        self.want_parts_masks: Optional[Dict[int, int]] = None
         self.have_slot_bounties: Dict[int, int] = {}
         self.have_slot_heats: Dict[int, int] = {}
         self.have_slot_flags: Dict[int, int] = {}
@@ -781,9 +779,9 @@ class MainWindow(
         self.staged_state.owned_career_slots.clear()
         self.want_cleared_pursuit_slots = None
         self.have_parts_levels = {}
-        self.want_parts_levels = None
         self.have_parts_masks = {}
-        self.want_parts_masks = None
+        self.staged_state.parts_levels.clear()
+        self.staged_state.parts_masks.clear()
         self.want_snapshot_injections = {}
 
     def _reset_want_edit_state(self) -> None:
@@ -798,8 +796,8 @@ class MainWindow(
         self.staged_state.owned_locations.clear()
         self.staged_state.owned_career_slots.clear()
         self.want_cleared_pursuit_slots = None
-        self.want_parts_levels = None
-        self.want_parts_masks = None
+        self.staged_state.parts_levels.clear()
+        self.staged_state.parts_masks.clear()
         self.want_snapshot_injections = {}
 
     def refresh_state(self):
@@ -904,8 +902,8 @@ class MainWindow(
             if self.parts_detection_error:
                 self.have_parts_levels = {}
                 self.have_parts_masks = {}
-                self.want_parts_levels = None
-                self.want_parts_masks = None
+                self.staged_state.parts_levels.clear()
+                self.staged_state.parts_masks.clear()
             else:
                 all_part_entries = list(self.parts_entries) + list(self.my_cars_entries)
                 self.have_parts_levels = {
@@ -967,25 +965,14 @@ class MainWindow(
                 }
                 self.staged_state.owned_career_slots.prune_to_keys(set(have_owned_career_slots), have_owned_career_slots)
             if self.parts_detection_error:
-                self.want_parts_levels = None
-                self.want_parts_masks = None
-            elif self.want_parts_levels is None:
-                self.want_parts_levels = {
-                    slot_index: dict(levels) for slot_index, levels in self.have_parts_levels.items()
-                }
-                self.want_parts_masks = dict(self.have_parts_masks)
+                self.staged_state.parts_levels.clear()
+                self.staged_state.parts_masks.clear()
             else:
-                self.want_parts_levels = {
-                    parts_slot: dict((self.want_parts_levels or {}).get(parts_slot, self.have_parts_levels.get(parts_slot, {})))
-                    for parts_slot in self.have_parts_levels
+                have_parts_levels = {
+                    slot: dict(levels) for slot, levels in self.have_parts_levels.items()
                 }
-                self.want_parts_masks = {
-                    parts_slot: (self.want_parts_masks or {}).get(
-                        parts_slot,
-                        self.have_parts_masks.get(parts_slot, 0),
-                    )
-                    for parts_slot in self.have_parts_masks
-                }
+                self.staged_state.parts_levels.prune_to_keys(set(have_parts_levels), have_parts_levels)
+                self.staged_state.parts_masks.prune_to_keys(set(self.have_parts_masks), self.have_parts_masks)
         else:
             self.lbl_file.setText("File: (not opened)")
             self.lbl_status.setText("Status: -")
