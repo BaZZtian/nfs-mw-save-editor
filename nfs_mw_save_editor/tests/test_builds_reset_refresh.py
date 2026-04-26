@@ -15,10 +15,10 @@ from ui.staged_state import StagedEditState
 class _ResetWantHarness(JunkmanMixin):
     def __init__(self) -> None:
         self.have_counts = {1: 2}
-        self.want_counts = {1: 5}
         self.have_money = 100
         self.have_profile_alias = "Player"
         self.staged_state = StagedEditState()
+        self.staged_state.counts.set_item(1, 5, self.have_counts)
         self.staged_state.money.set(999)
         self.staged_state.profile_alias.set("Staged")
         self.profile_alias_error = "bad"

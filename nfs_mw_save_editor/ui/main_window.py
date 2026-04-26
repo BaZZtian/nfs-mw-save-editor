@@ -147,7 +147,6 @@ class MainWindow(
     #  state
         self.savefile: Optional[SaveFile] = None
         self.have_counts: Dict[int, int] = {}
-        self.want_counts: Dict[int, int] = {}
         self.have_money = 0
         self.have_profile_alias: str = ""
         self.profile_alias_error: Optional[str] = None
@@ -761,7 +760,7 @@ class MainWindow(
     def _reset_all_edit_state(self) -> None:
         """Clear every have_* and want_* field — used when closing / failing to load a file."""
         self.have_counts = {}
-        self.want_counts = {}
+        self.staged_state.counts.clear()
         self.have_money = 0
         self.have_profile_alias = ""
         self.staged_state.money.clear()
@@ -786,7 +785,7 @@ class MainWindow(
 
     def _reset_want_edit_state(self) -> None:
         """Clear all want_* fields back to None / {} — used after Apply or open-file."""
-        self.want_counts = {}
+        self.staged_state.counts.clear()
         self.staged_state.money.clear()
         self.staged_state.profile_alias.clear()
         self.profile_alias_error = None
@@ -920,8 +919,6 @@ class MainWindow(
                 }
             for tid in self.have_counts:
                 self.ensure_token_entry(tid)
-            if not self.want_counts:
-                self.want_counts = dict(self.have_counts)
             if self.garage_detection_error:
                 self.staged_state.slot_bounties.clear()
                 self.staged_state.slot_heats.clear()
@@ -1006,13 +1003,9 @@ class MainWindow(
             self._schedule_parts_pool_prewarm(delay_ms=0)
 
     def _has_pending_changes(self) -> bool:
-        for tid in set(self.want_counts.keys()) | set(self.have_counts.keys()):
-            have = self.have_counts.get(tid, 0)
-            want = self.want_counts.get(tid, have)
-            if want != have:
-                return True
         return (
-            self.clear_unknown_next
+            self.staged_state.counts.has_pending(self.have_counts)
+            or self.clear_unknown_next
             or self._has_profile_pending_changes()
             or self._has_parts_pending_changes()
             or self._has_garage_transfer_pending_changes()

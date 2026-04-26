@@ -268,8 +268,9 @@ class JunkmanMixin:
 
     def _quick_set(self, ids, val: int):
         max_val = self._current_max()
+        staged_counts = self.staged_state.counts.ensure(self.have_counts)
         for tid in ids:
-            self.want_counts[tid] = max(0, min(val, max_val))
+            staged_counts[tid] = max(0, min(val, max_val))
             self.ensure_token_entry(tid)
         self.refresh_cards()
 
@@ -337,7 +338,7 @@ class JunkmanMixin:
                 return False
             if self.show_only_changed:
                 have = self.have_counts.get(tok.id, 0)
-                want = self.want_counts.get(tok.id, have)
+                want = self.staged_state.counts.get_item(tok.id, self.have_counts, have)
                 if want == have:
                     return False
             return True
@@ -365,7 +366,7 @@ class JunkmanMixin:
 
             for t in toks:
                 have = self.have_counts.get(t.id, 0)
-                want = self.want_counts.get(t.id, have)
+                want = self.staged_state.counts.get_item(t.id, self.have_counts, have)
                 card = TokenCard(
                     token_id=t.id,
                     name=t.name,
@@ -450,8 +451,8 @@ class JunkmanMixin:
 
     def on_want_changed(self, tid: int, val: int):
         have = self.have_counts.get(tid, 0)
-        prev = self.want_counts.get(tid, have)
-        self.want_counts[tid] = val
+        prev = self.staged_state.counts.get_item(tid, self.have_counts, have)
+        self.staged_state.counts.set_item(tid, val, self.have_counts)
         if self.show_only_changed:
             # Rebuild only when the row should appear/disappear.
             if (prev == have) != (val == have):
@@ -497,12 +498,13 @@ class JunkmanMixin:
         )
         if res == QMessageBox.Yes:
             self.clear_unknown_next = True
+            staged_counts = self.staged_state.counts.ensure(self.have_counts)
             for tid in self._unknown_ids():
-                self.want_counts[tid] = 0
+                staged_counts[tid] = 0
             self.refresh_cards()
 
     def on_reset_want(self):
-        self.want_counts = dict(self.have_counts)
+        self.staged_state.counts.reset_to(self.have_counts)
         self.staged_state.money.reset_to(self.have_money)
         self.staged_state.profile_alias.reset_to(self.have_profile_alias)
         self.profile_alias_error = None
@@ -540,14 +542,15 @@ class JunkmanMixin:
         ToastNotification.show_toast(self, "Want reset to Have")
 
     def on_clear_all_want(self):
-        self.want_counts = {t.id: 0 for t in self.tokens}
+        self.staged_state.counts.reset_to({t.id: 0 for t in self.tokens})
         self.refresh_cards()
 
     def _build_want_full(self) -> Dict[int, int]:
         mapping: Dict[int, int] = {}
         max_val = self._current_max()
         for t in self.tokens:
-            want = self.want_counts.get(t.id, self.have_counts.get(t.id, 0))
+            have = self.have_counts.get(t.id, 0)
+            want = self.staged_state.counts.get_item(t.id, self.have_counts, have)
             mapping[t.id] = max(0, min(want, max_val))
         if not self.preserve_unknown or self.clear_unknown_next:
             for tid in self._unknown_ids():
@@ -828,7 +831,7 @@ class JunkmanMixin:
                 counts[tid] = qty
             for tid in counts:
                 self.ensure_token_entry(tid)
-            self.want_counts.update(counts)
+            self.staged_state.counts.ensure(self.have_counts).update(counts)
             self.refresh_cards()
             if rejected:
                 uniq = ", ".join(str(t) for t in sorted(set(rejected)))
@@ -848,7 +851,7 @@ class JunkmanMixin:
         )
         if not path:
             return
-        payload = {"counts": self.want_counts}
+        payload = {"counts": self.staged_state.counts.current(self.have_counts)}
         Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
         ToastNotification.show_toast(self, "Preset saved")
 
