@@ -214,7 +214,7 @@ class ProfileMixin:
     def _sync_profile_alias_feedback(self, text: Optional[str] = None) -> None:
         loaded = self.savefile is not None
         alias_text = text if text is not None else (
-            self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+            self.staged_state.profile_alias.current(self.have_profile_alias)
         )
         self._sync_profile_alias_edit_mode(alias_text, loaded)
         error, notice = self._evaluate_profile_alias_state(alias_text) if loaded else (None, None)
@@ -241,7 +241,7 @@ class ProfileMixin:
     def _on_alias_text_changed(self, text: str) -> None:
         if self._profile_refreshing or not self.savefile:
             return
-        self.want_profile_alias = text
+        self.staged_state.profile_alias.set(text)
         self._sync_profile_alias_feedback(text)
         self._update_action_states()
 
@@ -327,11 +327,11 @@ class ProfileMixin:
     def on_money_edit_finished(self) -> None:
         if self._profile_refreshing or not self.savefile:
             return
-        fallback = self.want_money if self.want_money is not None else self.have_money
+        fallback = self.staged_state.money.current(self.have_money)
         value = self._commit_profile_edit(self.money_edit, fallback)
         if value is None:
             return
-        self.want_money = value
+        self.staged_state.money.set(value)
         self._update_action_states()
 
     def on_toggle_show_integrity(self) -> None:
@@ -347,12 +347,12 @@ class ProfileMixin:
 
         self._profile_refreshing = True
         try:
-            money_value = self.want_money if self.want_money is not None else self.have_money
+            money_value = self.staged_state.money.current(self.have_money)
             self._set_profile_line_edit(self.money_edit, money_value, loaded)
             self.money_current_label.setText(
                 self._format_current_value(self.have_money) if loaded else "Current: -"
             )
-            alias_value = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+            alias_value = self.staged_state.profile_alias.current(self.have_profile_alias)
             self._set_profile_alias_edit(alias_value, loaded)
             self._sync_profile_alias_feedback(alias_value)
             self._refresh_garage_totals(loaded)
@@ -364,8 +364,6 @@ class ProfileMixin:
     def _has_profile_pending_changes(self) -> bool:
         if self.savefile is None:
             return False
-        current_money = self.want_money if self.want_money is not None else self.have_money
-        if current_money != self.have_money:
+        if self.staged_state.money.has_pending(self.have_money):
             return True
-        current_alias = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
-        return current_alias != self.have_profile_alias
+        return self.staged_state.profile_alias.has_pending(self.have_profile_alias)

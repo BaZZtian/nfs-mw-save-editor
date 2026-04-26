@@ -503,8 +503,8 @@ class JunkmanMixin:
 
     def on_reset_want(self):
         self.want_counts = dict(self.have_counts)
-        self.want_money = self.have_money
-        self.want_profile_alias = self.have_profile_alias
+        self.staged_state.money.reset_to(self.have_money)
+        self.staged_state.profile_alias.reset_to(self.have_profile_alias)
         self.profile_alias_error = None
         self.want_slot_bounties = None if self.garage_detection_error else dict(self.have_slot_bounties)
         self.want_slot_heats = None if self.garage_detection_error else dict(self.have_slot_heats)
@@ -629,8 +629,8 @@ class JunkmanMixin:
                     slot_text += f", career {plan.target_career_slot + 1}"
                 warn_text = f" [warning: {'; '.join(plan.warnings)}]" if plan.warnings else ""
                 injection_changes.append(f"{entry.display_name}: inject to {target_mode} -> {slot_text}{warn_text}")
-        money_want = self.want_money if self.want_money is not None else self.have_money
-        alias_want = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+        money_want = self.staged_state.money.current(self.have_money)
+        alias_want = self.staged_state.profile_alias.current(self.have_profile_alias)
         summary_lines = [
             f"Token slots: {total} total, {used} used, {free} free, {needed} needed, delta +{add} / -{remove}",
             f"Unknown data preserved: {unknown_preserved}",
@@ -711,8 +711,8 @@ class JunkmanMixin:
             return
         try:
             self.savefile.set_junkman_counts(want_full, clamp_max=self._current_max())
-            self.savefile.set_money(self.want_money if self.want_money is not None else self.have_money)
-            alias_want = self.want_profile_alias if self.want_profile_alias is not None else self.have_profile_alias
+            self.savefile.set_money(self.staged_state.money.current(self.have_money))
+            alias_want = self.staged_state.profile_alias.current(self.have_profile_alias)
             if alias_want != self.have_profile_alias:
                 self.savefile.set_profile_alias(alias_want)
             pending_transfers = []

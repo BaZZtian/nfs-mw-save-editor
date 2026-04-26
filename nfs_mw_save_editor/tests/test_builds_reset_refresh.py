@@ -9,6 +9,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from ui.pages import junkman_mixin as junkman_module
 from ui.pages.junkman_mixin import JunkmanMixin
+from ui.staged_state import StagedEditState
 
 
 class _ResetWantHarness(JunkmanMixin):
@@ -16,9 +17,10 @@ class _ResetWantHarness(JunkmanMixin):
         self.have_counts = {1: 2}
         self.want_counts = {1: 5}
         self.have_money = 100
-        self.want_money = 999
         self.have_profile_alias = "Player"
-        self.want_profile_alias = "Staged"
+        self.staged_state = StagedEditState()
+        self.staged_state.money.set(999)
+        self.staged_state.profile_alias.set("Staged")
         self.profile_alias_error = "bad"
         self.garage_detection_error = None
         self.parts_detection_error = None

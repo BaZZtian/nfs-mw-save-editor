@@ -149,9 +149,7 @@ class MainWindow(
         self.have_counts: Dict[int, int] = {}
         self.want_counts: Dict[int, int] = {}
         self.have_money = 0
-        self.want_money: Optional[int] = None
         self.have_profile_alias: str = ""
-        self.want_profile_alias: Optional[str] = None
         self.profile_alias_error: Optional[str] = None
         self.garage_slots: List[ResolvedGarageEntry] = []
         self.garage_transfer_entries: List[ResolvedTransferCarEntry] = []
@@ -771,9 +769,9 @@ class MainWindow(
         self.have_counts = {}
         self.want_counts = {}
         self.have_money = 0
-        self.want_money = None
         self.have_profile_alias = ""
-        self.want_profile_alias = None
+        self.staged_state.money.clear()
+        self.staged_state.profile_alias.clear()
         self.profile_alias_error = None
         self.have_slot_bounties = {}
         self.have_slot_heats = {}
@@ -795,8 +793,8 @@ class MainWindow(
     def _reset_want_edit_state(self) -> None:
         """Clear all want_* fields back to None / {} — used after Apply or open-file."""
         self.want_counts = {}
-        self.want_money = None
-        self.want_profile_alias = None
+        self.staged_state.money.clear()
+        self.staged_state.profile_alias.clear()
         self.profile_alias_error = None
         self.want_slot_bounties = None
         self.want_slot_heats = None
@@ -930,8 +928,6 @@ class MainWindow(
                 self.ensure_token_entry(tid)
             if not self.want_counts:
                 self.want_counts = dict(self.have_counts)
-            if self.want_money is None:
-                self.want_money = self.have_money
             if self.garage_detection_error:
                 self.want_slot_bounties = None
                 self.want_slot_heats = None
