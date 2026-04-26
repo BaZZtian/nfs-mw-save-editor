@@ -874,17 +874,14 @@ class GarageMixin:
 
     def _build_garage_card(self, vm: GarageCardVm) -> QWidget:
         slot = vm.slot
-        card = QFrame()
-        card.setObjectName("garageCard")
-        card.setProperty("changed", vm.changed)
+        card, card_layout = self._make_card_frame(
+            object_name="garageCard",
+            changed=vm.changed,
+            minimum_width=240,
+            vertical_policy=QSizePolicy.Minimum,
+            size_constraint=QVBoxLayout.SetMinimumSize,
+        )
         card.setProperty("occupied", True)
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        card.setMinimumWidth(240)
-
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(14, 12, 14, 12)
-        card_layout.setSpacing(6)
-        card_layout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
@@ -938,14 +935,12 @@ class GarageMixin:
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        btn_my_cars = QPushButton("Move to My Cars")
-        btn_my_cars.setObjectName("partsBulkBtn")
+        btn_my_cars = self._make_card_action_button("Move to My Cars")
         btn_my_cars.clicked.connect(
             lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "my_cars")
         )
         action_row.addWidget(btn_my_cars)
-        btn_career = QPushButton("Move to Career")
-        btn_career.setObjectName("partsBulkBtn")
+        btn_career = self._make_card_action_button("Move to Career")
         btn_career.clicked.connect(
             lambda _, abs_off=slot.abs_off: self.on_garage_transfer_requested(abs_off, "career")
         )
@@ -964,16 +959,10 @@ class GarageMixin:
         bounty_current_label: Optional[QLabel] = None
         heat_buttons: Optional[List[QPushButton]] = None
         if not slot.is_my_cars and slot.has_pursuit_link:
-            sep = QFrame()
-            sep.setFrameShape(QFrame.HLine)
-            sep.setObjectName("garageCardSep")
-            card_layout.addWidget(sep)
+            card_layout.addWidget(self._make_card_separator())
 
             # Heat level selector
-            heat_label = QLabel("Heat")
-            heat_label.setObjectName("garageCardFieldLabel")
-            heat_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(heat_label)
+            card_layout.addWidget(self._make_card_field_label("Heat"))
 
             heat_row = QWidget()
             heat_row.setObjectName("garageHeatRow")
@@ -1013,10 +1002,6 @@ class GarageMixin:
                     btn.setToolTip(f"Locked until later story progression. Current cap: x{vm.max_heat_level}")
             card_layout.addWidget(heat_row)
 
-            bounty_label = QLabel("Bounty")
-            bounty_label.setObjectName("garageCardFieldLabel")
-            bounty_label.setAlignment(Qt.AlignCenter)
-
             edit = QLineEdit()
             edit.setPlaceholderText("0")
             edit.setValidator(self._profile_number_validator)
@@ -1036,7 +1021,7 @@ class GarageMixin:
                 self.garage_card_edits[slot.career_slot] = edit
                 self.garage_card_current_labels[slot.career_slot] = current
 
-            card_layout.addWidget(bounty_label)
+            card_layout.addWidget(self._make_card_field_label("Bounty"))
             card_layout.addWidget(edit)
             card_layout.addWidget(current)
             self._set_profile_line_edit(edit, vm.current_bounty, True)

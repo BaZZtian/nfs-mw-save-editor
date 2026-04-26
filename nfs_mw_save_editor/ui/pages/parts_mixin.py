@@ -134,8 +134,7 @@ class ReusablePartsCardWidget(QFrame):
             ("Stock Build", owner.on_tuning_stock_build),
             ("Clear Junkman", owner.on_tuning_clear_junkman),
         ]:
-            btn = QPushButton(text)
-            btn.setObjectName("partsBulkBtn")
+            btn = owner._make_card_action_button(text)
             btn.setEnabled(False)
             btn.clicked.connect(lambda _, fn=handler: self._on_bulk_action(fn))
             action_row.addWidget(btn)
@@ -162,19 +161,10 @@ class ReusablePartsCardWidget(QFrame):
         utility_label.setMinimumHeight(max(12, utility_label.sizeHint().height()))
         card_layout.addWidget(utility_label)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setObjectName("garageCardSep")
-        card_layout.addWidget(sep)
-        perf_label = QLabel("Performance")
-        perf_label.setObjectName("garageCardFieldLabel")
-        perf_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(perf_label)
+        card_layout.addWidget(owner._make_card_separator())
+        card_layout.addWidget(owner._make_card_field_label("Performance"))
         perf_rows = self._build_perf_grid(card_layout)
-        junkman_label = QLabel("Junkman")
-        junkman_label.setObjectName("garageCardFieldLabel")
-        junkman_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(junkman_label)
+        card_layout.addWidget(owner._make_card_field_label("Junkman"))
         junkman_buttons = self._build_junkman_row(card_layout)
 
         diag_mask_label: Optional[QLabel] = None
@@ -183,14 +173,8 @@ class ReusablePartsCardWidget(QFrame):
         diag_raw_value: Optional[QLabel] = None
         diag_note_label: Optional[QLabel] = None
         if self._diagnostics:
-            diag_sep = QFrame()
-            diag_sep.setFrameShape(QFrame.HLine)
-            diag_sep.setObjectName("garageCardSep")
-            card_layout.addWidget(diag_sep)
-            diag_label = QLabel("Diagnostics")
-            diag_label.setObjectName("garageCardFieldLabel")
-            diag_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(diag_label)
+            card_layout.addWidget(owner._make_card_separator())
+            card_layout.addWidget(owner._make_card_field_label("Diagnostics"))
             diag_mask_label = owner._make_stat_badge("Mask 0x00")
             card_layout.addWidget(diag_mask_label, 0, Qt.AlignLeft)
             diag_marker_label = owner._make_stat_badge("")
@@ -1244,14 +1228,10 @@ class PartsMixin:
 
     def _build_parts_card(self, vm: PartsCardVm) -> QWidget:
         card_entry = vm.card_entry
-        card = QFrame()
-        card.setObjectName("partsCard")
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        card.setMinimumWidth(360)
-        card.setProperty("changed", vm.changed)
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(14, 12, 14, 12)
-        card_layout.setSpacing(6)
+        card, card_layout = self._make_card_frame(
+            changed=vm.changed,
+            minimum_width=360,
+        )
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
@@ -1299,8 +1279,7 @@ class PartsMixin:
             ("Stock Build", self.on_tuning_stock_build),
             ("Clear Junkman", self.on_tuning_clear_junkman),
         ]:
-            btn = QPushButton(text)
-            btn.setObjectName("partsBulkBtn")
+            btn = self._make_card_action_button(text)
             btn.setEnabled(vm.limits is not None)
             btn.clicked.connect(lambda _, slot=card_entry.parts_slot, fn=handler: fn(slot))
             action_row.addWidget(btn)
@@ -1327,31 +1306,16 @@ class PartsMixin:
         utility_label.setMinimumHeight(max(12, utility_label.sizeHint().height()))
         card_layout.addWidget(utility_label)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setObjectName("garageCardSep")
-        card_layout.addWidget(sep)
-        perf_label = QLabel("Performance")
-        perf_label.setObjectName("garageCardFieldLabel")
-        perf_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(perf_label)
+        card_layout.addWidget(self._make_card_separator())
+        card_layout.addWidget(self._make_card_field_label("Performance"))
         perf_rows = self._add_parts_perf_grid(card_layout, vm)
-        junkman_label = QLabel("Junkman")
-        junkman_label.setObjectName("garageCardFieldLabel")
-        junkman_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(junkman_label)
+        card_layout.addWidget(self._make_card_field_label("Junkman"))
         junkman_buttons = self._add_parts_junkman_section(card_layout, vm)
 
         diag_mask_label: Optional[QLabel] = None
         if self.show_parts_diagnostics:
-            diag_sep = QFrame()
-            diag_sep.setFrameShape(QFrame.HLine)
-            diag_sep.setObjectName("garageCardSep")
-            card_layout.addWidget(diag_sep)
-            diag_label = QLabel("Diagnostics")
-            diag_label.setObjectName("garageCardFieldLabel")
-            diag_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(diag_label)
+            card_layout.addWidget(self._make_card_separator())
+            card_layout.addWidget(self._make_card_field_label("Diagnostics"))
             diag_mask_label = self._make_stat_badge(f"Mask 0x{vm.mask:02X}")
             card_layout.addWidget(diag_mask_label, 0, Qt.AlignLeft)
             if card_entry.marker is not None:

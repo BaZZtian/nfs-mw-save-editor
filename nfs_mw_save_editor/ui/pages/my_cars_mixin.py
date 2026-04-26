@@ -110,15 +110,10 @@ class MyCarsMixin:
             return
 
         for idx, entry in enumerate(visible_entries):
-            card = QFrame()
-            card.setObjectName("partsCard")
-            card.setProperty("changed", self._parts_card_changed(entry.parts_slot))
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            card.setMinimumWidth(320)
-
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            card_layout.setSpacing(6)
+            card, card_layout = self._make_card_frame(
+                changed=self._parts_card_changed(entry.parts_slot),
+                minimum_width=320,
+            )
 
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
@@ -154,12 +149,10 @@ class MyCarsMixin:
             action_row = QHBoxLayout()
             action_row.setSpacing(8)
             limits = self._parts_limits(entry)
-            btn_max_perf = QPushButton("Max Performance")
-            btn_max_perf.setObjectName("partsBulkBtn")
+            btn_max_perf = self._make_card_action_button("Max Performance")
             btn_max_perf.setEnabled(limits is not None)
             btn_max_perf.clicked.connect(lambda _, slot=entry.parts_slot: self.on_my_cars_max_performance(slot))
-            btn_max_junk = QPushButton("Max Junkman")
-            btn_max_junk.setObjectName("partsBulkBtn")
+            btn_max_junk = self._make_card_action_button("Max Junkman")
             btn_max_junk.setEnabled(limits is not None)
             btn_max_junk.clicked.connect(lambda _, slot=entry.parts_slot: self.on_my_cars_max_junkman(slot))
             action_row.addWidget(btn_max_perf)
@@ -167,21 +160,12 @@ class MyCarsMixin:
             action_row.addStretch(1)
             card_layout.addLayout(action_row)
 
-            sep = QFrame()
-            sep.setFrameShape(QFrame.HLine)
-            sep.setObjectName("garageCardSep")
-            card_layout.addWidget(sep)
+            card_layout.addWidget(self._make_card_separator())
 
-            perf_label = QLabel("Performance")
-            perf_label.setObjectName("garageCardFieldLabel")
-            perf_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(perf_label)
+            card_layout.addWidget(self._make_card_field_label("Performance"))
             self._add_parts_perf_grid(card_layout, entry)
 
-            junkman_label = QLabel("Junkman")
-            junkman_label.setObjectName("garageCardFieldLabel")
-            junkman_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(junkman_label)
+            card_layout.addWidget(self._make_card_field_label("Junkman"))
             self._add_parts_junkman_section(card_layout, entry)
 
             row = idx // columns
@@ -223,5 +207,4 @@ class MyCarsMixin:
         self._update_action_states()
         self._refresh_parts_page()
         self._refresh_my_cars_page()
-
 

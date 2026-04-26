@@ -61,6 +61,28 @@ def build_perf_level_row(name: str, level: int, max_level: Optional[int]) -> tup
     return row_w, row_layout
 
 
+def build_perf_value_host(level: int, max_level: Optional[int], *, object_name: str = "partsPerfControlHost") -> QWidget:
+    host = QWidget()
+    host.setObjectName(object_name)
+    host.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    layout = QHBoxLayout(host)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(6)
+
+    if max_level is not None:
+        for seg_idx in range(1, int(max_level) + 1):
+            seg = QFrame()
+            seg.setObjectName("partsLevelSeg")
+            seg.setProperty("filled", str(seg_idx) if int(level) >= seg_idx else "0")
+            seg.setFixedSize(20, 8)
+            layout.addWidget(seg)
+
+    num = QLabel(f"{int(level)}/{max_level}" if max_level is not None else f"{int(level)}/?")
+    num.setObjectName("partsLevelNum")
+    layout.addWidget(num)
+    return host
+
+
 class ShimmerFrame(QFrame):
     """A QFrame with a subtle pink shimmer sweep animation.
 

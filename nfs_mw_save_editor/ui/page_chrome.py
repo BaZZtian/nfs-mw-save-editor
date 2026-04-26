@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 
 class PageChromeMixin:
@@ -31,3 +31,44 @@ class PageChromeMixin:
         row.setSpacing(0)
         row.addWidget(search, 1)
         return host
+
+    def _make_card_frame(
+        self,
+        *,
+        object_name: str = "partsCard",
+        changed: bool | None = None,
+        minimum_width: int | None = None,
+        vertical_policy: QSizePolicy.Policy = QSizePolicy.Fixed,
+        size_constraint: QVBoxLayout.SizeConstraint | None = None,
+    ) -> tuple[QFrame, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName(object_name)
+        if changed is not None:
+            card.setProperty("changed", changed)
+        card.setSizePolicy(QSizePolicy.Expanding, vertical_policy)
+        if minimum_width is not None:
+            card.setMinimumWidth(minimum_width)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(6)
+        if size_constraint is not None:
+            layout.setSizeConstraint(size_constraint)
+        return card, layout
+
+    def _make_card_separator(self, object_name: str = "garageCardSep") -> QFrame:
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setObjectName(object_name)
+        return sep
+
+    def _make_card_field_label(self, text: str, object_name: str = "garageCardFieldLabel") -> QLabel:
+        label = QLabel(text)
+        label.setObjectName(object_name)
+        label.setAlignment(Qt.AlignCenter)
+        return label
+
+    def _make_card_action_button(self, text: str, object_name: str = "partsBulkBtn") -> QPushButton:
+        btn = QPushButton(text)
+        btn.setObjectName(object_name)
+        return btn

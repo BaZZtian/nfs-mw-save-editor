@@ -32,7 +32,7 @@ from core.models import FullCarBuildSnapshot, SnapshotInjectionPlan, SnapshotLib
 from core.tuning_limits import get_model_tuning_limits
 from ui.pages.constants import *
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
-from ui.widgets import ToastNotification
+from ui.widgets import ToastNotification, build_perf_value_host
 
 logger = logging.getLogger(__name__)
 
@@ -265,25 +265,7 @@ class PresetsMixin:
         parent.addLayout(grid)
 
     def _build_presets_perf_visual_host(self, level: int, max_level: int | None) -> QWidget:
-        host = QWidget()
-        host.setObjectName("partsPerfControlHost")
-        host.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        layout = QHBoxLayout(host)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-
-        if max_level is not None:
-            for seg_idx in range(1, int(max_level) + 1):
-                seg = QFrame()
-                seg.setObjectName("partsLevelSeg")
-                seg.setProperty("filled", str(seg_idx) if int(level) >= seg_idx else "0")
-                seg.setFixedSize(20, 8)
-                layout.addWidget(seg)
-
-        num = QLabel(f"{int(level)}/{max_level}" if max_level is not None else f"{int(level)}/?")
-        num.setObjectName("partsLevelNum")
-        layout.addWidget(num)
-        return host
+        return build_perf_value_host(level, max_level)
 
     def _build_presets_perf_row(self, name: str, level: int, max_level: int | None) -> QWidget:
         row_w = QWidget()
@@ -618,14 +600,7 @@ class PresetsMixin:
                 plan_career = self._current_snapshot_injection_plans(extra=(entry.snapshot_id, "career"))[0].get(entry.snapshot_id)
             staged_plan = plans.get(entry.snapshot_id)
 
-            card = QFrame()
-            card.setObjectName("partsCard")
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            card.setMinimumWidth(360)
-
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            card_layout.setSpacing(6)
+            card, card_layout = self._make_card_frame(minimum_width=360)
 
             # Header: bucket badge + source badge
             header_row = QHBoxLayout()
@@ -665,26 +640,18 @@ class PresetsMixin:
                 card_layout.addWidget(warn_badge)
 
             # Separator
-            sep = QFrame()
-            sep.setFrameShape(QFrame.HLine)
-            sep.setObjectName("garageCardSep")
-            card_layout.addWidget(sep)
+            card_layout.addWidget(self._make_card_separator())
 
             # Performance bars (read-only, proper caps)
-            perf_label = QLabel("Performance")
-            perf_label.setObjectName("garageCardFieldLabel")
-            perf_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(perf_label)
+            card_layout.addWidget(self._make_card_field_label("Performance"))
             self._add_presets_perf_grid(card_layout, entry.performance_levels, entry.display_name)
 
             # Action row
             action_row = QHBoxLayout()
             action_row.setSpacing(8)
-            inject_my = QPushButton("Add to My Cars")
-            inject_my.setObjectName("partsBulkBtn")
+            inject_my = self._make_card_action_button("Add to My Cars")
             inject_my.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "my_cars"))
-            inject_career = QPushButton("Add to Career")
-            inject_career.setObjectName("partsBulkBtn")
+            inject_career = self._make_card_action_button("Add to Career")
             inject_career.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "career"))
 
             inject_my.setEnabled(self.savefile is not None and plan_my is not None and plan_my.refusal_reason is None)
@@ -701,8 +668,7 @@ class PresetsMixin:
             action_row.addWidget(inject_career)
 
             if staged_mode is not None:
-                unstage_btn = QPushButton("Unstage")
-                unstage_btn.setObjectName("partsBulkBtn")
+                unstage_btn = self._make_card_action_button("Unstage")
                 unstage_btn.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_clear_snapshot_injection(sid))
                 action_row.addWidget(unstage_btn)
 
@@ -830,14 +796,7 @@ class PresetsMixin:
             return
 
         for idx, snapshot in enumerate(visible_entries):
-            card = QFrame()
-            card.setObjectName("partsCard")
-            card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            card.setMinimumWidth(360)
-
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            card_layout.setSpacing(6)
+            card, card_layout = self._make_card_frame(minimum_width=360)
 
             # Header: parts slot badge + source badge
             header_row = QHBoxLayout()
@@ -872,23 +831,16 @@ class PresetsMixin:
             card_layout.addWidget(mode_label)
 
             # Separator
-            sep = QFrame()
-            sep.setFrameShape(QFrame.HLine)
-            sep.setObjectName("garageCardSep")
-            card_layout.addWidget(sep)
+            card_layout.addWidget(self._make_card_separator())
 
             # Performance bars (read-only)
-            perf_label = QLabel("Performance")
-            perf_label.setObjectName("garageCardFieldLabel")
-            perf_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(perf_label)
+            card_layout.addWidget(self._make_card_field_label("Performance"))
             self._add_presets_perf_grid(card_layout, snapshot.performance_levels, snapshot.display_name)
 
             # Export button
             action_row = QHBoxLayout()
             action_row.setSpacing(8)
-            export_btn = QPushButton("Export Snapshot")
-            export_btn.setObjectName("partsBulkBtn")
+            export_btn = self._make_card_action_button("Export Snapshot")
             export_btn.clicked.connect(lambda _, off=snapshot.car_abs_off: self.on_export_build_snapshot(off))
             action_row.addWidget(export_btn, 0, Qt.AlignLeft)
             action_row.addStretch(1)
@@ -1011,15 +963,10 @@ class PresetsMixin:
 
     def _build_snapshot_library_card(self, vm: SnapshotLibraryCardVm) -> QWidget:
         entry = vm.entry
-        card = QFrame()
-        card.setObjectName("partsCard")
-        card.setProperty("changed", vm.staged_mode is not None)
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        card.setMinimumWidth(360)
-
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(14, 12, 14, 12)
-        card_layout.setSpacing(6)
+        card, card_layout = self._make_card_frame(
+            changed=vm.staged_mode is not None,
+            minimum_width=360,
+        )
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
@@ -1057,22 +1004,15 @@ class PresetsMixin:
             warn_badge.setWordWrap(True)
             card_layout.addWidget(warn_badge)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setObjectName("garageCardSep")
-        card_layout.addWidget(sep)
+        card_layout.addWidget(self._make_card_separator())
 
-        perf_label = QLabel("Performance")
-        perf_label.setObjectName("garageCardFieldLabel")
-        perf_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(perf_label)
+        card_layout.addWidget(self._make_card_field_label("Performance"))
         self._add_presets_perf_grid(card_layout, entry.performance_levels, entry.display_name)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
 
-        inject_my = QPushButton("Add to My Cars")
-        inject_my.setObjectName("partsBulkBtn")
+        inject_my = self._make_card_action_button("Add to My Cars")
         inject_my.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "my_cars"))
         inject_my.setEnabled(
             self.savefile is not None
@@ -1081,8 +1021,7 @@ class PresetsMixin:
         )
         action_row.addWidget(inject_my)
 
-        inject_career = QPushButton("Add to Career")
-        inject_career.setObjectName("partsBulkBtn")
+        inject_career = self._make_card_action_button("Add to Career")
         inject_career.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_stage_snapshot_injection(sid, "career"))
         inject_career.setEnabled(
             self.savefile is not None
@@ -1091,8 +1030,7 @@ class PresetsMixin:
         )
         action_row.addWidget(inject_career)
 
-        unstage_btn = QPushButton("Unstage")
-        unstage_btn.setObjectName("partsBulkBtn")
+        unstage_btn = self._make_card_action_button("Unstage")
         unstage_btn.clicked.connect(lambda _, sid=entry.snapshot_id: self.on_clear_snapshot_injection(sid))
         action_row.addWidget(unstage_btn)
 
@@ -1168,14 +1106,7 @@ class PresetsMixin:
 
     def _build_snapshot_card(self, vm: SnapshotCardVm) -> QWidget:
         snapshot = vm.snapshot
-        card = QFrame()
-        card.setObjectName("partsCard")
-        card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        card.setMinimumWidth(360)
-
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(14, 12, 14, 12)
-        card_layout.setSpacing(6)
+        card, card_layout = self._make_card_frame(minimum_width=360)
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
@@ -1206,25 +1137,17 @@ class PresetsMixin:
         mode_label.setWordWrap(True)
         card_layout.addWidget(mode_label)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setObjectName("garageCardSep")
-        card_layout.addWidget(sep)
+        card_layout.addWidget(self._make_card_separator())
 
-        perf_label = QLabel("Performance")
-        perf_label.setObjectName("garageCardFieldLabel")
-        perf_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(perf_label)
+        card_layout.addWidget(self._make_card_field_label("Performance"))
         self._add_presets_perf_grid(card_layout, snapshot.performance_levels, snapshot.display_name)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
-        save_btn = QPushButton("Save to My Builds")
-        save_btn.setObjectName("partsBulkBtn")
+        save_btn = self._make_card_action_button("Save to My Builds")
         save_btn.clicked.connect(lambda _, off=snapshot.car_abs_off: self.on_save_build_to_user_library(off))
         action_row.addWidget(save_btn, 0, Qt.AlignLeft)
-        export_btn = QPushButton("Export Snapshot...")
-        export_btn.setObjectName("partsBulkBtn")
+        export_btn = self._make_card_action_button("Export Snapshot...")
         export_btn.clicked.connect(lambda _, off=snapshot.car_abs_off: self.on_export_build_snapshot(off))
         action_row.addWidget(export_btn, 0, Qt.AlignLeft)
         action_row.addStretch(1)

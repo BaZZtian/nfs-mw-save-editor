@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.models import OwnedCarTransferPlan, PursuitRecord, ResolvedTransferCarEntry
 from core.savefile import SaveFile
+from ui.page_chrome import PageChromeMixin
 from ui.pages.garage_mixin import GarageCardVm, GarageMixin
 from ui.theme import build_page_stylesheet, resolve_theme_tokens
 
@@ -45,7 +46,7 @@ def _plan(slot: ResolvedTransferCarEntry, *, target_location_bits: int, target_c
     )
 
 
-class _GarageHeatHarness(GarageMixin):
+class _GarageHeatHarness(PageChromeMixin, GarageMixin):
     def __init__(self) -> None:
         self._profile_number_validator = QIntValidator(0, 999999999)
         self._garage_card_widgets_page = {}
