@@ -31,7 +31,7 @@ class _ResetWantHarness(JunkmanMixin):
         self.have_owned_career_slots = {0x6200: 7}
         self.have_parts_levels = {31: {"engine": 2}}
         self.have_parts_masks = {31: 0x10}
-        self.want_snapshot_injections = {"snap-a": "career"}
+        self.staged_state.snapshot_injections.stage("snap-a", "career")
         self.calls: list[tuple[str, str | None]] = []
 
     def _mark_all_heavy_pages_dirty(self) -> None:
@@ -66,7 +66,7 @@ class BuildsResetRefreshTests(unittest.TestCase):
         self.assertIn(("refresh_presets_page", "reset_reveal"), harness.calls)
         self.assertNotIn(("refresh_garage_page", "reset_reveal"), harness.calls)
         self.assertNotIn(("refresh_parts_page", "reset_reveal"), harness.calls)
-        self.assertEqual(harness.want_snapshot_injections, {})
+        self.assertFalse(harness.staged_state.snapshot_injections.has_pending())
 
 
 if __name__ == "__main__":

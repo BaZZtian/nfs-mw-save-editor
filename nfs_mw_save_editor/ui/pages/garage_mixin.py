@@ -246,21 +246,19 @@ class GarageMixin:
 
     def _ordered_snapshot_injection_items(
         self,
-        extra: Optional[Tuple[str, str]] = None,
+        extra_snapshot_id: Optional[str] = None,
+        extra_target_mode: Optional[str] = None,
     ) -> List[Tuple[str, str]]:
-        staged = dict(self.want_snapshot_injections)
-        if extra is not None:
-            staged[str(extra[0])] = str(extra[1])
-        ordered: List[Tuple[str, str]] = []
-        for entry in self.snapshot_library:
-            target_mode = staged.get(entry.snapshot_id)
-            if target_mode:
-                ordered.append((entry.snapshot_id, target_mode))
-        return ordered
+        return self.staged_state.snapshot_injections.ordered_items(
+            [entry.snapshot_id for entry in self.snapshot_library],
+            extra_snapshot_id=extra_snapshot_id,
+            extra_target_mode=extra_target_mode,
+        )
 
     def _current_snapshot_injection_plans(
         self,
-        extra: Optional[Tuple[str, str]] = None,
+        extra_snapshot_id: Optional[str] = None,
+        extra_target_mode: Optional[str] = None,
     ) -> Tuple[Dict[str, SnapshotInjectionPlan], Set[int], Set[int], Set[int]]:
         if not self.savefile or self.snapshot_library_error:
             return {}, set(), set(), set()
@@ -269,7 +267,10 @@ class GarageMixin:
         reserved_parts: Set[int] = set()
         reserved_career: Set[int] = set()
         plans: Dict[str, SnapshotInjectionPlan] = {}
-        for snapshot_id, target_mode in self._ordered_snapshot_injection_items(extra=extra):
+        for snapshot_id, target_mode in self._ordered_snapshot_injection_items(
+            extra_snapshot_id=extra_snapshot_id,
+            extra_target_mode=extra_target_mode,
+        ):
             entry = library_by_id.get(snapshot_id)
             if entry is None:
                 continue

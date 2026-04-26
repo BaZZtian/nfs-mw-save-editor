@@ -192,7 +192,6 @@ class MainWindow(
         self._pink_slip_badge_pixmap: Optional[QPixmap] = None
         self.snapshot_library_root = SaveFile.default_snapshot_library_root()
         self.user_snapshot_library_root = _user_snapshot_library_path()
-        self.want_snapshot_injections: Dict[str, str] = {}
         self.snapshot_library_filter = "Main"
         self.snapshot_save_filter = "All"
         self.presets_view = "Library"
@@ -781,7 +780,7 @@ class MainWindow(
         self.have_parts_masks = {}
         self.staged_state.parts_levels.clear()
         self.staged_state.parts_masks.clear()
-        self.want_snapshot_injections = {}
+        self.staged_state.snapshot_injections.clear_all()
 
     def _reset_want_edit_state(self) -> None:
         """Clear all want_* fields back to None / {} — used after Apply or open-file."""
@@ -797,7 +796,7 @@ class MainWindow(
         self.want_cleared_pursuit_slots = None
         self.staged_state.parts_levels.clear()
         self.staged_state.parts_masks.clear()
-        self.want_snapshot_injections = {}
+        self.staged_state.snapshot_injections.clear_all()
 
     def refresh_state(self):
         loaded = self.savefile is not None
@@ -1010,7 +1009,7 @@ class MainWindow(
             or self._has_parts_pending_changes()
             or self._has_garage_transfer_pending_changes()
             or self._has_garage_pursuit_pending_changes()
-            or bool(self.want_snapshot_injections)
+            or self.staged_state.snapshot_injections.has_pending()
         )
 
     def _update_action_states(self):

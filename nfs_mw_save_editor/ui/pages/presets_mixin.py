@@ -389,7 +389,7 @@ class PresetsMixin:
             view_models.append(
                 SnapshotLibraryCardVm(
                     entry=entry,
-                    staged_mode=self.want_snapshot_injections.get(entry.snapshot_id),
+                    staged_mode=self.staged_state.snapshot_injections.mode_for(entry.snapshot_id),
                     plan_my=plan_my,
                     plan_career=plan_career,
                     staged_plan=plans.get(entry.snapshot_id),
@@ -592,12 +592,18 @@ class PresetsMixin:
 
         plans, _, _, _ = self._current_snapshot_injection_plans()
         for idx, entry in enumerate(visible_entries):
-            staged_mode = self.want_snapshot_injections.get(entry.snapshot_id)
+            staged_mode = self.staged_state.snapshot_injections.mode_for(entry.snapshot_id)
             plan_my = None
             plan_career = None
             if self.savefile and not self.snapshot_library_error:
-                plan_my = self._current_snapshot_injection_plans(extra=(entry.snapshot_id, "my_cars"))[0].get(entry.snapshot_id)
-                plan_career = self._current_snapshot_injection_plans(extra=(entry.snapshot_id, "career"))[0].get(entry.snapshot_id)
+                plan_my = self._current_snapshot_injection_plans(
+                    extra_snapshot_id=entry.snapshot_id,
+                    extra_target_mode="my_cars",
+                )[0].get(entry.snapshot_id)
+                plan_career = self._current_snapshot_injection_plans(
+                    extra_snapshot_id=entry.snapshot_id,
+                    extra_target_mode="career",
+                )[0].get(entry.snapshot_id)
             staged_plan = plans.get(entry.snapshot_id)
 
             card, card_layout = self._make_card_frame(minimum_width=360)
@@ -1314,13 +1320,16 @@ class PresetsMixin:
         if entry is None:
             QMessageBox.warning(self, UI_TITLE_SNAPSHOT_UNAVAILABLE, "Could not resolve the selected library snapshot.")
             return
-        plans, _, _, _ = self._current_snapshot_injection_plans(extra=(entry.snapshot_id, target_mode))
+        plans, _, _, _ = self._current_snapshot_injection_plans(
+            extra_snapshot_id=entry.snapshot_id,
+            extra_target_mode=target_mode,
+        )
         plan = plans.get(entry.snapshot_id)
         if plan is None or plan.refusal_reason:
             reason = plan.refusal_reason if plan is not None else "Unknown injector planner failure"
             QMessageBox.warning(self, UI_TITLE_BLOCKED, reason)
             return
-        self.want_snapshot_injections[entry.snapshot_id] = str(target_mode)
+        self.staged_state.snapshot_injections.stage(entry.snapshot_id, str(target_mode))
         self._snapshot_library_cards_dirty = True
         self._mark_garage_cards_dirty()
         self._sync_presets_summary_chrome(loaded=True)
@@ -1328,8 +1337,8 @@ class PresetsMixin:
         self._update_action_states()
 
     def on_clear_snapshot_injection(self, snapshot_id: str) -> None:
-        if str(snapshot_id) in self.want_snapshot_injections:
-            self.want_snapshot_injections.pop(str(snapshot_id), None)
+        if self.staged_state.snapshot_injections.mode_for(str(snapshot_id)) is not None:
+            self.staged_state.snapshot_injections.clear(str(snapshot_id))
             self._snapshot_library_cards_dirty = True
             self._mark_garage_cards_dirty()
             self._sync_presets_summary_chrome(loaded=True)

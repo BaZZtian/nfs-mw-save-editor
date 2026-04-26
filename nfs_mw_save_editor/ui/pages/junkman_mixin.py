@@ -528,7 +528,7 @@ class JunkmanMixin:
                 {slot: dict(levels) for slot, levels in self.have_parts_levels.items()}
             )
             self.staged_state.parts_masks.reset_to(self.have_parts_masks)
-        self.want_snapshot_injections = {}
+        self.staged_state.snapshot_injections.clear_all()
         self._mark_all_heavy_pages_dirty()
         self._refresh_profile_inputs()
         current_page = self._current_stack_page_name()
@@ -758,7 +758,7 @@ class JunkmanMixin:
                 pending_transfers.sort(key=lambda item: 0 if item[0] == "my_cars" else 1)
                 for target_mode, abs_off, desired_slot in pending_transfers:
                     self.savefile.transfer_owned_car(abs_off, target_mode, desired_career_slot=desired_slot)
-            if self.want_snapshot_injections:
+            if self.staged_state.snapshot_injections.has_pending():
                 plans, _, _, _ = self._current_snapshot_injection_plans()
                 library_by_id = self._snapshot_library_by_id()
                 for snapshot_id, target_mode in self._ordered_snapshot_injection_items():
@@ -773,7 +773,9 @@ class JunkmanMixin:
                         target_mode,
                         desired_career_slot=plan.target_career_slot,
                     )
-            if not self.garage_detection_error and (pending_transfers or self.want_snapshot_injections):
+            if not self.garage_detection_error and (
+                pending_transfers or self.staged_state.snapshot_injections.has_pending()
+            ):
                 self.savefile.ensure_active_career_pointer_valid()
             if not self.parts_detection_error:
                 current_levels = self._current_parts_levels()

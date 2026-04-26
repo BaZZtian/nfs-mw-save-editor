@@ -87,7 +87,6 @@ class _GarageHarness(GarageMixin):
         self.garage_detection_error = None
         self.snapshot_library_error = None
         self.snapshot_library = []
-        self.want_snapshot_injections = {}
         self.staged_state = StagedEditState()
         self.garage_transfer_entries = list(actual_entries)
         self.garage_slots = []
