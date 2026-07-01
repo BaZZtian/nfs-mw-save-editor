@@ -1004,7 +1004,9 @@ class MainWindow(
 
     def _has_pending_changes(self) -> bool:
         return (
-            self.staged_state.counts.has_pending(self.have_counts)
+            # Junkman counts are sparse (get_counts() reports only nonzero
+            # ids), so pending is effective-value based with default 0.
+            self.staged_state.counts.has_pending(self.have_counts, default=0)
             or self.clear_unknown_next
             or self._has_profile_pending_changes()
             or self._has_parts_pending_changes()

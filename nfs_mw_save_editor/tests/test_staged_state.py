@@ -77,6 +77,26 @@ class StagedMapTests(unittest.TestCase):
         self.assertEqual(staged.current({}), {"a": 1, "c": 30})
         self.assertTrue(staged.has_pending(have))
 
+    def test_has_pending_with_default_ignores_staged_zeros(self) -> None:
+        # Sparse-map semantics: staging an absent key to the default value is
+        # not a pending change (e.g. Clear All on an already-empty save).
+        staged = StagedMap[int, int]()
+        have: dict[int, int] = {}
+
+        staged.set_item(7, 0, have)
+
+        self.assertTrue(staged.has_pending(have))
+        self.assertFalse(staged.has_pending(have, default=0))
+
+    def test_has_pending_with_default_detects_real_changes(self) -> None:
+        staged = StagedMap[int, int]()
+        have = {7: 2}
+
+        staged.set_item(7, 5, have)
+
+        self.assertTrue(staged.has_pending(have))
+        self.assertTrue(staged.has_pending(have, default=0))
+
     def test_prune_without_staged_state_is_noop(self) -> None:
         staged = StagedMap[str, int]()
         have = {"a": 1, "b": 2}

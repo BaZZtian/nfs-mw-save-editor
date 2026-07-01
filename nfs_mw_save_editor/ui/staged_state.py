@@ -104,13 +104,26 @@ class StagedMap(Generic[K, V]):
             if key in current or key in have
         }
 
-    def has_pending(self, have: dict[K, V]) -> bool:
+    def has_pending(self, have: dict[K, V], *, default: V | None = None) -> bool:
         """Return whether staged map contents differ from ``have``.
 
         Pending is content-based.  A staged dict with the same keys and values
         as ``have`` is not pending, even when it is a distinct object.
+
+        With ``default`` set, comparison is effective-value based over the
+        union of staged and ``have`` keys: a key missing from one side counts
+        as ``default``.  Use this for sparse maps such as junkman counts,
+        where ``get_counts()`` only reports nonzero token ids — staging an
+        absent token to 0 is not a pending change.
         """
-        return self._values is not None and self._values != have
+        if self._values is None:
+            return False
+        if default is None:
+            return self._values != have
+        return any(
+            self._values.get(key, default) != have.get(key, default)
+            for key in self._values.keys() | have.keys()
+        )
 
 
 class StagedSnapshotInjections:
