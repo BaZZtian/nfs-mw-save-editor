@@ -519,8 +519,6 @@ class JunkmanMixin:
             self.staged_state.slot_heats.reset_to(self.have_slot_heats)
             self.staged_state.owned_locations.reset_to(self.have_owned_locations)
             self.staged_state.owned_career_slots.reset_to(self.have_owned_career_slots)
-        self.want_slot_flags = None if self.garage_detection_error else dict(self.have_slot_flags)
-        self.want_cleared_pursuit_slots = None if self.garage_detection_error else set()
         if self.parts_detection_error:
             self.staged_state.parts_levels.clear()
             self.staged_state.parts_masks.clear()

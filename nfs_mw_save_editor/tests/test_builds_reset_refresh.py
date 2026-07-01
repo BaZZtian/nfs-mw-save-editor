@@ -27,7 +27,6 @@ class _ResetWantHarness(JunkmanMixin):
         self.parts_detection_error = None
         self.have_slot_bounties = {0: 111}
         self.have_slot_heats = {0: 2}
-        self.have_slot_flags = {0: 3}
         self.have_owned_locations = {0x6200: 0x02}
         self.have_owned_career_slots = {0x6200: 7}
         self.have_parts_levels = {31: {"engine": 2}}

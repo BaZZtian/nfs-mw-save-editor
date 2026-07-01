@@ -195,9 +195,10 @@ class StagedEditState:
     to saved values.  They do not orchestrate Apply: consumers remain
     responsible for reading staged values and writing them to ``SaveFile``.
 
-    ``want_slot_flags`` and ``want_cleared_pursuit_slots`` are deliberately not
-    represented here.  They remain MainWindow-owned projection caches derived
-    from garage transfer state, not independent staged user edits.
+    Pursuit slot-flag projections are deliberately not represented here.
+    They are derived from garage transfer state on demand, not independent
+    staged user edits (the former ``want_slot_flags`` /
+    ``want_cleared_pursuit_slots`` caches were removed as dead state).
     """
 
     def __init__(self) -> None:

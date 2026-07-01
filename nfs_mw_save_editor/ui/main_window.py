@@ -124,9 +124,9 @@ class MainWindow(
 ):
     """Main UI controller.
 
-    Staged-state cleanup note: ``want_slot_flags`` and
-    ``want_cleared_pursuit_slots`` remain projection caches owned by
-    MainWindow refresh/garage-transfer logic, not staged helper fields.
+    Staged-state cleanup note: the former ``want_slot_flags`` and
+    ``want_cleared_pursuit_slots`` projection caches were removed as dead
+    state — pursuit/flag projections are recomputed from transfer state.
     """
 
     def __init__(self):
@@ -161,11 +161,8 @@ class MainWindow(
         self.have_parts_masks: Dict[int, int] = {}
         self.have_slot_bounties: Dict[int, int] = {}
         self.have_slot_heats: Dict[int, int] = {}
-        self.have_slot_flags: Dict[int, int] = {}
-        self.want_slot_flags: Optional[Dict[int, int]] = None
         self.have_owned_locations: Dict[int, int] = {}
         self.have_owned_career_slots: Dict[int, int] = {}
-        self.want_cleared_pursuit_slots: Optional[set[int]] = None
         self.garage_detection_error: Optional[str] = None
         self.parts_detection_error: Optional[str] = None
         self.snapshot_detection_error: Optional[str] = None
@@ -767,15 +764,12 @@ class MainWindow(
         self.profile_alias_error = None
         self.have_slot_bounties = {}
         self.have_slot_heats = {}
-        self.have_slot_flags = {}
         self.staged_state.slot_bounties.clear()
         self.staged_state.slot_heats.clear()
-        self.want_slot_flags = None
         self.have_owned_locations = {}
         self.have_owned_career_slots = {}
         self.staged_state.owned_locations.clear()
         self.staged_state.owned_career_slots.clear()
-        self.want_cleared_pursuit_slots = None
         self.have_parts_levels = {}
         self.have_parts_masks = {}
         self.staged_state.parts_levels.clear()
@@ -790,10 +784,8 @@ class MainWindow(
         self.profile_alias_error = None
         self.staged_state.slot_bounties.clear()
         self.staged_state.slot_heats.clear()
-        self.want_slot_flags = None
         self.staged_state.owned_locations.clear()
         self.staged_state.owned_career_slots.clear()
-        self.want_cleared_pursuit_slots = None
         self.staged_state.parts_levels.clear()
         self.staged_state.parts_masks.clear()
         self.staged_state.snapshot_injections.clear_all()
@@ -862,9 +854,6 @@ class MainWindow(
                     for slot in self.garage_slots
                     if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
                 }
-                self.have_slot_flags = {
-                    slot.career_slot: slot.flags for slot in self.garage_slots if slot.flags is not None
-                }
                 self.have_owned_locations = {
                     entry.abs_off: entry.location_bits for entry in self.garage_transfer_entries
                 }
@@ -878,7 +867,6 @@ class MainWindow(
                 self.garage_allocator_snapshot = None
                 self.have_slot_bounties = {}
                 self.have_slot_heats = {}
-                self.have_slot_flags = {}
                 self.have_owned_locations = {}
                 self.have_owned_career_slots = {}
             if self.garage_detection_error:
@@ -922,10 +910,8 @@ class MainWindow(
             if self.garage_detection_error:
                 self.staged_state.slot_bounties.clear()
                 self.staged_state.slot_heats.clear()
-                self.want_slot_flags = None
                 self.staged_state.owned_locations.clear()
                 self.staged_state.owned_career_slots.clear()
-                self.want_cleared_pursuit_slots = None
             else:
                 have_slot_bounties = {
                     slot.career_slot: self.have_slot_bounties.get(slot.career_slot, slot.bounty)
@@ -938,19 +924,6 @@ class MainWindow(
                     if slot.occupied and slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
                 }
                 self.staged_state.slot_heats.prune_to_keys(set(have_slot_heats), have_slot_heats)
-                if self.want_slot_flags is None:
-                    self.want_slot_flags = dict(self.have_slot_flags)
-                    self.want_cleared_pursuit_slots = set()
-                else:
-                    self.want_slot_flags = {
-                        slot.career_slot: self.want_slot_flags.get(slot.career_slot, slot.flags)
-                        for slot in self.garage_slots if slot.flags is not None and self.want_slot_flags is not None
-                    }
-                    self.want_cleared_pursuit_slots = {
-                        int(slot)
-                        for slot in (self.want_cleared_pursuit_slots or set())
-                        if any(garage_slot.career_slot == int(slot) for garage_slot in self.garage_slots)
-                    }
                 have_owned_locations = {
                     entry.abs_off: self.have_owned_locations.get(entry.abs_off, entry.location_bits)
                     for entry in self.garage_transfer_entries
