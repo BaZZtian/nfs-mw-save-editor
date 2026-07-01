@@ -99,7 +99,7 @@ class StagedMap(Generic[K, V]):
             return
         current = self.current(have)
         self._values = {
-            key: current.get(key, have[key])
+            key: (current[key] if key in current else have[key])
             for key in keys
             if key in current or key in have
         }

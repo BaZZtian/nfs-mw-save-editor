@@ -65,6 +65,18 @@ class StagedMapTests(unittest.TestCase):
         self.assertEqual(staged.current(have), have)
         self.assertFalse(staged.has_pending(have))
 
+    def test_prune_keeps_staged_key_absent_from_have(self) -> None:
+        # Regression: `have[key]` must not be evaluated eagerly for keys that
+        # only exist in staged state — that raised KeyError despite the guard.
+        staged = StagedMap[str, int]()
+        have = {"a": 1}
+
+        staged.set_item("c", 30, have)
+        staged.prune_to_keys({"a", "c"}, have)
+
+        self.assertEqual(staged.current({}), {"a": 1, "c": 30})
+        self.assertTrue(staged.has_pending(have))
+
     def test_prune_without_staged_state_is_noop(self) -> None:
         staged = StagedMap[str, int]()
         have = {"a": 1, "b": 2}
