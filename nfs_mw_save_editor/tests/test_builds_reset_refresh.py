@@ -9,6 +9,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from ui.pages import junkman_mixin as junkman_module
 from ui.pages.junkman_mixin import JunkmanMixin
+from ui.main_window import MainWindow
 from ui.staged_state import StagedEditState
 
 
@@ -32,7 +33,23 @@ class _ResetWantHarness(JunkmanMixin):
         self.have_parts_levels = {31: {"engine": 2}}
         self.have_parts_masks = {31: 0x10}
         self.staged_state.snapshot_injections.stage("snap-a", "career")
+        self.clear_unknown_next = False
         self.calls: list[tuple[str, str | None]] = []
+
+    def _has_pending_changes(self) -> bool:
+        return MainWindow._has_pending_changes(self)
+
+    def _has_profile_pending_changes(self) -> bool:
+        return False
+
+    def _has_parts_pending_changes(self) -> bool:
+        return False
+
+    def _has_garage_transfer_pending_changes(self) -> bool:
+        return False
+
+    def _has_garage_pursuit_pending_changes(self) -> bool:
+        return False
 
     def _mark_all_heavy_pages_dirty(self) -> None:
         self.calls.append(("mark_all_heavy_pages_dirty", None))
@@ -67,6 +84,38 @@ class BuildsResetRefreshTests(unittest.TestCase):
         self.assertNotIn(("refresh_garage_page", "reset_reveal"), harness.calls)
         self.assertNotIn(("refresh_parts_page", "reset_reveal"), harness.calls)
         self.assertFalse(harness.staged_state.snapshot_injections.has_pending())
+
+    def test_reset_want_clears_clear_unknown_pending_flag(self) -> None:
+        harness = _ResetWantHarness()
+        harness.staged_state.counts.reset_to(harness.have_counts)
+        harness.staged_state.money.reset_to(harness.have_money)
+        harness.staged_state.profile_alias.reset_to(harness.have_profile_alias)
+        harness.staged_state.slot_bounties.reset_to(harness.have_slot_bounties)
+        harness.staged_state.slot_heats.reset_to(harness.have_slot_heats)
+        harness.staged_state.owned_locations.reset_to(harness.have_owned_locations)
+        harness.staged_state.owned_career_slots.reset_to(harness.have_owned_career_slots)
+        harness.staged_state.parts_levels.reset_to(harness.have_parts_levels)
+        harness.staged_state.parts_masks.reset_to(harness.have_parts_masks)
+        harness.staged_state.snapshot_injections.clear_all()
+        harness.clear_unknown_next = True
+
+        self.assertTrue(harness._has_pending_changes())
+
+        with mock.patch.object(junkman_module.ToastNotification, "show_toast"):
+            harness.on_reset_want()
+
+        self.assertFalse(harness.clear_unknown_next)
+        self.assertFalse(harness._has_pending_changes())
+
+    def test_reset_want_edit_state_clears_clear_unknown_flag(self) -> None:
+        # Open-file path: _reset_want_edit_state must not leak the staged
+        # clear-unknown action into the next save file.
+        harness = _ResetWantHarness()
+        harness.clear_unknown_next = True
+
+        MainWindow._reset_want_edit_state(harness)
+
+        self.assertFalse(harness.clear_unknown_next)
 
 
 if __name__ == "__main__":

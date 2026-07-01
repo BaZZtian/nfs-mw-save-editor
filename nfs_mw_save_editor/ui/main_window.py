@@ -797,6 +797,7 @@ class MainWindow(
         self.staged_state.parts_levels.clear()
         self.staged_state.parts_masks.clear()
         self.staged_state.snapshot_injections.clear_all()
+        self.clear_unknown_next = False
 
     def refresh_state(self):
         loaded = self.savefile is not None

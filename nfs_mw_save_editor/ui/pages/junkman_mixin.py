@@ -508,6 +508,7 @@ class JunkmanMixin:
         self.staged_state.money.reset_to(self.have_money)
         self.staged_state.profile_alias.reset_to(self.have_profile_alias)
         self.profile_alias_error = None
+        self.clear_unknown_next = False
         if self.garage_detection_error:
             self.staged_state.slot_bounties.clear()
             self.staged_state.slot_heats.clear()
