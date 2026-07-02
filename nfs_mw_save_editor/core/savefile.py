@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import datetime
 import hashlib
-import json
 import logging
 import math
-import os
 import struct
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+from core import snapshot_library
 from core.cars import resolve_car_name
 from core.checksums import ea_crc32
 from core.junkman import JunkmanInventory
@@ -34,22 +33,20 @@ from core.models import (
     SaveLayout,
     SnapshotInjectionPlan,
     SnapshotLibraryEntry,
-    SnapshotVisualSidecarEntry,
     VisualSidecarTemplate,
 )
 from core.tuning_limits import get_model_tuning_limits
-from resources import resource_path
 
 logger = logging.getLogger(__name__)
 
 
 class SaveFile:
-    SNAPSHOT_FILE_PREFIX = "car_build_snapshot_"
-    LEGACY_SNAPSHOT_FILE_PREFIX = "boss_car_snapshot_"
-    SNAPSHOT_KIND = "car_build_snapshot_v2"
-    LEGACY_SNAPSHOT_KIND = "boss_car_build_snapshot_v2"
-    USER_SNAPSHOT_LIBRARY_DIRNAME = "user_builds"
-    USER_SNAPSHOT_LIBRARY_APPDIR = "NFS_MW_Junkman_Editor"
+    SNAPSHOT_FILE_PREFIX = snapshot_library.SNAPSHOT_FILE_PREFIX
+    LEGACY_SNAPSHOT_FILE_PREFIX = snapshot_library.LEGACY_SNAPSHOT_FILE_PREFIX
+    SNAPSHOT_KIND = snapshot_library.SNAPSHOT_KIND
+    LEGACY_SNAPSHOT_KIND = snapshot_library.LEGACY_SNAPSHOT_KIND
+    USER_SNAPSHOT_LIBRARY_DIRNAME = snapshot_library.USER_SNAPSHOT_LIBRARY_DIRNAME
+    USER_SNAPSHOT_LIBRARY_APPDIR = snapshot_library.USER_SNAPSHOT_LIBRARY_APPDIR
     # Junkman inventory slot layout (dynamically detected)
     SAVED_DATA_START = JunkmanInventory.SAVED_DATA_START
     SLOT_STRIDE = JunkmanInventory.SLOT_STRIDE
@@ -1346,54 +1343,21 @@ class SaveFile:
                 self.set_active_career_car_number(int(fallback.car_number))
         return plan
 
-    _DEFAULT_SNAPSHOT_LIBRARY_DIR = ("assets", "unique_cars")
-    _BLACKLIST_LIBRARY_ORDER = {
-        "bmw m3 gtr": 0,
-        "mercedes slr mclaren": 1,
-        "aston martin db9": 2,
-        "dodge viper srt10": 3,
-        "corvette c6": 4,
-        "lamborghini gallardo": 5,
-        "mercedes clk 500": 6,
-        "ford mustang gt": 7,
-        "mitsubishi lancer evo viii": 8,
-        "porsche cayman s": 9,
-        "mitsubishi eclipse": 10,
-        "mazda rx-8": 11,
-        "toyota supra": 12,
-        "lexus is300": 13,
-        "vw golf gti": 14,
-    }
+    @classmethod
+    def _snapshot_library_format(cls) -> snapshot_library.SnapshotLibraryFormat:
+        return snapshot_library.SnapshotLibraryFormat(
+            parts_block_size=cls.PARTS_BLOCK_SIZE,
+            career_vehicle_signature_size=cls.CAREER_VEHICLE_SIGNATURE_SIZE,
+            visual_table_mode_offset=cls.VISUAL_TABLE_MODE_OFFSET,
+        )
 
     @classmethod
     def default_snapshot_library_root(cls) -> Path:
-        return resource_path(*cls._DEFAULT_SNAPSHOT_LIBRARY_DIR)
+        return snapshot_library.default_snapshot_library_root()
 
     @classmethod
     def default_user_snapshot_library_root(cls) -> Path:
-        appdata = os.getenv("APPDATA")
-        if appdata:
-            return Path(appdata) / cls.USER_SNAPSHOT_LIBRARY_APPDIR / cls.USER_SNAPSHOT_LIBRARY_DIRNAME
-        return Path.home() / "AppData" / "Roaming" / cls.USER_SNAPSHOT_LIBRARY_APPDIR / cls.USER_SNAPSHOT_LIBRARY_DIRNAME
-
-    @staticmethod
-    def _hex_to_bytes(hex_text: str) -> bytes:
-        return bytes.fromhex(str(hex_text).replace("\n", " ").strip())
-
-    @staticmethod
-    def _normalize_snapshot_library_name(name: str) -> str:
-        return " ".join(str(name).strip().lower().split())
-
-    @classmethod
-    def _snapshot_library_sort_key(cls, item: SnapshotLibraryEntry) -> tuple[int, int, str, str]:
-        bucket_rank = {"Main": 0, "Bonus": 1, "User": 2}.get(item.library_bucket, 3)
-        if item.library_bucket == "Main":
-            normalized_name = cls._normalize_snapshot_library_name(item.display_name)
-            blacklist_rank = cls._BLACKLIST_LIBRARY_ORDER.get(normalized_name)
-            if blacklist_rank is not None:
-                return (bucket_rank, 0, f"{blacklist_rank:02d}", item.file_label.lower())
-            return (bucket_rank, 1, item.display_name.lower(), item.file_label.lower())
-        return (bucket_rank, 1, item.display_name.lower(), item.file_label.lower())
+        return snapshot_library.default_user_snapshot_library_root()
 
     @classmethod
     def load_snapshot_library_entry(
@@ -1403,105 +1367,12 @@ class SaveFile:
         library_root: str | Path | None = None,
         library_bucket: str | None = None,
     ) -> SnapshotLibraryEntry:
-        resolved_path = Path(path).resolve()
-        payload = json.loads(resolved_path.read_text(encoding="utf-8"))
-        if payload.get("kind") not in (cls.SNAPSHOT_KIND, cls.LEGACY_SNAPSHOT_KIND):
-            raise ValueError(
-                f"{resolved_path} is not a {cls.SNAPSHOT_KIND} or {cls.LEGACY_SNAPSHOT_KIND} file"
-            )
-        block = cls._hex_to_bytes(payload["primary_build_block"]["normalized_hex"])
-        if len(block) != cls.PARTS_BLOCK_SIZE:
-            raise ValueError(f"{resolved_path} has invalid normalized primary block size {len(block)}")
-        template = payload["primary_owned_record_template"]
-        signature = cls._hex_to_bytes(template["signature_hex"])
-        if len(signature) != cls.CAREER_VEHICLE_SIGNATURE_SIZE:
-            raise ValueError(f"{resolved_path} has invalid signature length {len(signature)}")
-        library_base = Path(library_root).resolve() if library_root is not None else cls.default_snapshot_library_root().resolve()
-        if library_bucket is not None:
-            bucket = str(library_bucket)
-        else:
-            relative_parent = resolved_path.parent.relative_to(library_base) if resolved_path.parent != library_base else Path(".")
-            bucket = "Bonus" if "bonus_cars" in {part.lower() for part in relative_parent.parts} else "Main"
-        performance = tuple(
-            (str(name), int(value))
-            for name, value in payload.get("primary_build_block", {}).get("performance_levels", {}).items()
+        return snapshot_library.load_snapshot_library_entry(
+            path,
+            format_config=cls._snapshot_library_format(),
+            library_root=library_root,
+            library_bucket=library_bucket,
         )
-        visuals = tuple(
-            (str(name), str(value))
-            for name, value in payload.get("primary_build_block", {}).get("primary_visual_fields", {}).items()
-        )
-        sidecar_payload = payload.get("optional_visual_sidecar")
-        sidecar_entry: Optional[SnapshotVisualSidecarEntry] = None
-        if sidecar_payload is not None:
-            sidecar_block = cls._hex_to_bytes(sidecar_payload["normalized_sidecar_build_block_hex"])
-            if len(sidecar_block) != cls.PARTS_BLOCK_SIZE:
-                raise ValueError(f"{resolved_path} has invalid normalized sidecar block size {len(sidecar_block)}")
-            sidecar_signature = cls._hex_to_bytes(sidecar_payload["owned_record_signature_clone_hex"])
-            if len(sidecar_signature) != cls.CAREER_VEHICLE_SIGNATURE_SIZE:
-                raise ValueError(f"{resolved_path} has invalid sidecar signature length {len(sidecar_signature)}")
-            sidecar_marker = cls._hex_to_bytes(sidecar_payload["sidecar_marker_hex"])
-            if len(sidecar_marker) != 4:
-                raise ValueError(f"{resolved_path} has invalid sidecar marker length {len(sidecar_marker)}")
-            sidecar_entry = SnapshotVisualSidecarEntry(
-                owned_record_signature_clone=sidecar_signature,
-                owned_record_location_bits=int(sidecar_payload["owned_record_location_bits"]),
-                owned_record_misc_bits=int(sidecar_payload["owned_record_misc_bits"]),
-                sidecar_parts_slot_offset=int(sidecar_payload["sidecar_parts_slot_offset"]),
-                normalized_sidecar_build_block=sidecar_block,
-                sidecar_marker=sidecar_marker,
-            )
-        return SnapshotLibraryEntry(
-            snapshot_id=str(resolved_path).lower(),
-            json_path=resolved_path,
-            library_bucket=bucket,
-            file_label=resolved_path.stem,
-            display_name=str(payload.get("display_name") or resolved_path.stem),
-            source_file=str(payload.get("source_file") or ""),
-            source_kind=str(payload.get("source_kind") or "Unknown"),
-            primary_owned_record_template=OwnedCarTemplate(
-                car_number=int(template["car_number"]),
-                signature=signature,
-                location_bits=int(template["location_bits"]),
-                misc_bits=int(template["misc_bits"]),
-                source_kind=str(template.get("source_kind") or payload.get("source_kind") or "Unknown"),
-            ),
-            normalized_primary_build_block=block,
-            performance_levels=performance,
-            primary_visual_fields=visuals,
-            requires_unresolved_global_visual_state=bool(payload.get("requires_unresolved_global_visual_state")),
-            has_visual_sidecar=sidecar_entry is not None,
-            optional_visual_sidecar=sidecar_entry,
-            global_visual_table_uniform_value=(
-                None
-                if payload.get("global_visual_table", {}).get("uniform_value") is None
-                else int(payload["global_visual_table"]["uniform_value"])
-            ),
-            global_visual_table_mode_offset=int(
-                payload.get("global_visual_table", {}).get("mode_offset", cls.VISUAL_TABLE_MODE_OFFSET)
-            ),
-            global_visual_table_mode_uniform_value=(
-                None
-                if payload.get("global_visual_table", {}).get("mode_uniform_value") is None
-                else int(payload["global_visual_table"]["mode_uniform_value"])
-            ),
-            global_visual_table_mode_tail_value=(
-                None
-                if payload.get("global_visual_table", {}).get("mode_tail_value") is None
-                else int(payload["global_visual_table"]["mode_tail_value"])
-            ),
-        )
-
-    @classmethod
-    def _snapshot_library_json_paths(cls, root: Path) -> List[Path]:
-        snapshot_paths = {
-            path.resolve()
-            for pattern in (
-                f"{cls.SNAPSHOT_FILE_PREFIX}*.json",
-                f"{cls.LEGACY_SNAPSHOT_FILE_PREFIX}*.json",
-            )
-            for path in root.rglob(pattern)
-        }
-        return sorted(snapshot_paths)
 
     @classmethod
     def load_snapshot_library(
@@ -1510,24 +1381,11 @@ class SaveFile:
         *,
         user_root: str | Path | None = None,
     ) -> List[SnapshotLibraryEntry]:
-        library_root = Path(root) if root is not None else cls.default_snapshot_library_root()
-        user_library_root = Path(user_root) if user_root is not None else None
-        entries: List[SnapshotLibraryEntry] = []
-
-        if library_root.exists():
-            for path in cls._snapshot_library_json_paths(library_root):
-                entries.append(cls.load_snapshot_library_entry(path, library_root=library_root))
-
-        if user_library_root is not None and user_library_root.exists():
-            for path in cls._snapshot_library_json_paths(user_library_root):
-                entries.append(
-                    cls.load_snapshot_library_entry(
-                        path,
-                        library_root=user_library_root,
-                        library_bucket="User",
-                    )
-                )
-        return sorted(entries, key=cls._snapshot_library_sort_key)
+        return snapshot_library.load_snapshot_library(
+            root,
+            format_config=cls._snapshot_library_format(),
+            user_root=user_root,
+        )
 
     def _write_owned_car_record(
         self,
