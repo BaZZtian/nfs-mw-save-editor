@@ -55,6 +55,8 @@ htmlcov/
 *.zip
 .python-version
 AGENT_CONTEXT.md
+CLAUDE.md
+AGENTS.md
 skills-lock.json
 
 # Local developer-only files
