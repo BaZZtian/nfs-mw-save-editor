@@ -8,7 +8,7 @@ import struct
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from core import snapshot_library
+from core import snapshot_export, snapshot_injection, snapshot_library
 from core.cars import resolve_car_name
 from core.checksums import ea_crc32
 from core.junkman import JunkmanInventory
@@ -21,7 +21,6 @@ from core.models import (
     IntegrityStatus,
     OwnedCarRecord,
     OwnedCarSlotStatus,
-    OwnedCarTemplate,
     OwnedCarTransferPlan,
     PartsRecord,
     PartsSlotStatus,
@@ -33,7 +32,6 @@ from core.models import (
     SaveLayout,
     SnapshotInjectionPlan,
     SnapshotLibraryEntry,
-    VisualSidecarTemplate,
 )
 from core.tuning_limits import get_model_tuning_limits
 
@@ -935,13 +933,6 @@ class SaveFile:
             )
         return statuses
 
-    def _parts_allocation_refusal(self, statuses: List[PartsSlotStatus]) -> str:
-        if any(status.reusable for status in statuses):
-            return "No validated empty parts slots available"
-        if any(status.blocked_reason == self.BOUNDARY_PARTS_SLOT_BLOCKED_REASON for status in statuses):
-            return self.BOUNDARY_PARTS_SLOT_BLOCKED_REASON
-        return "No validated empty parts slots available"
-
     def get_career_slot_statuses(
         self,
         *,
@@ -1387,111 +1378,13 @@ class SaveFile:
             user_root=user_root,
         )
 
-    def _write_owned_car_record(
-        self,
-        abs_off: int,
-        *,
-        car_number: int,
-        signature: bytes,
-        location_bits: int,
-        misc_bits: int,
-        parts_slot: int,
-        career_slot: int,
-    ) -> None:
-        if len(signature) != self.CAREER_VEHICLE_SIGNATURE_SIZE:
-            raise ValueError(f"owned-car signature must be {self.CAREER_VEHICLE_SIGNATURE_SIZE} bytes")
-        payload = bytearray(self.CAREER_VEHICLE_SIZE)
-        struct.pack_into("<I", payload, 0x00, int(car_number) & 0xFFFFFFFF)
-        payload[self.CAREER_VEHICLE_SIGNATURE_OFFSET:self.CAREER_VEHICLE_SIGNATURE_OFFSET + self.CAREER_VEHICLE_SIGNATURE_SIZE] = bytes(signature)
-        struct.pack_into("<H", payload, self.CAREER_VEHICLE_FLAGS_OFFSET, int(location_bits) & 0xFFFF)
-        struct.pack_into("<H", payload, self.CAREER_VEHICLE_FLAGS2_OFFSET, int(misc_bits) & 0xFFFF)
-        payload[self.CAREER_VEHICLE_PARTS_SLOT_OFFSET] = int(parts_slot) & 0xFF
-        payload[self.CAREER_VEHICLE_SLOT_OFFSET] = int(career_slot) & 0xFF
-        payload[0x12:0x14] = self.CAREER_VEHICLE_SENTINEL
-        self.data[abs_off:abs_off + self.CAREER_VEHICLE_SIZE] = payload
-
-    def _allocate_injected_car_number(self) -> int:
-        used = {
-            int(record.car_number)
-            for record in self.get_owned_car_records()
-            if int(record.car_number) != self.EMPTY_CAR_NUMBER
-        }
-        if not used:
-            return 1
-        candidate = max(used) + 1
-        while candidate in used:
-            candidate += 1
-        if candidate >= self.EMPTY_CAR_NUMBER:
-            raise ValueError("No safe car_number values remain for snapshot injection")
-        return candidate
-
-    def _write_parts_block_for_slot(self, parts_slot: int, normalized_block: bytes) -> None:
-        self._write_parts_block_for_slot_with_marker(parts_slot, normalized_block, placeholder_marker=False)
-
-    def _write_parts_block_for_slot_with_marker(
-        self,
-        parts_slot: int,
-        normalized_block: bytes,
-        *,
-        placeholder_marker: bool,
-    ) -> None:
-        slot = int(parts_slot)
-        if len(normalized_block) != self.PARTS_BLOCK_SIZE:
-            raise ValueError(f"normalized parts block must be exactly 0x{self.PARTS_BLOCK_SIZE:X} bytes")
-        abs_off = self._parts_block_abs_off(slot)
-        payload = bytearray(normalized_block)
-        marker = self.EMPTY_PARTS_BLOCK_MARKER if placeholder_marker else bytes((slot & 0xFF, 0xCD, 0xCD, 0xCD))
-        payload[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4] = marker
-        self.data[abs_off:abs_off + self.PARTS_BLOCK_SIZE] = payload
-
-    @staticmethod
-    def _find_adjacent_owned_slot_pair(
-        statuses: List[OwnedCarSlotStatus],
-    ) -> Tuple[Optional[OwnedCarSlotStatus], Optional[OwnedCarSlotStatus], bool]:
-        saw_primary = False
-        for idx, status in enumerate(statuses[:-1]):
-            if not status.reusable:
-                continue
-            saw_primary = True
-            nxt = statuses[idx + 1]
-            if nxt.reusable and nxt.abs_off == status.abs_off + SaveFile.CAREER_VEHICLE_SIZE:
-                return status, nxt, saw_primary
-        return None, None, saw_primary
-
-    @staticmethod
-    def _find_adjacent_parts_slot_pair(
-        statuses: List[PartsSlotStatus],
-    ) -> Tuple[Optional[PartsSlotStatus], Optional[PartsSlotStatus], bool]:
-        saw_primary = False
-        for idx, status in enumerate(statuses[:-1]):
-            if not status.reusable:
-                continue
-            saw_primary = True
-            nxt = statuses[idx + 1]
-            if nxt.reusable and nxt.parts_slot == status.parts_slot + 1:
-                return status, nxt, saw_primary
-        return None, None, saw_primary
-
     @classmethod
     def _snapshot_target_location_bits(
         cls,
         snapshot: SnapshotLibraryEntry,
         target_mode: str,
     ) -> int:
-        target = str(target_mode)
-        if target == "my_cars":
-            return cls.MY_CARS_FLAG
-        if target != "career":
-            raise ValueError(f"Unsupported injector target: {target}")
-
-        template = snapshot.primary_owned_record_template
-        source_flags = int(template.location_bits)
-        source_kind = " ".join(
-            str(template.source_kind or snapshot.source_kind or "").strip().lower().split()
-        )
-        if source_flags == (cls.CAREER_FLAG | cls.PINK_SLIP_FLAG) or source_kind == "pink slip":
-            return cls.CAREER_FLAG | cls.PINK_SLIP_FLAG
-        return cls.CAREER_FLAG
+        return snapshot_injection.snapshot_target_location_bits(cls, snapshot, target_mode)
 
     def plan_snapshot_injection(
         self,
@@ -1506,112 +1399,17 @@ class SaveFile:
         reserved_career_slots: Optional[Set[int]] = None,
         desired_career_slot: Optional[int] = None,
     ) -> SnapshotInjectionPlan:
-        target = str(target_mode)
-        warnings: List[str] = []
-        refusal: Optional[str] = None
-        target_location_bits: Optional[int] = None
-        target_career_slot: Optional[int] = None
-        target_owned_abs_off: Optional[int] = None
-        target_parts_slot: Optional[int] = None
-        target_sidecar_owned_abs_off: Optional[int] = None
-        target_sidecar_parts_slot: Optional[int] = None
-
-        if target not in ("my_cars", "career"):
-            refusal = f"Unsupported injector target: {target}"
-        else:
-            target_location_bits = self._snapshot_target_location_bits(snapshot, target)
-            if snapshot.requires_unresolved_global_visual_state:
-                warnings.append("Global visual table 0x5577 is not injected in v1.")
-            if snapshot.has_visual_sidecar:
-                if snapshot.optional_visual_sidecar is None:
-                    refusal = "Snapshot sidecar payload is missing"
-                elif snapshot.optional_visual_sidecar.sidecar_parts_slot_offset != 1:
-                    refusal = "Only +1 sidecar snapshots are supported"
-
-            if refusal is None:
-                owned_candidates = self.get_owned_car_slot_statuses(reserved_abs_offs=reserved_owned_abs_offs)
-                if snapshot.has_visual_sidecar:
-                    primary_owned, sidecar_owned, saw_primary_owned = self._find_adjacent_owned_slot_pair(owned_candidates)
-                    if primary_owned is None or sidecar_owned is None:
-                        refusal = (
-                            "No adjacent empty owned-car slot for sidecar"
-                            if saw_primary_owned else
-                            "No validated empty owned-car slots available"
-                        )
-                    else:
-                        target_owned_abs_off = primary_owned.abs_off
-                        target_sidecar_owned_abs_off = sidecar_owned.abs_off
-                else:
-                    reusable_owned = [slot for slot in owned_candidates if slot.reusable]
-                    if not reusable_owned:
-                        refusal = "No validated empty owned-car slots available"
-                    else:
-                        target_owned_abs_off = reusable_owned[0].abs_off
-
-            if refusal is None:
-                parts_candidates = self.get_parts_slot_statuses(reserved_parts_slots=reserved_parts_slots)
-                if snapshot.has_visual_sidecar:
-                    primary_parts, sidecar_parts, saw_primary_parts = self._find_adjacent_parts_slot_pair(parts_candidates)
-                    if primary_parts is None or sidecar_parts is None:
-                        refusal = (
-                            "No adjacent empty parts slot for sidecar"
-                            if saw_primary_parts else
-                            self._parts_allocation_refusal(parts_candidates)
-                        )
-                    else:
-                        target_parts_slot = primary_parts.parts_slot
-                        target_sidecar_parts_slot = sidecar_parts.parts_slot
-                else:
-                    reusable_parts = [slot for slot in parts_candidates if slot.reusable]
-                    if not reusable_parts:
-                        refusal = self._parts_allocation_refusal(parts_candidates)
-                    else:
-                        target_parts_slot = reusable_parts[0].parts_slot
-
-            if refusal is None and target == "career":
-                career_candidates = self.get_career_slot_statuses(
-                    location_overrides=location_overrides,
-                    career_slot_overrides=career_slot_overrides,
-                    cleared_slots=cleared_slots,
-                    reserved_slots=reserved_career_slots,
-                )
-                reusable_career = {slot.career_slot: slot for slot in career_candidates if slot.reusable}
-                if desired_career_slot is not None:
-                    wanted = int(desired_career_slot)
-                    if wanted not in reusable_career:
-                        refusal = f"Career slot {wanted + 1} is not a validated empty slot"
-                    else:
-                        target_career_slot = wanted
-                elif reusable_career:
-                    target_career_slot = sorted(reusable_career)[0]
-                else:
-                    refusal = "No validated empty career slots available"
-                if refusal is None:
-                    projected_count = (
-                        self.count_career_like_owned_records(
-                            location_overrides=location_overrides,
-                            career_slot_overrides=career_slot_overrides,
-                        )
-                        + len({int(slot) for slot in (reserved_career_slots or set())})
-                        + 1
-                    )
-                    warning = self.career_pool_warning_text(projected_count, projected=True)
-                    if warning is not None:
-                        warnings.append(warning)
-
-        return SnapshotInjectionPlan(
-            snapshot_id=snapshot.snapshot_id,
-            display_name=snapshot.display_name,
-            target_mode=target,
-            target_location_bits=(target_location_bits if target_location_bits is not None else snapshot.primary_owned_record_template.location_bits),
-            target_misc_bits=snapshot.primary_owned_record_template.misc_bits,
-            target_owned_abs_off=target_owned_abs_off,
-            target_parts_slot=target_parts_slot,
-            target_career_slot=target_career_slot,
-            refusal_reason=refusal,
-            warnings=tuple(warnings),
-            target_sidecar_owned_abs_off=target_sidecar_owned_abs_off,
-            target_sidecar_parts_slot=target_sidecar_parts_slot,
+        return snapshot_injection.plan_snapshot_injection(
+            self,
+            snapshot,
+            target_mode,
+            location_overrides=location_overrides,
+            career_slot_overrides=career_slot_overrides,
+            cleared_slots=cleared_slots,
+            reserved_owned_abs_offs=reserved_owned_abs_offs,
+            reserved_parts_slots=reserved_parts_slots,
+            reserved_career_slots=reserved_career_slots,
+            desired_career_slot=desired_career_slot,
         )
 
     def inject_snapshot(
@@ -1621,52 +1419,12 @@ class SaveFile:
         *,
         desired_career_slot: Optional[int] = None,
     ) -> SnapshotInjectionPlan:
-        plan = self.plan_snapshot_injection(snapshot, target_mode, desired_career_slot=desired_career_slot)
-        if plan.refusal_reason:
-            raise ValueError(plan.refusal_reason)
-        if plan.target_owned_abs_off is None or plan.target_parts_slot is None:
-            raise ValueError("Snapshot injector plan did not produce target owned/parts slots")
-        sidecar = snapshot.optional_visual_sidecar if snapshot.has_visual_sidecar else None
-        if target_mode == "career":
-            if plan.target_career_slot is None:
-                raise ValueError("Career injection requires an allocated career slot")
-            self.clear_pursuit_slot(plan.target_career_slot)
-        self._write_parts_block_for_slot_with_marker(
-            plan.target_parts_slot,
-            snapshot.normalized_primary_build_block,
-            placeholder_marker=False,
+        return snapshot_injection.inject_snapshot(
+            self,
+            snapshot,
+            target_mode,
+            desired_career_slot=desired_career_slot,
         )
-        if sidecar is not None:
-            if plan.target_sidecar_owned_abs_off is None or plan.target_sidecar_parts_slot is None:
-                raise ValueError("Sidecar snapshot plan did not produce adjacent sidecar slots")
-            self._write_parts_block_for_slot_with_marker(
-                plan.target_sidecar_parts_slot,
-                sidecar.normalized_sidecar_build_block,
-                placeholder_marker=True,
-            )
-        injected_car_number = self._allocate_injected_car_number()
-        self._write_owned_car_record(
-            plan.target_owned_abs_off,
-            car_number=injected_car_number,
-            signature=snapshot.primary_owned_record_template.signature,
-            location_bits=plan.target_location_bits,
-            misc_bits=plan.target_misc_bits,
-            parts_slot=plan.target_parts_slot,
-            career_slot=(plan.target_career_slot if plan.target_career_slot is not None else self.EMPTY_CAREER_SLOT),
-        )
-        if sidecar is not None:
-            self._write_owned_car_record(
-                plan.target_sidecar_owned_abs_off,
-                car_number=self.EMPTY_CAR_NUMBER,
-                signature=sidecar.owned_record_signature_clone,
-                location_bits=sidecar.owned_record_location_bits,
-                misc_bits=sidecar.owned_record_misc_bits,
-                parts_slot=plan.target_sidecar_parts_slot,
-                career_slot=self.EMPTY_CAREER_SLOT,
-            )
-        if target_mode == "career" and self.get_active_career_record() is None:
-            self.ensure_active_career_pointer_valid()
-        return plan
 
     def get_garage_slots(self) -> List[ResolvedGarageEntry]:
         pursuits = self.get_pursuit_records()
@@ -1782,70 +1540,6 @@ class SaveFile:
             )
         return marker
 
-    def _read_parts_block_bytes(self, parts_slot: int, allow_placeholder_marker: bool = False) -> bytes:
-        slot = int(parts_slot)
-        abs_off = self._parts_block_abs_off(slot)
-        self._parts_block_marker(slot, allow_placeholder_marker=allow_placeholder_marker)
-        return bytes(self.data[abs_off:abs_off + self.PARTS_BLOCK_SIZE])
-
-    def _normalize_parts_block(self, raw_block: bytes) -> bytes:
-        normalized = bytearray(raw_block)
-        normalized[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4] = b"\x00\x00\x00\x00"
-        return bytes(normalized)
-
-    def _visual_table_entries(self) -> Tuple[bytes, ...]:
-        entries: List[bytes] = []
-        start = self.VISUAL_TABLE_BASE_OFFSET
-        for idx in range(self.VISUAL_TABLE_ENTRY_COUNT):
-            off = start + idx * self.VISUAL_TABLE_ENTRY_STRIDE
-            end = off + self.VISUAL_TABLE_ENTRY_STRIDE
-            if end > len(self.data):
-                break
-            entries.append(bytes(self.data[off:end]))
-        return tuple(entries)
-
-    def _visual_table_values(self, value_offset: int = VISUAL_TABLE_LEGACY_VALUE_OFFSET) -> Tuple[int, ...]:
-        values: List[int] = []
-        start = self.VISUAL_TABLE_BASE_OFFSET
-        for idx in range(self.VISUAL_TABLE_ENTRY_COUNT):
-            off = start + idx * self.VISUAL_TABLE_ENTRY_STRIDE + int(value_offset)
-            if off >= len(self.data):
-                break
-            values.append(self._read_u8(off))
-        return tuple(values)
-
-    @classmethod
-    def _is_visual_table_tail_entry(cls, entry: bytes) -> bool:
-        return (
-            len(entry) == cls.VISUAL_TABLE_ENTRY_STRIDE
-            and entry[3] != 0xFF
-            and entry[7] != 0xFF
-        )
-
-    @classmethod
-    def _effective_visual_table_entries(cls, entries: Tuple[bytes, ...]) -> Tuple[bytes, ...]:
-        if entries and cls._is_visual_table_tail_entry(entries[-1]):
-            return entries[:-1]
-        return entries
-
-    @staticmethod
-    def _entry_probe_values(entries: Tuple[bytes, ...], value_offset: int) -> Tuple[int, ...]:
-        return tuple(int(entry[int(value_offset)]) for entry in entries if len(entry) > int(value_offset))
-
-    @staticmethod
-    def _uniform_value(values: Tuple[int, ...]) -> Optional[int]:
-        if not values:
-            return None
-        first = values[0]
-        return first if all(value == first for value in values) else None
-
-    def _primary_visual_summary(self, raw_block: bytes) -> Tuple[Tuple[str, str], ...]:
-        summary: List[Tuple[str, str]] = []
-        for label, rel_off, size in self.PRIMARY_VISUAL_FIELDS:
-            value = self._bytes_to_hex(raw_block[rel_off:rel_off + size])
-            summary.append((label, value))
-        return tuple(summary)
-
     def _read_owned_record_raw(self, abs_off: int) -> bytes:
         if abs_off < 0 or abs_off + self.CAREER_VEHICLE_SIZE > len(self.data):
             raise ValueError(f"Owned-car record at 0x{abs_off:05X} is out of bounds")
@@ -1854,173 +1548,14 @@ class SaveFile:
             raise ValueError(f"Owned-car record at 0x{abs_off:05X} has no CD CD sentinel")
         return raw
 
-    def _detect_visual_sidecar(self, record: OwnedCarRecord) -> Optional[VisualSidecarTemplate]:
-        next_off = record.abs_off + self.CAREER_VEHICLE_SIZE
-        try:
-            raw = self._read_owned_record_raw(next_off)
-        except ValueError:
-            return None
-        car_number = struct.unpack_from("<I", raw, 0)[0]
-        signature = raw[self.CAREER_VEHICLE_SIGNATURE_OFFSET:self.CAREER_VEHICLE_SIGNATURE_OFFSET + self.CAREER_VEHICLE_SIGNATURE_SIZE]
-        location_bits = struct.unpack_from("<H", raw, self.CAREER_VEHICLE_FLAGS_OFFSET)[0]
-        misc_bits = struct.unpack_from("<H", raw, self.CAREER_VEHICLE_FLAGS2_OFFSET)[0]
-        parts_slot = raw[self.CAREER_VEHICLE_PARTS_SLOT_OFFSET]
-        career_slot = raw[self.CAREER_VEHICLE_SLOT_OFFSET]
-        if car_number != self.EMPTY_CAR_NUMBER:
-            return None
-        if signature != record.signature:
-            return None
-        if location_bits != self.MY_CARS_FLAG or career_slot != self.EMPTY_CAREER_SLOT:
-            return None
-        if parts_slot != record.parts_slot + 1:
-            return None
-        raw_block = self._read_parts_block_bytes(parts_slot, allow_placeholder_marker=True)
-        return VisualSidecarTemplate(
-            owned_record_abs_off=next_off,
-            owned_record_signature_clone=bytes(signature),
-            owned_record_location_bits=location_bits,
-            owned_record_misc_bits=misc_bits,
-            sidecar_parts_slot_offset=1,
-            sidecar_parts_slot=parts_slot,
-            sidecar_block_abs_off=self._parts_block_abs_off(parts_slot),
-            owned_record_raw=raw,
-            sidecar_build_block=raw_block,
-            normalized_sidecar_build_block=self._normalize_parts_block(raw_block),
-        )
-
     def extract_full_car_build_snapshot(self, abs_off: int) -> FullCarBuildSnapshot:
-        record = self._owned_record_by_abs_off(abs_off)
-        parts = self.get_parts_record(record.parts_slot)
-        primary_block = self._read_parts_block_bytes(record.parts_slot)
-        visual_table_entries = self._visual_table_entries()
-        visual_table_values = self._visual_table_values(self.VISUAL_TABLE_LEGACY_VALUE_OFFSET)
-        visual_table_mode_values = self._visual_table_values(self.VISUAL_TABLE_MODE_OFFSET)
-        effective_visual_entries = self._effective_visual_table_entries(visual_table_entries)
-        effective_visual_mode_values = self._entry_probe_values(
-            effective_visual_entries,
-            self.VISUAL_TABLE_MODE_OFFSET,
-        )
-        mode_tail_value = (
-            int(visual_table_entries[-1][self.VISUAL_TABLE_MODE_OFFSET])
-            if visual_table_entries and self._is_visual_table_tail_entry(visual_table_entries[-1])
-            else None
-        )
-        performance_levels = tuple(
-            (
-                name,
-                value,
-            )
-            for name, value in (
-                ("Tires", parts.tires),
-                ("Brakes", parts.brakes),
-                ("Suspension", parts.suspension),
-                ("Transmission", parts.transmission),
-                ("Engine", parts.engine),
-                ("Turbo", parts.turbo),
-                ("NOS", parts.nos),
-            )
-        )
-        return FullCarBuildSnapshot(
-            car_abs_off=record.abs_off,
-            display_name=resolve_car_name(record.signature) or f"Sig {record.signature.hex().upper()}",
-            source_kind=self.derive_source_kind(record.location_bits),
-            car_number=record.car_number,
-            signature=record.signature,
-            location_bits=record.location_bits,
-            misc_bits=record.misc_bits,
-            parts_slot=record.parts_slot,
-            career_slot=record.career_slot,
-            primary_owned_record_template=OwnedCarTemplate(
-                car_number=record.car_number,
-                signature=record.signature,
-                location_bits=record.location_bits,
-                misc_bits=record.misc_bits,
-                source_kind=self.derive_source_kind(record.location_bits),
-            ),
-            primary_build_block_abs_off=parts.block_abs_off,
-            primary_build_block=primary_block,
-            normalized_primary_build_block=self._normalize_parts_block(primary_block),
-            performance_levels=performance_levels,
-            primary_visual_fields=self._primary_visual_summary(primary_block),
-            optional_visual_sidecar=self._detect_visual_sidecar(record),
-            requires_unresolved_global_visual_state=any(
-                value != self.VISUAL_TABLE_DEFAULT_VALUE for value in effective_visual_mode_values
-            ),
-            global_visual_table_entries=visual_table_entries,
-            global_visual_table_values=visual_table_values,
-            global_visual_table_uniform_value=self._uniform_value(visual_table_values),
-            global_visual_table_mode_offset=self.VISUAL_TABLE_MODE_OFFSET,
-            global_visual_table_mode_values=visual_table_mode_values,
-            global_visual_table_mode_uniform_value=self._uniform_value(effective_visual_mode_values),
-            global_visual_table_mode_tail_value=mode_tail_value,
-        )
+        return snapshot_export.extract_full_car_build_snapshot(self, abs_off)
 
     def get_full_car_build_snapshots(self) -> List[FullCarBuildSnapshot]:
-        snapshots = [
-            self.extract_full_car_build_snapshot(record.abs_off)
-            for record in self.get_owned_car_records()
-        ]
-        return sorted(snapshots, key=lambda item: item.car_number)
+        return snapshot_export.get_full_car_build_snapshots(self)
 
     def snapshot_to_dict(self, snapshot: FullCarBuildSnapshot) -> Dict[str, object]:
-        sidecar = snapshot.optional_visual_sidecar
-        return {
-            "kind": self.SNAPSHOT_KIND,
-            "source_file": str(self.path),
-            "display_name": snapshot.display_name,
-            "source_kind": snapshot.source_kind,
-            "car_number": snapshot.car_number,
-            "signature_hex": self._bytes_to_hex(snapshot.signature),
-            "location_bits": snapshot.location_bits,
-            "misc_bits": snapshot.misc_bits,
-            "parts_slot": snapshot.parts_slot,
-            "career_slot": snapshot.career_slot,
-            "primary_owned_record_template": {
-                "car_number": snapshot.primary_owned_record_template.car_number,
-                "signature_hex": self._bytes_to_hex(snapshot.primary_owned_record_template.signature),
-                "location_bits": snapshot.primary_owned_record_template.location_bits,
-                "misc_bits": snapshot.primary_owned_record_template.misc_bits,
-                "source_kind": snapshot.primary_owned_record_template.source_kind,
-                "parts_slot_placeholder": True,
-                "career_slot_placeholder": True,
-            },
-            "primary_build_block": {
-                "abs_off": snapshot.primary_build_block_abs_off,
-                "normalized_hex": self._bytes_to_hex(snapshot.normalized_primary_build_block),
-                "marker_hex": self._bytes_to_hex(snapshot.primary_build_block[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4]),
-                "performance_levels": {name: int(value) for name, value in snapshot.performance_levels},
-                "primary_visual_fields": {name: value for name, value in snapshot.primary_visual_fields},
-            },
-            "optional_visual_sidecar": None if sidecar is None else {
-                "owned_record_abs_off": sidecar.owned_record_abs_off,
-                "owned_record_signature_clone_hex": self._bytes_to_hex(sidecar.owned_record_signature_clone),
-                "owned_record_location_bits": sidecar.owned_record_location_bits,
-                "owned_record_misc_bits": sidecar.owned_record_misc_bits,
-                "sidecar_parts_slot_offset": sidecar.sidecar_parts_slot_offset,
-                "sidecar_parts_slot": sidecar.sidecar_parts_slot,
-                "sidecar_block_abs_off": sidecar.sidecar_block_abs_off,
-                "normalized_sidecar_build_block_hex": self._bytes_to_hex(sidecar.normalized_sidecar_build_block),
-                "sidecar_marker_hex": self._bytes_to_hex(
-                    sidecar.sidecar_build_block[self.PARTS_MARKER_OFFSET:self.PARTS_MARKER_OFFSET + 4]
-                ),
-            },
-            "requires_unresolved_global_visual_state": snapshot.requires_unresolved_global_visual_state,
-            "global_visual_table": {
-                "base_offset": self.VISUAL_TABLE_BASE_OFFSET,
-                "entry_count": len(snapshot.global_visual_table_entries),
-                "stride": self.VISUAL_TABLE_ENTRY_STRIDE,
-                "default_value": self.VISUAL_TABLE_DEFAULT_VALUE,
-                "entries_hex": tuple(self._bytes_to_hex(entry) for entry in snapshot.global_visual_table_entries),
-                "uniform_value": snapshot.global_visual_table_uniform_value,
-                "unique_values": sorted(set(int(value) for value in snapshot.global_visual_table_values)),
-                "values_hex": " ".join(f"{value:02X}" for value in snapshot.global_visual_table_values),
-                "mode_offset": snapshot.global_visual_table_mode_offset,
-                "mode_uniform_value": snapshot.global_visual_table_mode_uniform_value,
-                "mode_tail_value": snapshot.global_visual_table_mode_tail_value,
-                "mode_unique_values": sorted(set(int(value) for value in snapshot.global_visual_table_mode_values)),
-                "mode_values_hex": " ".join(f"{value:02X}" for value in snapshot.global_visual_table_mode_values),
-            },
-        }
+        return snapshot_export.snapshot_to_dict(self, snapshot)
 
     def get_resolved_parts_entries(self) -> List[ResolvedPartsEntry]:
         entries: List[ResolvedPartsEntry] = []
