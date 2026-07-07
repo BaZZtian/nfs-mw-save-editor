@@ -40,15 +40,25 @@ TOKEN_ICONS: Dict[int, str] = {
 NAV_ICONS: Dict[str, str] = {
     "Junkman":  "nav/nav_car.png",
     "Profile":  "nav/nav_profile.png",
-    "Career":   "cat/cat_police.png",
+    "Career":   "nav/nav_career.png",
     "Garage":   "nav/nav_garage.png",
     "Parts":    "cat/cat_performance.png",
     "Tuning":   "cat/cat_performance.png",
     "My Cars":  "nav/parts.png",
     "Presets":  "nav/nav_save.png",
-    "Builds":   "nav/nav_save.png",
+    "Builds":   "nav/nav_builds.png",
     "Settings": "nav/nav_settings.png",
     "About":    "nav/nav_info.png",
+}
+
+
+# -- Career / Rap Sheet UI icon assets (relative to _ICONS_ROOT) --
+GAME_ICONS: Dict[str, str] = {
+    "race":       "career/race_events.png",
+    "milestone":  "career/milestone_main.png",
+    "boss_race":  "career/boss_race_key_2.png",
+    "blacklist":  "career/blacklist_top_15.png",
+    "heat":       "career/heat.png",
 }
 
 
@@ -68,6 +78,15 @@ def token_icon_path(token_id: int) -> Optional[Path]:
 def nav_icon_path(page_name: str) -> Optional[Path]:
     """Return absolute Path for a nav icon, or None if not mapped."""
     rel = NAV_ICONS.get(page_name)
+    if rel is None:
+        return None
+    p = _ICONS_ROOT / rel
+    return p if p.exists() else None
+
+
+def game_icon_path(icon_name: str) -> Optional[Path]:
+    """Return absolute Path for a game-sourced UI icon, or None if not mapped."""
+    rel = GAME_ICONS.get(icon_name)
     if rel is None:
         return None
     p = _ICONS_ROOT / rel

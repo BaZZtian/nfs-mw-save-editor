@@ -1053,6 +1053,7 @@ QFrame#contentCard[changed="true"] {{
     border: 1px solid {CARD_CHANGED_BORDER};
     background: {CARD_CHANGED_BG};
 }}
+QFrame#garageCard QWidget#garageHeatTitle,
 QFrame#garageCard QWidget#garageHeatRow {{
     background: transparent;
 }}
@@ -1271,6 +1272,104 @@ QRadioButton#careerVariantRadio::indicator:hover {{
 QRadioButton#careerVariantRadio::indicator:checked {{
     border: 2px solid {ACCENT};
     background: {ACCENT_SOFT};
+}}
+/* Career view switch (Transplant | Rap Sheet) */
+QPushButton#careerViewTab {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 5px 20px;
+    color: {MUTED};
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+}}
+QPushButton#careerViewTab:hover:!checked {{
+    background: {BG_NAV_HOVER};
+    border-color: {ACCENT};
+}}
+QPushButton#careerViewTab:checked {{
+    background: {BG_NAV_ACTIVE};
+    border: 1px solid {BORDER_NAV_ACTIVE};
+    color: {TEXT_NAV_ACTIVE};
+}}
+/* Rap Sheet: blacklist board cells */
+QFrame#rapBossCell {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD};
+}}
+QFrame#rapBossCell[state="defeated"] {{
+    background: {BG_DISABLED};
+}}
+QFrame#rapBossCell[state="current"] {{
+    background: {BG_NAV_ACTIVE};
+    border: 1px solid {ACCENT_BRIGHT};
+}}
+QLabel#rapBossNum {{
+    background: transparent;
+    color: {MUTED};
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}}
+QLabel#rapBossName {{
+    background: transparent;
+    color: {TEXT};
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}}
+QFrame#rapBossCell[state="defeated"] QLabel#rapBossName {{
+    color: {MUTED_DARK};
+}}
+QFrame#rapBossCell[state="locked"] QLabel#rapBossName {{
+    color: {MUTED};
+}}
+QFrame#rapBossCell[state="current"] QLabel#rapBossName {{
+    color: {TEXT_NAV_ACTIVE};
+}}
+QLabel#rapBossTag {{
+    background: transparent;
+    color: {ACCENT_BRIGHT};
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+}}
+/* Plain container widgets inside cards must not paint the panel background
+   (same full-width dark-strip bug as the 2026-03-22 settingsGroup fix). */
+QWidget#rapDotRow, QWidget#rapBoardGrid {{
+    background: transparent;
+}}
+/* Rap Sheet: event/milestone dots */
+QFrame#rapDot {{
+    background: transparent;
+    border: none;
+}}
+QLabel#rapRowLabel {{
+    background: transparent;
+    color: {TEXT};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#rapRowCount {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 2px 8px;
+    color: {MUTED};
+    font-size: 10.5px;
+    font-weight: 700;
+}}
+QLabel#rapRowCount[status="full"] {{
+    background: {STATUS_SUCCESS_BG};
+    border: 1px solid {STATUS_SUCCESS_BORDER};
+    color: {STATUS_SUCCESS_FG};
+}}
+QLabel#rapFootnote {{
+    background: transparent;
+    color: {MUTED_DARK};
+    font-size: 10px;
 }}
 QLabel#contentCardStatBadge {{
     background: {STATUS_NEUTRAL_BG};

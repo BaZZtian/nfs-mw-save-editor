@@ -33,6 +33,7 @@ from core.models import (
 )
 from core.savefile import SaveFile
 from resources import resource_path
+from ui.icon_map import game_icon_path
 from ui.pages.constants import *
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
 from ui.widgets import ToastNotification
@@ -574,6 +575,31 @@ class GarageMixin:
         self._pink_slip_badge_pixmap = pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         return self._pink_slip_badge_pixmap
 
+    def _make_garage_heat_field_label(self) -> QWidget:
+        row = QWidget()
+        row.setObjectName("garageHeatTitle")
+        row.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+
+        icon_path = game_icon_path("heat")
+        if icon_path is not None:
+            pix = QPixmap(str(icon_path))
+            if not pix.isNull():
+                icon = QLabel()
+                icon.setPixmap(pix.scaled(17, 17, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                icon.setFixedSize(19, 19)
+                icon.setAlignment(Qt.AlignCenter)
+                icon.setToolTip("Heat")
+                layout.addWidget(icon)
+
+        label = self._make_card_field_label("Heat")
+        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        layout.addWidget(label)
+        layout.addStretch(1)
+        return row
+
     def _make_garage_source_badge(self, source_kind: str) -> QWidget:
         if source_kind == "Pink Slip":
             badge = QLabel("Pink Slip")
@@ -963,7 +989,7 @@ class GarageMixin:
             card_layout.addWidget(self._make_card_separator())
 
             # Heat level selector
-            card_layout.addWidget(self._make_card_field_label("Heat"))
+            card_layout.addWidget(self._make_garage_heat_field_label())
 
             heat_row = QWidget()
             heat_row.setObjectName("garageHeatRow")
