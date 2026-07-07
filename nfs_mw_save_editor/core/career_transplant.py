@@ -3,12 +3,17 @@
 This module owns the future donor-save -> user-save career progression path.
 It is deliberately scoped around the progression-vs-property split: donor bytes
 come only from named progression spans, while user-owned property such as active
-car identity, cash, alias, vehicles, parts, garage, Junkman inventory, visual
-table state, and save-tail integrity remains outside this module's copy map.
+car identity, cash, alias, vehicles, parts, garage, Junkman inventory, and
+save-tail integrity remains outside this module's copy map.
 
 The span map comes from the 2026-07-07 reverse-engineering pass over the
 32-save blacklist ladder and engine symbol/decompilation notes captured in
-AGENT_CONTEXT.md. Two invariants are fixed here for future tests and review:
+AGENT_CONTEXT.md. The "post_race_belt" span (uncharted bytes after the race
+table, the global visual table, and the FEMarkerManager award-marker table)
+was added after the first in-game test: performance-shop tier unlocks live in
+the marker region and did not follow the transplant without it. The belt is
+copied as one piece exactly as validated in-game; copying the visual table is
+harmless per the April 2026 injection fidelity tests. Two invariants are fixed here for future tests and review:
 the game-section MD5 at 0x34 travels with the copied game section verbatim, and
 this module never recomputes checksums. The existing editor save path remains
 responsible for the file-tail MD5 when the user writes the modified save.
@@ -48,7 +53,7 @@ TRANSPLANT_SPANS: Tuple[TransplantSpan, ...] = (
     (0x4038, 0x4039, "current_bin"),
     (0x403D, 0x42A9, "difficulty_flags_sms"),
     (0x42B9, 0x5241, "race_table"),
-    (0x57B1, 0x57B2, "tbd_57b1"),
+    (0x5241, 0x57B2, "post_race_belt"),
     (0x57B9, 0x57BA, "tbd_57b9"),
     (0x5B41, 0x5B42, "tbd_5b41"),
     (0x5B62, 0x5B64, "tbd_5b62"),
