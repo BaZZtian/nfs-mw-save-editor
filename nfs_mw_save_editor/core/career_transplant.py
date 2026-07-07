@@ -48,6 +48,20 @@ RACE_RECORD_COUNT = 248
 # across the whole 32-save ladder (flags 0x10 -> 0x1E, 0x04 -> 0x0E).
 RACE_DONE_MASK = 0x0A
 
+# Rap-sheet total bounty aggregates per-car garage records plus the
+# sold-cars history (engine: FEPlayerCarDB::GetTotalBounty over
+# FECareerRecord[25].Bounty and SoldHistoryBounty). Empty garage slots hold
+# sentinel garbage, not zeros — only records matching the garage-slot
+# signature (same shape SaveFile._is_garage_slot checks) are summed.
+GARAGE_RECORDS_OFFSET = 0xE2ED
+GARAGE_RECORD_SIZE = 0x38
+GARAGE_RECORD_COUNT = 25
+GARAGE_RECORD_BOUNTY_REL = 0x10
+GARAGE_SIGNATURE_VARIANTS = (b"\xCD\x03\x00", b"\xCD\x04\x00", b"\xCD\x05\x00")
+GARAGE_SIGNATURE_B = b"\x00\x00\xCD\xCD"
+SOLD_HISTORY_BOUNTY_OFFSET = 0xE865
+U32_MAX = 0xFFFFFFFF
+
 REFUSAL_USER_SIZE_MISMATCH = "User save size is not 63596 bytes"
 REFUSAL_DONOR_SIZE_MISMATCH = "Donor save size is not 63596 bytes"
 REFUSAL_DONOR_GAME_MAGIC_MISSING = "Donor game section magic is missing"
@@ -117,6 +131,47 @@ def count_completed_races(data: bytes) -> Optional[int]:
     return done
 
 
+def _is_garage_record(raw: bytes) -> bool:
+    return (
+        len(raw) == GARAGE_RECORD_SIZE
+        and raw[1:4] in GARAGE_SIGNATURE_VARIANTS
+        and raw[8:12] == GARAGE_SIGNATURE_B
+    )
+
+
+def total_rap_sheet_bounty(data: bytes) -> Optional[int]:
+    """Sum occupied garage-record bounties plus sold-history bounty.
+
+    Returns None when the buffer is not a save. Empty garage slots (sentinel
+    garbage) are skipped via the signature check.
+    """
+
+    if len(data) != EXPECTED_SAVE_SIZE:
+        return None
+    total = int.from_bytes(
+        data[SOLD_HISTORY_BOUNTY_OFFSET:SOLD_HISTORY_BOUNTY_OFFSET + 4], "little"
+    )
+    for k in range(GARAGE_RECORD_COUNT):
+        base = GARAGE_RECORDS_OFFSET + k * GARAGE_RECORD_SIZE
+        raw = bytes(data[base:base + GARAGE_RECORD_SIZE])
+        if not _is_garage_record(raw):
+            continue
+        total += int.from_bytes(
+            raw[GARAGE_RECORD_BOUNTY_REL:GARAGE_RECORD_BOUNTY_REL + 4], "little"
+        )
+    return total
+
+
+def _bounty_compensation(user_data: bytes, donor_data: bytes) -> int:
+    """Deficit of the user's rap-sheet bounty versus the donor's, floored at 0."""
+
+    user_total = total_rap_sheet_bounty(user_data)
+    donor_total = total_rap_sheet_bounty(donor_data)
+    if user_total is None or donor_total is None:
+        return 0
+    return max(0, donor_total - user_total)
+
+
 def plan_career_transplant(
     save: CareerTransplantSave,
     donor_data: bytes,
@@ -133,6 +188,11 @@ def plan_career_transplant(
     Non-fatal warnings are evaluated only after the refusal ladder: donor
     CurrentBin outside ``DONOR_STAGE_MIN_BIN..DONOR_STAGE_MAX_BIN`` and user
     active career pointer invalid. The planner performs no writes.
+
+    ``bounty_compensation`` reports how much apply will ADD to the user's
+    SoldHistoryBounty so the rap-sheet total matches what the donor stage
+    implies (0 when the user already has at least the donor's total). This is
+    the only write outside TRANSPLANT_SPANS and it never lowers user bounty.
     """
 
     donor_bin = int(donor_data[CURRENT_BIN_OFFSET]) if len(donor_data) > CURRENT_BIN_OFFSET else 0
@@ -165,6 +225,11 @@ def plan_career_transplant(
         warnings=tuple(warnings),
         donor_bin=donor_bin,
         spans_total_bytes=spans_total_bytes,
+        bounty_compensation=(
+            _bounty_compensation(bytes(save.data), donor_data)
+            if refusal_reason is None
+            else 0
+        ),
     )
 
 
@@ -179,7 +244,9 @@ def apply_career_transplant(
     semantics as snapshot injection. It raises
     ``ValueError(plan.refusal_reason)`` when the plan refused, leaving the
     buffer byte-identical. Otherwise it copies ``TRANSPLANT_SPANS`` from donor
-    to user in order and performs no other mutation or checksum recomputation.
+    to user in order, then adds ``plan.bounty_compensation`` to the user's
+    SoldHistoryBounty (saturating at u32; no-op when 0). No other mutation and
+    no checksum recomputation.
     """
 
     plan = save.plan_career_transplant(donor_data)
@@ -187,3 +254,9 @@ def apply_career_transplant(
         raise ValueError(plan.refusal_reason)
     for start, end, _label in TRANSPLANT_SPANS:
         save.data[start:end] = donor_data[start:end]
+    if plan.bounty_compensation > 0:
+        sold = int.from_bytes(
+            save.data[SOLD_HISTORY_BOUNTY_OFFSET:SOLD_HISTORY_BOUNTY_OFFSET + 4], "little"
+        )
+        sold = min(U32_MAX, sold + plan.bounty_compensation)
+        save.data[SOLD_HISTORY_BOUNTY_OFFSET:SOLD_HISTORY_BOUNTY_OFFSET + 4] = sold.to_bytes(4, "little")

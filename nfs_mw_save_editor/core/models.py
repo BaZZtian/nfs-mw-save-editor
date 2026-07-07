@@ -409,3 +409,6 @@ class CareerTransplantPlan:
     warnings: Tuple[str, ...]
     donor_bin: int
     spans_total_bytes: int
+    # Amount apply will add to SoldHistoryBounty so the rap-sheet total
+    # matches the donor stage (0 = user already has enough).
+    bounty_compensation: int = 0

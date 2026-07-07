@@ -45,8 +45,8 @@ _CHANGES_TEXT = (
     "Changes: career stage, milestones, race progress, story SMS, shop unlocks."
 )
 _BOUNTY_CAVEAT_TEXT = (
-    "Note: total bounty stays with your cars, so it will read lower than the "
-    "target stage implies (compensation is a planned follow-up)."
+    "Note: your cars keep their earned bounty; if the target stage implies "
+    "more, the difference is added as sold-cars history."
 )
 
 
@@ -271,6 +271,10 @@ class CareerMixin:
                     )
                     if current == plan.donor_bin:
                         lines.append("Same stage: this resets the chapter's progress.")
+                    if plan.bounty_compensation > 0:
+                        lines.append(
+                            f"Bounty compensation: +{plan.bounty_compensation:,} via sold-cars history."
+                        )
                     lines.extend(f"Warning: {w}" for w in plan.warnings)
         if block_reason:
             lines.append(block_reason)
@@ -297,6 +301,10 @@ class CareerMixin:
 
         current = career_transplant.read_current_bin(bytes(self.savefile.data))
         warning_lines = "".join(f"\n- {w}" for w in plan.warnings)
+        if plan.bounty_compensation > 0:
+            warning_lines += (
+                f"\n- Bounty compensation: +{plan.bounty_compensation:,} via sold-cars history"
+            )
         answer = QMessageBox.question(
             self,
             "Career stage transplant",

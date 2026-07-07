@@ -34,12 +34,25 @@ class _FakeSave:
         return career_transplant.plan_career_transplant(self, donor_data)
 
 
+def _zero_bounty_fields(data: bytearray) -> None:
+    """Zero garage bounties + sold history so fixtures imply no compensation."""
+
+    for k in range(career_transplant.GARAGE_RECORD_COUNT):
+        off = (career_transplant.GARAGE_RECORDS_OFFSET
+               + k * career_transplant.GARAGE_RECORD_SIZE
+               + career_transplant.GARAGE_RECORD_BOUNTY_REL)
+        data[off:off + 4] = b"\x00" * 4
+    data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
+         career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4] = b"\x00" * 4
+
+
 def _valid_user_buffer(fill: int = 0xAA) -> bytearray:
     data = bytearray([fill] * career_transplant.EXPECTED_SAVE_SIZE)
     data[
         career_transplant.GAME_MAGIC_OFFSET:
         career_transplant.GAME_MAGIC_OFFSET + len(career_transplant.GAME_MAGIC)
     ] = career_transplant.GAME_MAGIC
+    _zero_bounty_fields(data)
     return data
 
 
@@ -50,6 +63,7 @@ def _valid_donor_buffer(fill: int = 0xBB, *, donor_bin: int = 7) -> bytes:
         career_transplant.GAME_MAGIC_OFFSET + len(career_transplant.GAME_MAGIC)
     ] = career_transplant.GAME_MAGIC
     data[career_transplant.CURRENT_BIN_OFFSET] = int(donor_bin) & 0xFF
+    _zero_bounty_fields(data)
     data[
         career_transplant.GAME_SECTION_MD5_OFFSET:
         career_transplant.GAME_SECTION_START
@@ -290,3 +304,59 @@ def test_apply_preserves_junkman_token_array() -> None:
     before = bytes(save.data)
     career_transplant.apply_career_transplant(save, donor)
     assert bytes(save.data[0x5739:0x5A2D]) == before[0x5739:0x5A2D]
+
+
+def _set_u32(data: bytearray, off: int, value: int) -> None:
+    data[off:off + 4] = value.to_bytes(4, "little")
+
+
+def _fill_garage_record(data: bytearray, index: int, bounty: int) -> None:
+    """Write a signature-valid occupied garage record with the given bounty."""
+
+    base = career_transplant.GARAGE_RECORDS_OFFSET + index * career_transplant.GARAGE_RECORD_SIZE
+    data[base:base + career_transplant.GARAGE_RECORD_SIZE] = b"\x00" * career_transplant.GARAGE_RECORD_SIZE
+    data[base + 1:base + 4] = career_transplant.GARAGE_SIGNATURE_VARIANTS[0]
+    data[base + 8:base + 12] = career_transplant.GARAGE_SIGNATURE_B
+    _set_u32(data, base + career_transplant.GARAGE_RECORD_BOUNTY_REL, bounty)
+
+
+def test_bounty_compensation_computed_and_applied() -> None:
+    """Assert apply tops up SoldHistoryBounty by exactly the donor-vs-user deficit."""
+
+    user = _valid_user_buffer()
+    _fill_garage_record(user, 0, 100_000)
+    _set_u32(user, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 50_000)
+
+    donor = bytearray(_valid_donor_buffer())
+    _fill_garage_record(donor, 0, 400_000)
+    _set_u32(donor, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 250_000)
+    donor = bytes(donor)
+
+    save = _FakeSave(user)
+    plan = career_transplant.plan_career_transplant(save, donor)
+    assert plan.bounty_compensation == 500_000  # 650k donor total - 150k user total
+
+    career_transplant.apply_career_transplant(save, donor)
+    sold = int.from_bytes(
+        save.data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
+                  career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4], "little")
+    assert sold == 50_000 + 500_000
+    assert career_transplant.total_rap_sheet_bounty(bytes(save.data)) == 650_000
+
+
+def test_bounty_compensation_is_zero_when_user_is_richer() -> None:
+    """Assert a richer user gets no compensation and sold history stays untouched."""
+
+    user = _valid_user_buffer()
+    _fill_garage_record(user, 0, 9_000_000)
+    donor = _valid_donor_buffer()
+
+    save = _FakeSave(user)
+    plan = career_transplant.plan_career_transplant(save, donor)
+    assert plan.bounty_compensation == 0
+    before_sold = bytes(save.data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
+                                  career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4])
+    career_transplant.apply_career_transplant(save, donor)
+    after_sold = bytes(save.data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
+                                 career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4])
+    assert after_sold == before_sold
