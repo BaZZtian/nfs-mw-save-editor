@@ -8,12 +8,13 @@ import struct
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from core import snapshot_export, snapshot_injection, snapshot_library
+from core import career_transplant, snapshot_export, snapshot_injection, snapshot_library
 from core.cars import resolve_car_name
 from core.checksums import ea_crc32
 from core.junkman import JunkmanInventory
 from core.models import (
     CareerSlotStatus,
+    CareerTransplantPlan,
     CareerVehicleRecord,
     FullCarBuildSnapshot,
     GarageAllocatorSnapshot,
@@ -1377,6 +1378,12 @@ class SaveFile:
             format_config=cls._snapshot_library_format(),
             user_root=user_root,
         )
+
+    def plan_career_transplant(self, donor_data: bytes) -> CareerTransplantPlan:
+        return career_transplant.plan_career_transplant(self, donor_data)
+
+    def apply_career_transplant(self, donor_data: bytes) -> None:
+        return career_transplant.apply_career_transplant(self, donor_data)
 
     @classmethod
     def _snapshot_target_location_bits(

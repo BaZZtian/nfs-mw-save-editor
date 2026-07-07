@@ -401,3 +401,11 @@ class SnapshotInjectionPlan:
     warnings: Tuple[str, ...]
     target_sidecar_owned_abs_off: Optional[int] = None
     target_sidecar_parts_slot: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class CareerTransplantPlan:
+    refusal_reason: Optional[str]
+    warnings: Tuple[str, ...]
+    donor_bin: int
+    spans_total_bytes: int
