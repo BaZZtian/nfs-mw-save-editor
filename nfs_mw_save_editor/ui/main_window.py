@@ -48,6 +48,7 @@ from core.savefile import SaveFile
 from resources import resource_path
 from ui.icon_map import nav_icon_path
 from ui.page_chrome import PageChromeMixin
+from ui.pages.career_mixin import CareerMixin
 from ui.pages.constants import *
 from ui.pages.garage_mixin import GarageMixin
 from ui.pages.junkman_mixin import JunkmanMixin
@@ -116,6 +117,7 @@ class MainWindow(
     PageChromeMixin,
     JunkmanMixin,
     ProfileMixin,
+    CareerMixin,
     GarageMixin,
     PartsMixin,
     PresetsMixin,
@@ -235,6 +237,7 @@ class MainWindow(
 
         self.page_junk = self._build_junk_page()
         self.page_profile = self._build_profile_page()
+        self.page_career = self._build_career_page()
         self.page_garage = self._build_garage_page()
         self.page_parts = self._build_parts_page()
         self.page_presets = self._build_presets_page()
@@ -243,6 +246,7 @@ class MainWindow(
         self._page_theme_roots = {
             "Junkman": self.page_junk,
             "Profile": self.page_profile,
+            "Career": self.page_career,
             "Garage": self.page_garage,
             "Tuning": self.page_parts,
             "Builds": self.page_presets,
@@ -253,8 +257,8 @@ class MainWindow(
         self._shell_theme_roots = [self.header_chrome, self.nav_chrome]
         self._backdrop_theme_roots = [root, self.stack]
 
-        for p in [self.page_junk, self.page_profile, self.page_garage, self.page_parts, self.page_presets,
-                   self.page_settings, self.page_about]:
+        for p in [self.page_junk, self.page_profile, self.page_career, self.page_garage, self.page_parts,
+                   self.page_presets, self.page_settings, self.page_about]:
             self.stack.addWidget(p)
 
         self._select_page("Junkman")
@@ -366,7 +370,7 @@ class MainWindow(
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
 
-        for name in ["Junkman", "Profile", "Garage", "Tuning", "Builds", "Settings", "About"]:
+        for name in ["Junkman", "Profile", "Career", "Garage", "Tuning", "Builds", "Settings", "About"]:
             btn = QPushButton(name)
             btn.setObjectName("navButton")
             btn.setCheckable(True)
@@ -425,6 +429,7 @@ class MainWindow(
         mapping = {
             "Junkman": self.page_junk,
             "Profile": self.page_profile,
+            "Career": self.page_career,
             "Garage": self.page_garage,
             "Tuning": self.page_parts,
             "Builds": self.page_presets,
@@ -436,6 +441,8 @@ class MainWindow(
         self._ensure_page_theme(name)
         if name == "Profile":
             self._refresh_profile_inputs()
+        elif name == "Career":
+            self._refresh_career_page()
         elif name == "Junkman" and hasattr(self, "cards_container") and hasattr(self, "lbl_free"):
             self._sync_cards_per_row(force=True)
             self.refresh_cards()
@@ -964,6 +971,7 @@ class MainWindow(
         self.lbl_limits.setText(f"Limits: Default {default_cap}, Unlocked {unlocked_cap}")
         self._mark_all_heavy_pages_dirty()
         self._refresh_profile_inputs()
+        self._refresh_career_page()
         current_page = self._current_stack_page_name()
         if current_page == "Garage":
             self._refresh_garage_page(reason="save_load_visible")

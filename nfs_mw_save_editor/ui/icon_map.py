@@ -40,6 +40,7 @@ TOKEN_ICONS: Dict[int, str] = {
 NAV_ICONS: Dict[str, str] = {
     "Junkman":  "nav/nav_car.png",
     "Profile":  "nav/nav_profile.png",
+    "Career":   "cat/cat_police.png",
     "Garage":   "nav/nav_garage.png",
     "Parts":    "cat/cat_performance.png",
     "Tuning":   "cat/cat_performance.png",

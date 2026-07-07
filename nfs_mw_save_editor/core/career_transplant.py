@@ -9,11 +9,15 @@ save-tail integrity remains outside this module's copy map.
 The span map comes from the 2026-07-07 reverse-engineering pass over the
 32-save blacklist ladder and engine symbol/decompilation notes captured in
 AGENT_CONTEXT.md. The "post_race_belt" span (uncharted bytes after the race
-table, the global visual table, and the FEMarkerManager award-marker table)
-was added after the first in-game test: performance-shop tier unlocks live in
-the marker region and did not follow the transplant without it. The belt is
-copied as one piece exactly as validated in-game; copying the visual table is
-harmless per the April 2026 injection fidelity tests. Two invariants are fixed here for future tests and review:
+table plus the global visual table) was added after the first in-game test:
+performance-shop tier unlocks did not follow the transplant without it.
+Copying the visual table is harmless per the April 2026 injection fidelity
+tests. The belt deliberately STOPS at 0x5739: the Junkman token inventory is
+a fixed array of 63 12-byte slots at 0x5739..0x5A2D (empirically stable
+across all saves) and is user property — the first cut of the belt leaked
+donor tokens into it (caught during in-game validation). The former "tbd_57b1"/
+"tbd_57b9" singles were that array's slot 10 (type/count bytes) and were
+removed from the copy map for the same reason. Two invariants are fixed here for future tests and review:
 the game-section MD5 at 0x34 travels with the copied game section verbatim, and
 this module never recomputes checksums. The existing editor save path remains
 responsible for the file-tail MD5 when the user writes the modified save.
@@ -37,6 +41,13 @@ DONOR_STAGE_MIN_BIN = 1
 DONOR_STAGE_MAX_BIN = 15
 CURRENT_BIN_OFFSET = 0x4038
 
+RACE_TABLE_OFFSET = 0x42C1
+RACE_RECORD_SIZE = 0x10
+RACE_RECORD_COUNT = 248
+# Completion = both bits observed to be set together on finished events
+# across the whole 32-save ladder (flags 0x10 -> 0x1E, 0x04 -> 0x0E).
+RACE_DONE_MASK = 0x0A
+
 REFUSAL_USER_SIZE_MISMATCH = "User save size is not 63596 bytes"
 REFUSAL_DONOR_SIZE_MISMATCH = "Donor save size is not 63596 bytes"
 REFUSAL_DONOR_GAME_MAGIC_MISSING = "Donor game section magic is missing"
@@ -53,8 +64,7 @@ TRANSPLANT_SPANS: Tuple[TransplantSpan, ...] = (
     (0x4038, 0x4039, "current_bin"),
     (0x403D, 0x42A9, "difficulty_flags_sms"),
     (0x42B9, 0x5241, "race_table"),
-    (0x5241, 0x57B2, "post_race_belt"),
-    (0x57B9, 0x57BA, "tbd_57b9"),
+    (0x5241, 0x5739, "post_race_belt"),
     (0x5B41, 0x5B42, "tbd_5b41"),
     (0x5B62, 0x5B64, "tbd_5b62"),
     (0x5C71, 0x5C72, "tbd_5c71"),
@@ -75,6 +85,36 @@ class CareerTransplantSave(Protocol):
     def plan_career_transplant(self, donor_data: bytes) -> CareerTransplantPlan:
         """Plan a transplant through SaveFile's public delegate."""
         ...
+
+
+def read_current_bin(data: bytes) -> Optional[int]:
+    """Return the career stage byte, or None when the buffer is not a save."""
+
+    if len(data) != EXPECTED_SAVE_SIZE:
+        return None
+    return int(data[CURRENT_BIN_OFFSET])
+
+
+def count_completed_races(data: bytes) -> Optional[int]:
+    """Count race-table records carrying the completion bits.
+
+    Fixed offsets: the race table lives outside the floating-interior game
+    section, so no anchor parsing is needed. Returns None when the buffer is
+    not a save.
+    """
+
+    if len(data) != EXPECTED_SAVE_SIZE:
+        return None
+    done = 0
+    for k in range(RACE_RECORD_COUNT):
+        flags = int.from_bytes(
+            data[RACE_TABLE_OFFSET + k * RACE_RECORD_SIZE + 4:
+                 RACE_TABLE_OFFSET + k * RACE_RECORD_SIZE + 8],
+            "little",
+        )
+        if (flags & RACE_DONE_MASK) == RACE_DONE_MASK:
+            done += 1
+    return done
 
 
 def plan_career_transplant(

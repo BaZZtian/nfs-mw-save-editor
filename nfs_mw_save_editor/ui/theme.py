@@ -1224,6 +1224,54 @@ QLabel#contentCardNote {{
     color: {MUTED};
     font-size: 10.5px;
 }}
+QListWidget#careerStageList {{
+    background: transparent;
+    border: none;
+    outline: none;
+}}
+QListWidget#careerStageList::item {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD};
+    margin: 3px 10px;
+    padding: 7px 12px;
+    color: {TEXT};
+}}
+QListWidget#careerStageList::item:hover {{
+    background: {BG_NAV_HOVER};
+}}
+QListWidget#careerStageList::item:selected {{
+    background: {BG_NAV_ACTIVE};
+    border: 1px solid {BORDER_NAV_ACTIVE};
+    color: {TEXT_NAV_ACTIVE};
+}}
+QListWidget#careerStageList::item:disabled {{
+    background: {BG_DISABLED};
+    border: 1px solid {DISABLED_BORDER};
+    color: {DISABLED_TEXT};
+}}
+QRadioButton#careerVariantRadio {{
+    background: transparent;
+    color: {TEXT};
+    font-size: 12px;
+    font-weight: 600;
+    spacing: 7px;
+    padding: 4px 8px;
+}}
+QRadioButton#careerVariantRadio::indicator {{
+    width: 14px;
+    height: 14px;
+    border-radius: 8px;
+    border: 2px solid {BORDER};
+    background: {BG_INPUT};
+}}
+QRadioButton#careerVariantRadio::indicator:hover {{
+    border: 2px solid {ACCENT};
+}}
+QRadioButton#careerVariantRadio::indicator:checked {{
+    border: 2px solid {ACCENT};
+    background: {ACCENT_SOFT};
+}}
 QLabel#contentCardStatBadge {{
     background: {STATUS_NEUTRAL_BG};
     border: 1px solid {STATUS_NEUTRAL_BORDER};

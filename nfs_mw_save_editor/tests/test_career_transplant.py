@@ -13,8 +13,7 @@ KEEP_USER_HOLES = (
     (0x4034, 0x4038, "current_car"),
     (0x4039, 0x403D, "current_cash"),
     (0x42A9, 0x42B9, "case_file_name"),
-    (0x57B2, 0x57B9, "gap_after_post_race_belt"),
-    (0x57BA, 0x5B41, "gap_after_tbd_57b9"),
+    (0x5739, 0x5B41, "junkman_inventory_and_alias_region"),
     (0x5B42, 0x5B62, "gap_after_tbd_5b41"),
     (0x5B64, 0x5C71, "gap_after_tbd_5b62"),
     (0x5C72, 0x5C73, "gap_after_tbd_5c71"),
@@ -258,3 +257,36 @@ def test_savefile_delegates_plan_and_apply_career_transplant() -> None:
     sf.apply_career_transplant(donor)
     _assert_bytes_match_ranges(sf.data, donor, career_transplant.TRANSPLANT_SPANS)
     _assert_bytes_match_ranges(sf.data, before, KEEP_USER_HOLES)
+
+
+def test_read_current_bin_and_race_count_helpers() -> None:
+    """Assert progression read helpers decode bin and completed-race count."""
+
+    data = bytearray(_valid_donor_buffer(donor_bin=9))
+    base = career_transplant.RACE_TABLE_OFFSET
+    for k in range(career_transplant.RACE_RECORD_COUNT):
+        off = base + k * career_transplant.RACE_RECORD_SIZE + 4
+        data[off:off + 4] = (0).to_bytes(4, "little")
+    for k in (0, 3, 17):
+        off = base + k * career_transplant.RACE_RECORD_SIZE + 4
+        data[off:off + 4] = (0x1E).to_bytes(4, "little")
+
+    assert career_transplant.read_current_bin(bytes(data)) == 9
+    assert career_transplant.count_completed_races(bytes(data)) == 3
+    assert career_transplant.read_current_bin(b"short") is None
+    assert career_transplant.count_completed_races(b"short") is None
+
+
+def test_apply_preserves_junkman_token_array() -> None:
+    """Assert the Junkman slot array (63 x 12 bytes at 0x5739) never takes donor bytes.
+
+    Regression guard for the first belt cut, which leaked donor tokens
+    (caught in-game 2026-07-07): the post_race_belt span must stop at 0x5739.
+    """
+
+    user = _valid_user_buffer()
+    donor = _valid_donor_buffer()
+    save = _FakeSave(user)
+    before = bytes(save.data)
+    career_transplant.apply_career_transplant(save, donor)
+    assert bytes(save.data[0x5739:0x5A2D]) == before[0x5739:0x5A2D]

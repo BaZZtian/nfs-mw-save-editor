@@ -30,6 +30,25 @@ SNAPSHOT_TILE_MAX_COLUMNS = 2
 LIBRARY_TILE_MIN_WIDTH = 380
 LIBRARY_TILE_MAX_COLUMNS = 2
 
+# Blacklist stage number -> boss name (stage == CareerSettings.CurrentBin).
+BLACKLIST_BOSS_NAMES = {
+    15: "Sonny",
+    14: "Taz",
+    13: "Vic",
+    12: "Izzy",
+    11: "Big Lou",
+    10: "Baron",
+    9: "Earl",
+    8: "Jewels",
+    7: "Kamikaze",
+    6: "Ming",
+    5: "Webster",
+    4: "JV",
+    3: "Ronnie",
+    2: "Bull",
+    1: "Razor",
+}
+
 
 @dataclass
 class TokenEntry:
