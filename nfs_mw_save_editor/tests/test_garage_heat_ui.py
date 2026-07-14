@@ -10,7 +10,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from PySide6.QtGui import QIntValidator
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from core.models import OwnedCarTransferPlan, PursuitRecord, ResolvedTransferCarEntry
 from core.savefile import SaveFile
@@ -118,9 +118,19 @@ class GarageHeatUiTests(unittest.TestCase):
         self.assertEqual(heat_row.layout().spacing(), 4)
         self.assertEqual([btn.property("segmentPos") for btn in heat_buttons], ["first", "middle", "middle", "middle", "last"])
 
+        heat_icons = card.findChildren(QLabel, "garageHeatIcon")
+        self.assertEqual(len(heat_icons), 1)
+
         stylesheet = build_page_stylesheet("Blueprint")
         self.assertIn(
             "QFrame#garageCard QWidget#garageHeatRow {\n    background: transparent;\n}",
+            stylesheet,
+        )
+        self.assertIn(
+            "QFrame#garageCard QLabel#garageHeatIcon {\n"
+            "    background: transparent;\n"
+            "    border: none;\n"
+            "}",
             stylesheet,
         )
         match = re.search(

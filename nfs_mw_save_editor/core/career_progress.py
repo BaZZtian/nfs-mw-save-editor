@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from types import MappingProxyType
+from typing import Mapping, Optional, Tuple
 
 from core.career_transplant import (
     EXPECTED_SAVE_SIZE,
@@ -32,6 +33,8 @@ from core.career_transplant import (
     RACE_RECORD_COUNT,
     RACE_RECORD_SIZE,
     RACE_TABLE_OFFSET,
+    read_current_bin,
+    total_rap_sheet_bounty,
 )
 from core.race_chapters import resolve_offering
 from core.race_names import resolve_event_id
@@ -86,6 +89,38 @@ SPECIAL_FLAGS_OFFSET = 0x4040
 FLAG_ENDGAME = 0x1000
 
 _UDECFIX16_UNIT = 256.0
+
+
+@dataclass(frozen=True)
+class BlacklistRequirement:
+    """PC career gates required to challenge one Blacklist rival."""
+
+    stage: int
+    races: int
+    milestones: int
+    bounty: int
+
+
+# The thresholds live in VLT career configuration, not in the save. Keeping
+# the verified PC table here lets every UI consumer compare parsed progress
+# against the same immutable source of truth.
+BLACKLIST_REQUIREMENTS: Mapping[int, BlacklistRequirement] = MappingProxyType({
+    15: BlacklistRequirement(15, 3, 3, 20_000),
+    14: BlacklistRequirement(14, 4, 3, 50_000),
+    13: BlacklistRequirement(13, 4, 3, 100_000),
+    12: BlacklistRequirement(12, 4, 3, 180_000),
+    11: BlacklistRequirement(11, 5, 3, 300_000),
+    10: BlacklistRequirement(10, 5, 4, 500_000),
+    9: BlacklistRequirement(9, 5, 4, 790_000),
+    8: BlacklistRequirement(8, 5, 4, 1_180_000),
+    7: BlacklistRequirement(7, 7, 4, 1_680_000),
+    6: BlacklistRequirement(6, 7, 4, 2_300_000),
+    5: BlacklistRequirement(5, 7, 4, 3_050_000),
+    4: BlacklistRequirement(4, 7, 5, 4_050_000),
+    3: BlacklistRequirement(3, 8, 5, 5_550_000),
+    2: BlacklistRequirement(2, 8, 5, 7_550_000),
+    1: BlacklistRequirement(1, 9, 5, 10_000_000),
+})
 
 
 @dataclass(frozen=True)
@@ -149,6 +184,75 @@ class RaceRecord:
         if self.chapter == PROLOGUE_CHAPTER:
             return bool(self.flags & RACE_FLAG_PROLOGUE_DONE)
         return (self.flags & RACE_DONE_MASK) == RACE_DONE_MASK
+
+
+@dataclass(frozen=True)
+class ChapterProgress:
+    """All parsed progress belonging to one Blacklist offering chapter."""
+
+    stage: int
+    requirement: BlacklistRequirement
+    races: Tuple[RaceRecord, ...]
+    boss_races: Tuple[RaceRecord, ...]
+    milestones: Tuple[MilestoneRecord, ...]
+    speedtraps: Tuple[SpeedtrapRecord, ...]
+
+    @property
+    def race_wins(self) -> int:
+        return sum(record.is_completed for record in self.races)
+
+    @property
+    def milestone_wins(self) -> int:
+        return (
+            sum(record.is_awarded for record in self.milestones)
+            + sum(record.is_complete for record in self.speedtraps)
+        )
+
+    @property
+    def milestone_total(self) -> int:
+        return len(self.milestones) + len(self.speedtraps)
+
+
+@dataclass(frozen=True)
+class CareerProgressSummary:
+    """Immutable, read-only Career view model built from one save snapshot."""
+
+    current_stage: int
+    endgame: bool
+    chapters: Tuple[ChapterProgress, ...]
+    prologue_races: Tuple[RaceRecord, ...]
+    lifetime_race_wins: int
+    lifetime_race_total: int
+    lifetime_milestone_wins: int
+    lifetime_milestone_total: int
+    total_bounty: int
+
+    @property
+    def default_stage(self) -> int:
+        return 1 if self.endgame else self.current_stage
+
+    def chapter(self, stage: int) -> ChapterProgress:
+        if not 1 <= stage <= 15:
+            raise KeyError(stage)
+        return self.chapters[15 - stage]
+
+    def requirements_met(self, stage: int) -> bool:
+        chapter = self.chapter(stage)
+        requirement = chapter.requirement
+        return (
+            chapter.race_wins >= requirement.races
+            and chapter.milestone_wins >= requirement.milestones
+            and self.total_bounty >= requirement.bounty
+        )
+
+    def stage_state(self, stage: int) -> str:
+        """Return one of defeated/current/boss_ready/locked for timeline UI."""
+
+        if self.endgame or stage > self.current_stage:
+            return "defeated"
+        if stage < self.current_stage:
+            return "locked"
+        return "boss_ready" if self.requirements_met(stage) else "current"
 
 
 def _read_u32(data: bytes, offset: int) -> int:
@@ -298,3 +402,83 @@ def parse_races(data: bytes) -> Optional[Tuple[RaceRecord, ...]]:
             )
         )
     return tuple(records)
+
+
+def build_career_progress(data: bytes) -> Optional[CareerProgressSummary]:
+    """Build the complete read-only Career model from one save snapshot.
+
+    The function fails closed if any required table cannot be parsed. Race
+    progress uses the ladder-derived offering chapter, while the five static
+    Prologue events remain a separate lifetime group.
+    """
+
+    current_stage = read_current_bin(data)
+    if current_stage is None or not 1 <= current_stage <= 15:
+        return None
+
+    races = parse_races(data)
+    milestones = parse_milestones(data)
+    speedtraps = parse_speedtraps(data)
+    bounty = total_rap_sheet_bounty(data)
+    endgame = is_endgame(data)
+    if (
+        races is None
+        or milestones is None
+        or speedtraps is None
+        or bounty is None
+        or endgame is None
+    ):
+        return None
+
+    regular_by = {stage: [] for stage in range(1, 16)}
+    boss_by = {stage: [] for stage in range(1, 16)}
+    milestone_by = {stage: [] for stage in range(1, 16)}
+    trap_by = {stage: [] for stage in range(1, 16)}
+    prologue = []
+
+    for record in races:
+        if record.offering_chapter in regular_by:
+            target = boss_by if record.is_boss_race else regular_by
+            target[record.offering_chapter].append(record)
+        elif record.offering_chapter is None and record.chapter == PROLOGUE_CHAPTER:
+            prologue.append(record)
+
+    for record in milestones:
+        if record.bin_number in milestone_by:
+            milestone_by[record.bin_number].append(record)
+    for record in speedtraps:
+        if record.bin_number in trap_by:
+            trap_by[record.bin_number].append(record)
+
+    chapters = tuple(
+        ChapterProgress(
+            stage=stage,
+            requirement=BLACKLIST_REQUIREMENTS[stage],
+            races=tuple(regular_by[stage]),
+            boss_races=tuple(boss_by[stage]),
+            milestones=tuple(milestone_by[stage]),
+            speedtraps=tuple(trap_by[stage]),
+        )
+        for stage in range(15, 0, -1)
+    )
+    prologue_races = tuple(prologue)
+    lifetime_races = (
+        prologue_races
+        + tuple(record for chapter in chapters for record in chapter.races)
+        + tuple(record for chapter in chapters for record in chapter.boss_races)
+    )
+
+    return CareerProgressSummary(
+        current_stage=current_stage,
+        endgame=bool(endgame),
+        chapters=chapters,
+        prologue_races=prologue_races,
+        lifetime_race_wins=sum(record.is_completed for record in lifetime_races),
+        lifetime_race_total=len(lifetime_races),
+        lifetime_milestone_wins=(
+            sum(record.is_awarded for record in milestones)
+            + sum(record.is_complete for record in speedtraps)
+        ),
+        lifetime_milestone_total=len(milestones) + len(speedtraps),
+        total_bounty=bounty,
+    )

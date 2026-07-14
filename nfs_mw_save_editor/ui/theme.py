@@ -613,6 +613,10 @@ QPushButton {{
 QPushButton:hover {{ background-color: {BG_BUTTON_HOVER}; }}
 QPushButton:pressed {{ background-color: {BG_BUTTON_PRESS}; }}
 QPushButton:disabled {{ color: {DISABLED_TEXT}; border-color: {DISABLED_BORDER}; }}
+QPushButton#shellActionButton {{
+    min-height: 44px;
+    padding: 0px;
+}}
 QPushButton:checked {{
     background: {ACCENT};
     color: {TEXT_ON_ACCENT};
@@ -1057,6 +1061,10 @@ QFrame#garageCard QWidget#garageHeatTitle,
 QFrame#garageCard QWidget#garageHeatRow {{
     background: transparent;
 }}
+QFrame#garageCard QLabel#garageHeatIcon {{
+    background: transparent;
+    border: none;
+}}
 /* Parts level bar rows */
 QWidget#partsLevelRow {{
     background: transparent;
@@ -1225,73 +1233,250 @@ QLabel#contentCardNote {{
     color: {MUTED};
     font-size: 10.5px;
 }}
-QListWidget#careerStageList {{
+/* Career hero / Blacklist dossier */
+QFrame#careerHero {{
     background: transparent;
     border: none;
-    outline: none;
 }}
-QListWidget#careerStageList::item {{
+QFrame#careerHero QLabel {{
+    background: transparent;
+}}
+QLabel#careerHeroEyebrow {{
+    color: {ACCENT_BRIGHT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.8px;
+}}
+QLabel#careerHeroRank {{
+    color: {ACCENT_BRIGHT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 32px;
+    font-weight: 700;
+}}
+QLabel#careerHeroBoss {{
+    color: {TEXT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+}}
+QLabel#careerHeroSub {{
+    color: {MUTED};
+    font-size: 11px;
+}}
+QFrame#careerHeroMetric {{
     background: {BG_INPUT};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_MD};
-    margin: 3px 10px;
-    padding: 7px 12px;
+}}
+QLabel#careerHeroMetricValue {{
     color: {TEXT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 14px;
+    font-weight: 700;
 }}
-QListWidget#careerStageList::item:hover {{
+QLabel#careerHeroMetricLabel {{
+    color: {MUTED_DARK};
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}}
+QFrame#animatedSegmentedControl {{
+    background: transparent;
+    border: none;
+}}
+QPushButton#careerViewTab {{
+    background: transparent;
+    border: none;
+    border-radius: {RADIUS_MD};
+    padding: 5px 14px;
+    color: {MUTED};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.9px;
+}}
+
+/* Stage-change workflow */
+QWidget#careerTransplantView, QWidget#careerStageGrid,
+QWidget#careerProgressColumns {{
+    background: transparent;
+}}
+QFrame#careerTargetPanel, QFrame#careerReviewPanel {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+}}
+QLabel#careerStepLabel {{
+    background: transparent;
+    color: {ACCENT_BRIGHT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+}}
+QLabel#careerPanelTitle {{
+    background: transparent;
+    color: {TEXT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 19px;
+    font-weight: 700;
+}}
+QLabel#careerPanelCopy {{
+    background: transparent;
+    color: {MUTED};
+    font-size: 10.5px;
+}}
+QPushButton#careerVariantButton {{
+    background: transparent;
+    border: none;
+    border-radius: {RADIUS_MD};
+    padding: 7px 10px;
+    color: {MUTED};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+}}
+QPushButton#careerStageButton {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 7px 9px;
+    color: {TEXT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 10.5px;
+    font-weight: 700;
+    text-align: left;
+}}
+QPushButton#careerStageButton:hover:!checked {{
     background: {BG_NAV_HOVER};
+    border-color: {ACCENT};
 }}
-QListWidget#careerStageList::item:selected {{
-    background: {BG_NAV_ACTIVE};
-    border: 1px solid {BORDER_NAV_ACTIVE};
-    color: {TEXT_NAV_ACTIVE};
+QPushButton#careerStageButton[current="true"] {{
+    border: 1px solid {ACCENT};
+    color: {ACCENT_BRIGHT};
 }}
-QListWidget#careerStageList::item:disabled {{
+QPushButton#careerStageButton:checked {{
+    background: {ACCENT};
+    border: 1px solid {ACCENT_BRIGHT};
+    color: {TEXT_ON_ACCENT};
+}}
+QPushButton#careerStageButton:disabled {{
     background: {BG_DISABLED};
     border: 1px solid {DISABLED_BORDER};
     color: {DISABLED_TEXT};
 }}
-QRadioButton#careerVariantRadio {{
+QLabel#careerLibraryStatus {{
     background: transparent;
-    color: {TEXT};
-    font-size: 12px;
-    font-weight: 600;
-    spacing: 7px;
-    padding: 4px 8px;
+    color: {MUTED_DARK};
+    font-size: 9.5px;
 }}
-QRadioButton#careerVariantRadio::indicator {{
-    width: 14px;
-    height: 14px;
-    border-radius: 8px;
-    border: 2px solid {BORDER};
+QFrame#careerRoute {{
     background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_LG};
 }}
-QRadioButton#careerVariantRadio::indicator:hover {{
-    border: 2px solid {ACCENT};
+QFrame#careerRoute QLabel {{
+    background: transparent;
 }}
-QRadioButton#careerVariantRadio::indicator:checked {{
-    border: 2px solid {ACCENT};
-    background: {ACCENT_SOFT};
+QLabel#careerRouteStage {{
+    color: {TEXT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 12px;
+    font-weight: 700;
 }}
-/* Career view switch (Transplant | Rap Sheet) */
-QPushButton#careerViewTab {{
+QLabel#careerRouteArrow {{
+    color: {ACCENT_BRIGHT};
+    font-size: 19px;
+    font-weight: 700;
+}}
+QLabel#careerPreviewStatus {{
+    background: {STATUS_NEUTRAL_BG};
+    border: 1px solid {STATUS_NEUTRAL_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 9px 11px;
+    color: {STATUS_NEUTRAL_FG};
+    font-size: 10.5px;
+}}
+QLabel#careerPreviewStatus[state="ready"] {{
+    background: {STATUS_SUCCESS_BG};
+    border-color: {STATUS_SUCCESS_BORDER};
+    color: {STATUS_SUCCESS_FG};
+}}
+QLabel#careerPreviewStatus[state="warning"] {{
+    background: {STATUS_WARNING_BG};
+    border-color: {STATUS_WARNING_BORDER};
+    color: {STATUS_WARNING_FG};
+}}
+QLabel#careerPreviewStatus[state="blocked"] {{
+    background: {TOAST_ERROR_BG};
+    border-color: {TOAST_ERROR_BORDER};
+    color: {TOAST_ERROR_FG};
+}}
+QFrame#careerImpactBox {{
     background: {BG_INPUT};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_MD};
-    padding: 5px 20px;
+}}
+QFrame#careerImpactBox[impact="changes"] {{
+    background: {STATUS_WARNING_BG};
+    border-color: {STATUS_WARNING_BORDER};
+}}
+QFrame#careerImpactBox[impact="keeps"] {{
+    background: {STATUS_NEUTRAL_BG};
+    border-color: {STATUS_NEUTRAL_BORDER};
+}}
+QFrame#careerImpactBox QLabel {{
+    background: transparent;
+}}
+QLabel#careerImpactTitle {{
     color: {MUTED};
-    font-size: 11.5px;
+    font-size: 8.5px;
     font-weight: 700;
-    letter-spacing: 0.6px;
+    letter-spacing: 1px;
 }}
-QPushButton#careerViewTab:hover:!checked {{
-    background: {BG_NAV_HOVER};
-    border-color: {ACCENT};
+QLabel#careerImpactItems {{
+    color: {TEXT};
+    font-size: 10px;
 }}
-QPushButton#careerViewTab:checked {{
-    background: {BG_NAV_ACTIVE};
-    border: 1px solid {BORDER_NAV_ACTIVE};
-    color: {TEXT_NAV_ACTIVE};
+QLabel#careerSafetyNote {{
+    background: transparent;
+    color: {MUTED};
+    font-size: 10px;
+}}
+QPushButton#careerTransplantButton {{
+    background: {ACCENT};
+    border: 1px solid {ACCENT_BRIGHT};
+    border-radius: {RADIUS_MD};
+    padding: 9px 14px;
+    color: {TEXT_ON_ACCENT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+QPushButton#careerTransplantButton:hover {{
+    background: {ACCENT_BRIGHT};
+}}
+QPushButton#careerTransplantButton:disabled {{
+    background: {BG_DISABLED};
+    border-color: {DISABLED_BORDER};
+    color: {DISABLED_TEXT};
+}}
+QLabel#careerDiskNote {{
+    background: transparent;
+    color: {MUTED_DARK};
+    font-size: 9.5px;
+}}
+QLabel#careerSectionTitle {{
+    background: transparent;
+    color: {TEXT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
 }}
 /* Rap Sheet: blacklist board cells */
 QFrame#rapBossCell {{
@@ -1370,6 +1555,100 @@ QLabel#rapFootnote {{
     background: transparent;
     color: {MUTED_DARK};
     font-size: 10px;
+}}
+/* Career v2: image-led hero, timeline and one chapter inspector. */
+QWidget#careerCanvas, QWidget#careerProgressView,
+QWidget#careerResponsivePair, QWidget#careerInspectorHeaderCopy {{
+    background: transparent;
+}}
+QPushButton#careerViewTab, QPushButton#careerVariantButton {{
+    background: transparent;
+    border: none;
+    color: transparent;
+}}
+QFrame#careerHeroMetric[met="true"] {{
+    background: {STATUS_SUCCESS_BG};
+    border-color: {STATUS_SUCCESS_BORDER};
+}}
+QFrame#careerHeroMetric[met="true"] QLabel#careerHeroMetricValue {{
+    color: {STATUS_SUCCESS_FG};
+}}
+QLabel#careerHeroStatus, QLabel#careerInspectorStatus {{
+    background: {STATUS_NEUTRAL_BG};
+    border: 1px solid {STATUS_NEUTRAL_BORDER};
+    border-radius: {RADIUS_MD};
+    padding: 3px 8px;
+    color: {STATUS_NEUTRAL_FG};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}}
+QLabel#careerHeroStatus[state="current"],
+QLabel#careerInspectorStatus[state="current"] {{
+    background: {BG_NAV_ACTIVE};
+    border-color: {BORDER_NAV_ACTIVE};
+    color: {TEXT_NAV_ACTIVE};
+}}
+QLabel#careerHeroStatus[state="boss_ready"],
+QLabel#careerInspectorStatus[state="boss_ready"] {{
+    background: {STATUS_SUCCESS_BG};
+    border-color: {STATUS_SUCCESS_BORDER};
+    color: {STATUS_SUCCESS_FG};
+}}
+QLabel#careerHeroStatus[state="defeated"],
+QLabel#careerInspectorStatus[state="defeated"] {{
+    background: {BG_DISABLED};
+    border-color: {BORDER};
+    color: {MUTED};
+}}
+QWidget#careerTimeline {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+}}
+QFrame#careerInspector {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+}}
+QFrame#careerInspector QLabel {{
+    background: transparent;
+}}
+QLabel#careerInspectorEyebrow {{
+    color: {ACCENT_BRIGHT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+}}
+QLabel#careerInspectorTitle {{
+    color: {TEXT};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}}
+QLabel#careerInspectorCopy {{
+    color: {MUTED};
+    font-size: 10.5px;
+}}
+QFrame#careerLifetimeStrip {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_LG};
+}}
+QLabel#careerLifetimeValue {{
+    color: {MUTED};
+    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+}}
+QFrame#careerInspectorSection {{
+    background: {BG_INPUT};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_LG};
 }}
 QLabel#contentCardStatBadge {{
     background: {STATUS_NEUTRAL_BG};

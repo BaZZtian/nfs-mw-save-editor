@@ -1,10 +1,14 @@
 """Module-level constants shared across MainWindow and page mixins."""
 from dataclasses import dataclass
 
-CAT_LIST = ["All", "Performance", "Visual", "Police", "Unknown"]
+# Marker categories follow the game's own 4-way FE grouping (the parts-shop
+# tabs + bonus markers): Performance 1-7, Parts 8-12 (body kit, hood, spoiler,
+# rims, roof scoop), Visual 13-16 (gauge, vinyl, decal, paint), Bonus Markers
+# 17-21. "All" is the editor's filter pseudo-category.
+CAT_LIST = ["All", "Performance", "Parts", "Visual", "Bonus Markers"]
 APP_NAME = "NFS_MW_Junkman_Editor"
 APP_DISPLAY_NAME = "NFS MW Save Editor"
-APP_VERSION = "v1.4.0"
+APP_VERSION = "v1.5.0"
 APP_PLATFORM = "PC"
 APP_WINDOW_TITLE = f"{APP_DISPLAY_NAME} ({APP_PLATFORM} {APP_VERSION})"
 UI_TITLE_BLOCKED = "Blocked"
@@ -12,8 +16,11 @@ UI_TITLE_UNAVAILABLE = "Unavailable"
 UI_TITLE_SNAPSHOT_UNAVAILABLE = "Snapshot unavailable"
 UI_TITLE_APPLY_FAILED = "Apply failed"
 CATALOG_FILENAME = "token_catalog.json"
+# Engine enum ePossibleMarker: MARKER_FIRST = 1, MARKER_LAST = 21 (confirmed
+# on PC v1.3 via the MarkerSelectInfo table in speed.exe; IDs above 21 are
+# inert - the game neither shows nor consumes them).
 SAFE_TYPE_MIN = 1
-SAFE_TYPE_MAX = 22
+SAFE_TYPE_MAX = 21
 PERF_IDS = (1, 2, 3, 4, 5, 6, 7)
 PERF_TOTAL = 7
 DEFAULT_CARDS_PER_ROW = 3

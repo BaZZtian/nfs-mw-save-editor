@@ -588,6 +588,7 @@ class GarageMixin:
             pix = QPixmap(str(icon_path))
             if not pix.isNull():
                 icon = QLabel()
+                icon.setObjectName("garageHeatIcon")
                 icon.setPixmap(pix.scaled(17, 17, Qt.KeepAspectRatio, Qt.SmoothTransformation))
                 icon.setFixedSize(19, 19)
                 icon.setAlignment(Qt.AlignCenter)

@@ -6,12 +6,15 @@ from time import perf_counter
 from typing import Callable, Dict, List, Optional, Set
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits
+from core.visual_parts import installed_parts
 from ui.pages.constants import PARTS_TILE_MIN_WIDTH
+from ui.pages.visual_summary import VisualSummaryVm, build_visual_summary
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
 from ui.widgets import WantSpinBox, build_perf_level_row
 
@@ -42,6 +45,7 @@ class PartsCardVm:
     mask: int
     statuses: List[str]
     limits: Optional[Dict[str, int]]
+    visual: Optional[VisualSummaryVm] = None
 
 
 @dataclass
@@ -70,6 +74,9 @@ class PartsCardHandle:
     utility_label: QLabel
     perf_rows: Dict[str, PartsPerfRowHandle]
     junkman_buttons: Dict[str, QPushButton]
+    visual_swatch: Optional[QLabel] = None
+    visual_text: Optional[QLabel] = None
+    visual_livery: Optional[QLabel] = None
     diag_mask_label: Optional[QLabel] = None
     diag_marker_label: Optional[QLabel] = None
     diag_raw_label: Optional[QLabel] = None
@@ -166,6 +173,8 @@ class ReusablePartsCardWidget(QFrame):
         perf_rows = self._build_perf_grid(card_layout)
         card_layout.addWidget(owner._make_card_field_label("Junkman"))
         junkman_buttons = self._build_junkman_row(card_layout)
+        card_layout.addWidget(owner._make_card_field_label("Visual"))
+        visual_swatch, visual_text, visual_livery = owner._add_visual_summary_row(card_layout)
 
         diag_mask_label: Optional[QLabel] = None
         diag_marker_label: Optional[QLabel] = None
@@ -213,6 +222,9 @@ class ReusablePartsCardWidget(QFrame):
             utility_label=utility_label,
             perf_rows=perf_rows,
             junkman_buttons=junkman_buttons,
+            visual_swatch=visual_swatch,
+            visual_text=visual_text,
+            visual_livery=visual_livery,
             diag_mask_label=diag_mask_label,
             diag_marker_label=diag_marker_label,
             diag_raw_label=diag_raw_label,
@@ -815,6 +827,7 @@ class PartsMixin:
                     mask=int(current_masks.get(card_entry.parts_slot, self.have_parts_masks.get(card_entry.parts_slot, 0))),
                     statuses=self._parts_status_labels(entry),
                     limits=None if limits is None else {name: int(value) for name, value in limits.items()},
+                    visual=self._visual_summary_for(card_entry),
                 )
             )
         return view_models
@@ -1032,6 +1045,14 @@ class PartsMixin:
             btn.setToolTip("")
             btn.setProperty("active", False)
             refresh_widget_style(btn)
+        if handle.visual_swatch is not None:
+            handle.visual_swatch.setVisible(False)
+        if handle.visual_text is not None:
+            handle.visual_text.setText("")
+            handle.visual_text.setToolTip("")
+        if handle.visual_livery is not None:
+            handle.visual_livery.setVisible(False)
+            handle.visual_livery.setText("")
         if handle.diag_mask_label is not None:
             handle.diag_mask_label.setText("Mask 0x00")
         if handle.diag_marker_label is not None:
@@ -1046,6 +1067,92 @@ class PartsMixin:
             handle.diag_note_label.setText("This source type does not expose a confirmed raw diagnostic slice.")
             handle.diag_note_label.setVisible(False)
         refresh_widget_style(handle.card)
+
+    def _add_visual_summary_row(self, parent_layout) -> tuple[QLabel, QLabel, QLabel]:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        swatch = QLabel()
+        swatch.setFixedSize(14, 14)
+        swatch.setVisible(False)
+        row.addWidget(swatch, 0, Qt.AlignVCenter)
+        text = QLabel()
+        text.setObjectName("mutedLabel")
+        text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        text.setMinimumHeight(max(12, text.sizeHint().height()))
+        row.addWidget(text, 1, Qt.AlignVCenter)
+        livery = self._make_stat_badge("")
+        livery.setVisible(False)
+        row.addWidget(livery, 0, Qt.AlignRight)
+        parent_layout.addLayout(row)
+        return swatch, text, livery
+
+    def _visual_swatch_pixmap(self, rgb: tuple[int, int, int]) -> QPixmap:
+        cache: Optional[Dict[tuple[int, int, int], QPixmap]] = getattr(self, "_visual_swatch_cache", None)
+        if cache is None:
+            cache = {}
+            self._visual_swatch_cache = cache
+        pixmap = cache.get(rgb)
+        if pixmap is None:
+            size = 14
+            screen = QApplication.primaryScreen()
+            dpr = float(screen.devicePixelRatio()) if screen is not None else 1.0
+            pixmap = QPixmap(int(size * dpr), int(size * dpr))
+            pixmap.setDevicePixelRatio(dpr)
+            pixmap.fill(Qt.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setBrush(QColor(*rgb))
+            painter.setPen(QColor(255, 255, 255, 70))
+            painter.drawEllipse(1, 1, size - 2, size - 2)
+            painter.end()
+            cache[rgb] = pixmap
+        return pixmap
+
+    def _visual_summary_for(self, card_entry: TuningCardEntry) -> Optional[VisualSummaryVm]:
+        if not self.savefile:
+            return None
+        save_key = id(self.savefile)
+        cache = getattr(self, "_visual_summary_cache", None)
+        if cache is None or cache[0] != save_key:
+            cache = (save_key, {})
+            self._visual_summary_cache = cache
+        store = cache[1]
+        slot = int(card_entry.parts_slot)
+        if slot not in store:
+            try:
+                build = installed_parts(self.savefile.data, card_entry.block_abs_off)
+                store[slot] = build_visual_summary(build)
+            except Exception:
+                logger.exception("Visual summary failed for parts_slot=%s", slot)
+                store[slot] = None
+        return store[slot]
+
+    def _apply_visual_summary(self, handle: PartsCardHandle, visual: Optional[VisualSummaryVm]) -> None:
+        if handle.visual_text is None:
+            return
+        if visual is None:
+            if handle.visual_swatch is not None:
+                handle.visual_swatch.setVisible(False)
+            handle.visual_text.setText("—")
+            handle.visual_text.setToolTip("")
+            if handle.visual_livery is not None:
+                handle.visual_livery.setVisible(False)
+            return
+        if handle.visual_swatch is not None:
+            if visual.swatch_rgb is not None:
+                handle.visual_swatch.setPixmap(self._visual_swatch_pixmap(visual.swatch_rgb))
+                handle.visual_swatch.setVisible(True)
+            else:
+                handle.visual_swatch.setVisible(False)
+        handle.visual_text.setText(visual.text)
+        handle.visual_text.setToolTip(visual.tooltip)
+        if handle.visual_livery is not None:
+            if visual.livery_text:
+                handle.visual_livery.setText(visual.livery_text)
+                handle.visual_livery.setToolTip(visual.livery_tooltip or "")
+                handle.visual_livery.setVisible(True)
+            else:
+                handle.visual_livery.setVisible(False)
 
     def _parts_utility_summary(self, vm: PartsCardVm) -> tuple[str, str]:
         if vm.limits is None:
@@ -1117,6 +1224,8 @@ class PartsMixin:
             btn.setToolTip(reason or "")
             btn.setProperty("active", enabled)
             refresh_widget_style(btn)
+
+        self._apply_visual_summary(handle, vm.visual)
 
         if handle.diag_mask_label is not None:
             handle.diag_mask_label.setText(f"Mask 0x{vm.mask:02X}")
@@ -1333,6 +1442,8 @@ class PartsMixin:
         perf_rows = self._add_parts_perf_grid(card_layout, vm)
         card_layout.addWidget(self._make_card_field_label("Junkman"))
         junkman_buttons = self._add_parts_junkman_section(card_layout, vm)
+        card_layout.addWidget(self._make_card_field_label("Visual"))
+        visual_swatch, visual_text, visual_livery = self._add_visual_summary_row(card_layout)
 
         diag_mask_label: Optional[QLabel] = None
         if self.show_parts_diagnostics:
@@ -1375,6 +1486,9 @@ class PartsMixin:
             utility_label=utility_label,
             perf_rows=perf_rows,
             junkman_buttons=junkman_buttons,
+            visual_swatch=visual_swatch,
+            visual_text=visual_text,
+            visual_livery=visual_livery,
             diag_mask_label=diag_mask_label,
         )
         self._parts_card_handles[card_entry.parts_slot] = handle

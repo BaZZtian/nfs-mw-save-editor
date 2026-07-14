@@ -345,7 +345,7 @@ class SettingsMixin:
         ]))
 
         # Data Safety
-        self.chk_preserve_unknown = QCheckBox("Preserve unknown token data (recommended)")
+        self.chk_preserve_unknown = QCheckBox("Preserve invalid token data (recommended)")
         self.chk_preserve_unknown.setChecked(True)
         self.chk_preserve_unknown.stateChanged.connect(self.on_preserve_toggle)
         self.chk_unlock_profile_alias_16 = QCheckBox("Unlock profile alias editing up to 16 characters")
@@ -356,11 +356,11 @@ class SettingsMixin:
         )
         self.lbl_profile_alias_safety.setObjectName("mutedLabel")
         self.lbl_profile_alias_safety.setWordWrap(True)
-        self.btn_clear_unknown = QPushButton("Clear unknown data (unsafe)")
+        self.btn_clear_unknown = QPushButton("Clear invalid token data")
         self.btn_clear_unknown.clicked.connect(self.on_clear_unknown_confirm)
         self.lbl_type_safety = QLabel(
-            f"Safe Type_ID range: {SAFE_TYPE_MIN}-{SAFE_TYPE_MAX}. "
-            "Using IDs outside this range may crash the game."
+            f"Real token types are {SAFE_TYPE_MIN}-{SAFE_TYPE_MAX} (engine enum ePossibleMarker). "
+            "IDs above that do not exist in the game: they are invisible and only waste belt slots."
         )
         self.lbl_type_safety.setObjectName("mutedLabel")
         self.lbl_type_safety.setWordWrap(True)

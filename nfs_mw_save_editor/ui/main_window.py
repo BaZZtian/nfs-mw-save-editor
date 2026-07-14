@@ -16,8 +16,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QBrush, QDesktopServices, QIcon, QImage, QKeySequence, QPixmap, QShortcut
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, QUrl
+from PySide6.QtGui import QBrush, QDesktopServices, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -46,7 +46,7 @@ from core.models import (
 )
 from core.savefile import SaveFile
 from resources import resource_path
-from ui.icon_map import nav_icon_path
+from ui.icon_map import game_icon_path, nav_icon_path
 from ui.page_chrome import PageChromeMixin
 from ui.pages.career_mixin import CareerMixin
 from ui.pages.constants import *
@@ -69,7 +69,12 @@ from ui.theme import (
     resolve_theme_tokens,
     save_theme_name,
 )
-from ui.widgets import SplitTextProgressBar, ThemeTransitionOverlay, ToastNotification
+from ui.widgets import (
+    ShellActionButton,
+    SplitTextProgressBar,
+    ThemeTransitionOverlay,
+    ToastNotification,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -295,12 +300,13 @@ class MainWindow(
     def _build_header(self):
         row = QHBoxLayout()
         row.setSpacing(8)
-        self.btn_open = QPushButton("Open save")
-        self.btn_save_header = QPushButton("Save + backup")
-        self.btn_fix = QPushButton("Fix checksums")
+        self.btn_open = ShellActionButton("Open save")
+        self.btn_save_header = ShellActionButton("Save + backup")
+        self.btn_fix = ShellActionButton("Fix checksums")
         self.btn_open.clicked.connect(self.on_open)
         self.btn_save_header.clicked.connect(self.on_save)
         self.btn_fix.clicked.connect(self.on_fix_checksums)
+        self._set_game_button_icon(self.btn_save_header, "action_save")
 
         self.lbl_file = QLabel("File: (not opened)")
         self.lbl_file.setObjectName("filePath")
@@ -348,8 +354,21 @@ class MainWindow(
 
         if max_x >= min_x and max_y >= min_y:
             pix = pix.copy(min_x, min_y, (max_x - min_x + 1), (max_y - min_y + 1))
+
         pix = pix.scaled(size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return QIcon(pix)
+        canvas = QPixmap(size)
+        canvas.fill(Qt.transparent)
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        target = QRectF(
+            (size.width() - pix.width()) / 2.0,
+            (size.height() - pix.height()) / 2.0,
+            pix.width(),
+            pix.height(),
+        )
+        painter.drawPixmap(target, pix, QRectF(pix.rect()))
+        painter.end()
+        return QIcon(canvas)
 
     def _brand_pixmap(self, size: int) -> QPixmap:
         png_path = resource_path("assets", "icon.png")
@@ -361,6 +380,16 @@ class MainWindow(
         if pix.isNull():
             return QPixmap()
         return pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+    def _set_game_button_icon(
+        self, button: QPushButton, icon_name: str, *, size: int = 28
+    ) -> None:
+        path = game_icon_path(icon_name)
+        if path is None:
+            return
+        icon_size = QSize(size, size)
+        button.setIcon(QIcon(str(path)))
+        button.setIconSize(icon_size)
 
     def _build_nav(self):
         layout = QVBoxLayout()
@@ -407,12 +436,14 @@ class MainWindow(
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("0/7 Performance")
 
-        self.btn_reset_want = QPushButton("Reset Want=Have")
-        self.btn_apply = QPushButton("Apply (memory)")
-        self.btn_save_footer = QPushButton("Save + backup")
+        self.btn_reset_want = ShellActionButton("Reset Want=Have")
+        self.btn_apply = ShellActionButton("Apply (memory)")
+        self.btn_save_footer = ShellActionButton("Save + backup")
         self.btn_reset_want.clicked.connect(self.on_reset_want)
         self.btn_apply.clicked.connect(self.on_apply_changes)
         self.btn_save_footer.clicked.connect(self.on_save)
+        self._set_game_button_icon(self.btn_reset_want, "action_reset")
+        self._set_game_button_icon(self.btn_save_footer, "action_save")
         row.addWidget(self.lbl_free)
         row.addWidget(self.progress_bar)
         row.addStretch(1)
@@ -817,7 +848,7 @@ class MainWindow(
         for btn in [
             self.btn_save_header, self.btn_save_footer, self.btn_fix,
             self.btn_apply, self.btn_reset_want,
-            self.btn_q_perf, self.btn_q_vis, self.btn_q_all, self.btn_q_clear,
+            self.btn_q_perf, self.btn_q_parts, self.btn_q_vis, self.btn_q_all, self.btn_q_clear,
             self.btn_load_preset, self.btn_save_preset, self.btn_export_have,
             self.btn_clear_unknown,
         ]:

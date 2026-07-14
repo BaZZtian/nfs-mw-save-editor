@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 
 @dataclass
@@ -15,68 +15,46 @@ class Slot:
 
 class JunkmanInventory:
     """
-    Slot-based Junkman inventory (1 token = 1 slot, Count always 1).
+    Slot-based Junkman inventory (1 token = 1 slot).
     Base and slot_count are auto-detected per save.
+
+    Engine truth (FEMarkerManager::OwnedMarkers[63], PS2 debug symbols,
+    layout confirmed on PC v1.3): each 12-byte slot is
+    struct OwnedMarker { ePossibleMarker Marker; int Param; eMarkerStates State; }
+    Marker is 1..21 (MARKER_LAST = 21); Param is always 0 for inventoried
+    markers (pink slips / cash carry a param but are consumed instantly at
+    the marker-select screen, so they never reach this array organically).
+    The +8 field is DECLARED as eMarkerStates (0 NOT_OWNED / 1 OWNED /
+    2 USED), but the PC frontend evidently sums it when counting tokens:
+    writing N there shows as N tokens in game (confirmed by in-game testing).
+    The game itself only ever writes 0/1 here (one slot per token), which
+    is also what this editor does - both representations display the same.
     """
 
     SAVED_DATA_START = 0x34  # fixed for PC v1.3 header
     SLOT_STRIDE = 0x0C
     SLOT_SIZE = 0x0C
-    SCAN_START_REL = 0x5400
-    SCAN_END_REL = 0x5B00
+    # Engine ground truth: FEMarkerManager::OwnedMarkers[63] lives at a fixed
+    # position in the PC v1.3 save - absolute 0x5739, i.e. 0x5705 relative to
+    # saved_data. The old heuristic scan (longest run of slot-like records)
+    # mis-anchored on saves carrying hand-written ghost slots from the early
+    # token experiments (state bytes > 1 broke the run), silently hiding real
+    # tokens. The belt is a fixed struct; treat it as one.
+    BASE_REL = 0x5705
+    SLOT_COUNT = 63
 
     def __init__(self, savefile: "SaveFile"):
         self.sf = savefile
         self.data = savefile.data
-        self.base_rel: Optional[int] = None
-        self.base_abs: Optional[int] = None
-        self.slot_count: int = 0
-        self._auto_detect()
-
-    # ---- detection ----
-    def _auto_detect(self) -> None:
         saved_start, saved_end = self.sf.saved_data_slice()
-        saved = self.sf.saved_data()
-        scan_start = min(self.SCAN_START_REL, max(0, len(saved) - self.SLOT_SIZE))
-        scan_end = min(self.SCAN_END_REL, len(saved) - self.SLOT_SIZE)
-        best: Tuple[int, Optional[int]] = (0, None)  # (prefix_len, base_rel)
-
-        for rel in range(scan_start, max(scan_start, scan_end) + 1):
-            prefix = 0
-            while True:
-                off = rel + prefix * self.SLOT_STRIDE
-                if off + self.SLOT_SIZE > len(saved):
-                    break
-                block = saved[off : off + self.SLOT_SIZE]
-                if not self._slot_like(block):
-                    break
-                prefix += 1
-            if prefix > best[0]:
-                best = (prefix, rel)
-
-        if best[1] is None or best[0] == 0:
-            raise ValueError("Failed to detect Junkman slot array")
-
-        self.base_rel = best[1]
-        self.slot_count = best[0]
-        self.base_abs = saved_start + self.base_rel
-
-    @staticmethod
-    def _slot_like(raw: bytes) -> bool:
-        if len(raw) != 12:
-            return False
-        if raw[8] not in (0, 1):
-            return False
-        if raw[1:8] != b"\x00" * 7:
-            return False
-        if raw[9:12] != b"\x00" * 3:
-            return False
-        return True
+        if saved_start + self.BASE_REL + self.SLOT_COUNT * self.SLOT_STRIDE > saved_end:
+            raise ValueError("Junkman slot array out of range for this file")
+        self.base_rel: int = self.BASE_REL
+        self.base_abs: int = saved_start + self.BASE_REL
+        self.slot_count: int = self.SLOT_COUNT
 
     # ---- core helpers ----
     def slot_abs(self, index: int) -> int:
-        if self.base_abs is None or self.slot_count == 0:
-            raise ValueError("Junkman base not detected")
         if index < 0 or index >= self.slot_count:
             raise IndexError(f"Slot index {index} out of bounds (0..{self.slot_count - 1})")
         return self.base_abs + index * self.SLOT_STRIDE
@@ -111,7 +89,8 @@ class JunkmanInventory:
     def get_counts(self) -> Dict[int, int]:
         counts: Dict[int, int] = {}
         for slot in self.read_slots():
-            # +0x08 is an "unused" state flag (1 = available marker).
+            # +0x08 is eMarkerStates; only OWNED (1) markers are available
+            # (0 = not owned, 2 = used).
             if slot.type_id == 0 or slot.count != 1:
                 continue
             counts[slot.type_id] = counts.get(slot.type_id, 0) + 1

@@ -2,72 +2,72 @@
   "tokens": [
     {
       "id": 1,
-      "name": "Brakes",
+      "name": "Unique Brake Upgrades",
       "category": "Performance"
     },
     {
       "id": 2,
-      "name": "Engine",
+      "name": "Unique Engine Upgrades",
       "category": "Performance"
     },
     {
       "id": 3,
-      "name": "NOS",
+      "name": "Unique Nitrous Upgrades",
       "category": "Performance"
     },
     {
       "id": 4,
-      "name": "Turbo",
+      "name": "Unique Turbo Upgrades",
       "category": "Performance"
     },
     {
       "id": 5,
-      "name": "Suspension",
+      "name": "Unique Suspension Upgrades",
       "category": "Performance"
     },
     {
       "id": 6,
-      "name": "Tires",
+      "name": "Unique Tire Upgrades",
       "category": "Performance"
     },
     {
       "id": 7,
-      "name": "Transmission",
+      "name": "Unique Transmission Upgrades",
       "category": "Performance"
     },
     {
       "id": 8,
-      "name": "Body",
-      "category": "Visual"
+      "name": "Unique Body Kit Upgrades",
+      "category": "Parts"
     },
     {
       "id": 9,
-      "name": "Hood",
-      "category": "Visual"
+      "name": "Unique Hood Upgrades",
+      "category": "Parts"
     },
     {
       "id": 10,
-      "name": "Spoiler",
-      "category": "Visual"
+      "name": "Unique Spoiler Upgrades",
+      "category": "Parts"
     },
     {
       "id": 11,
-      "name": "Rims",
-      "category": "Visual"
+      "name": "Unique Rim Upgrades",
+      "category": "Parts"
     },
     {
       "id": 12,
-      "name": "Roof",
-      "category": "Visual"
+      "name": "Unique Roof Scoop Upgrades",
+      "category": "Parts"
     },
     {
       "id": 13,
-      "name": "Gauge",
+      "name": "Unique Custom Gauge Upgrades",
       "category": "Visual"
     },
     {
       "id": 14,
-      "name": "Vinyl",
+      "name": "Unique Vinyl Upgrades",
       "category": "Visual"
     },
     {
@@ -82,33 +82,28 @@
     },
     {
       "id": 17,
-      "name": "Out of Jail",
-      "category": "Police"
+      "name": "Get out of jail for free.",
+      "category": "Bonus Markers"
     },
     {
       "id": 18,
-      "name": "Money Marker",
-      "category": "Police"
+      "name": "Pink slip to Blacklist rival",
+      "category": "Bonus Markers"
     },
     {
       "id": 19,
-      "name": "PinkSlip Marker",
-      "category": "Police"
+      "name": "Extra Cash Reward",
+      "category": "Bonus Markers"
     },
     {
       "id": 20,
-      "name": "Impound Strike Slot Add",
-      "category": "Police"
+      "name": "Extra impound strike",
+      "category": "Bonus Markers"
     },
     {
       "id": 21,
-      "name": "Impound Release",
-      "category": "Police"
-    },
-    {
-      "id": 22,
-      "name": "Unknown ID 22 (valid)",
-      "category": "Unknown"
+      "name": "Release car from impound",
+      "category": "Bonus Markers"
     }
   ]
 }

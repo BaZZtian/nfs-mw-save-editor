@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core import marker_names
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES
 from ui.icon_map import cat_icon_path
@@ -35,32 +36,76 @@ logger = logging.getLogger(__name__)
 
 
 class JunkmanMixin:
+    # Card-title defaults are the game's own marker-select strings
+    # (core/marker_names.py) with three editor overrides: INDUCTION (4)
+    # uses the game's unwired turbo wording, DECAL/PAINT (15/16) are
+    # nameless in FE so the editor keeps its short names.
+    _DEFAULT_NAME_OVERRIDES = {
+        4: marker_names.INDUCTION_TURBO_NAME,
+        15: "Decal",
+        16: "Paint",
+    }
+    _DEFAULT_DESC_OVERRIDES = {4: marker_names.INDUCTION_TURBO_DESCRIPTION}
+
+    @staticmethod
+    def _default_token_fields(tid: int) -> tuple[str, str]:
+        """(default card name, category) for a marker id.
+
+        Categories mirror the game's 4-way grouping (see CAT_LIST).
+        """
+        name = (JunkmanMixin._DEFAULT_NAME_OVERRIDES.get(tid)
+                or marker_names.canon_name(tid))
+        category = ("Performance" if tid in PERF_IDS
+                    else "Parts" if tid <= 12
+                    else "Visual" if tid <= 16 else "Bonus Markers")
+        return name, category
+
+    @staticmethod
+    def _token_description(tid: int) -> str | None:
+        """Canonical in-game marker description (card tooltip), or None."""
+        return (JunkmanMixin._DEFAULT_DESC_OVERRIDES.get(tid)
+                or marker_names.canon_description(tid))
+
     def _normalize_catalog_defaults(self) -> bool:
         changed = False
-        expected: Dict[int, tuple[str, str]] = {
-            17: ("Out of Jail", "Police"),
-            18: ("Money Marker", "Police"),
-            19: ("PinkSlip Marker", "Police"),
-            20: ("Impound Strike Slot Add", "Police"),
-            21: ("Impound Release", "Police"),
-            22: ("Unknown ID 22 (valid)", "Unknown"),
-        }
+        # 17..21 follow the engine enum ePossibleMarker: 17 GET_OUT_OF_JAIL,
+        # 18 PINK_SLIP, 19 CASH, 20 ADD_IMPOUND_BOX, 21 IMPOUND_RELEASE.
+        # 18/19 never appear in organic saves (pink slips and cash are applied
+        # instantly at the marker-select screen, never inventoried), which is
+        # how they ended up swapped in older catalogs. IDs above 21 are not
+        # marker types at all (MARKER_LAST = 21): purge them from the catalog;
+        # save-side leftovers are handled as invalid data (see _invalid_ids).
+        real = [t for t in self.tokens if SAFE_TYPE_MIN <= t.id <= SAFE_TYPE_MAX]
+        if len(real) != len(self.tokens):
+            self.tokens = real
+            changed = True
+        # Names earlier editor versions shipped as defaults: these upgrade to
+        # the current canon defaults; anything else is a user rename and is
+        # left alone.
         legacy_names: Dict[int, set[str]] = {
-            18: {"Unknown ID 18", "Imp. Strike?"},
-            19: {"Imp. Release?"},
-            20: {"Imp. Strike"},
+            1: {"Brakes"}, 2: {"Engine"}, 3: {"NOS"}, 4: {"Turbo"},
+            5: {"Suspension"}, 6: {"Tires"}, 7: {"Transmission"},
+            8: {"Body"}, 9: {"Hood"}, 10: {"Spoiler"}, 11: {"Rims"},
+            12: {"Roof"}, 13: {"Gauge"}, 14: {"Vinyl"},
+            17: {"Out of Jail"},
+            18: {"Unknown ID 18", "Imp. Strike?", "Money Marker", "Pink Slip Marker"},
+            19: {"Imp. Release?", "PinkSlip Marker", "Cash Marker"},
+            20: {"Imp. Strike", "Impound Strike Slot Add"},
+            21: {"Impound Release"},
         }
         idx = {t.id: t for t in self.tokens}
-        for tid, (name, category) in expected.items():
+        for tid in range(SAFE_TYPE_MIN, SAFE_TYPE_MAX + 1):
+            name, category = self._default_token_fields(tid)
             tok = idx.get(tid)
             if tok is None:
                 self.tokens.append(TokenEntry(id=tid, name=name, category=category))
                 changed = True
                 continue
-            if tok.name in legacy_names.get(tid, set()):
+            if tok.name != name and (tok.name in legacy_names.get(tid, set())
+                                     or tok.name == f"Token #{tid}"):
                 tok.name = name
                 changed = True
-            if tok.category == "Unknown" and category == "Police":
+            if tok.category != category:
                 tok.category = category
                 changed = True
         if changed:
@@ -106,22 +151,8 @@ class JunkmanMixin:
                 logger.warning("Failed to load token catalog from %s", self.catalog_path, exc_info=True)
                 self.tokens = []
 
-        if not self.tokens:
-            defaults = [
-                (1, "Brakes", "Performance"), (2, "Engine", "Performance"),
-                (3, "NOS", "Performance"), (4, "Turbo", "Performance"),
-                (5, "Suspension", "Performance"), (6, "Tires", "Performance"),
-                (7, "Transmission", "Performance"), (8, "Body", "Visual"),
-                (9, "Hood", "Visual"), (10, "Spoiler", "Visual"),
-                (11, "Rims", "Visual"), (12, "Roof", "Visual"),
-                (13, "Gauge", "Visual"), (14, "Vinyl", "Visual"),
-                (15, "Decal", "Visual"), (16, "Paint", "Visual"),
-                (17, "Out of Jail", "Police"), (18, "Money Marker", "Police"),
-                (19, "PinkSlip Marker", "Police"), (20, "Impound Strike Slot Add", "Police"),
-                (21, "Impound Release", "Police"), (22, "Unknown ID 22 (valid)", "Unknown"),
-            ]
-            self.tokens = [TokenEntry(id=i, name=n, category=c) for i, n, c in defaults]
-            self.save_catalog()
+        # An empty/missing catalog is fine: normalization below rebuilds the
+        # full 21-entry default table and persists it.
         if self._normalize_catalog_defaults():
             self.save_catalog()
 
@@ -131,9 +162,14 @@ class JunkmanMixin:
         self.catalog_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def ensure_token_entry(self, tid: int):
+        if not (SAFE_TYPE_MIN <= tid <= SAFE_TYPE_MAX):
+            # Not a real marker type (engine MARKER_LAST = 21): no card.
+            # Save-side leftovers are reported via _invalid_ids instead.
+            return
         if any(t.id == tid for t in self.tokens):
             return
-        self.tokens.append(TokenEntry(id=tid, name=f"Token #{tid}", category="Unknown"))
+        name, category = self._default_token_fields(tid)
+        self.tokens.append(TokenEntry(id=tid, name=name, category=category))
         self.tokens.sort(key=lambda t: t.id)
 
     def _build_junk_page(self):
@@ -182,14 +218,16 @@ class JunkmanMixin:
         # quick actions
         left.addWidget(self._section_label("Quick actions"))
         self.btn_q_perf = QPushButton("Unlock Performance (1-7)")
-        self.btn_q_vis = QPushButton("Unlock Visual (8-16)")
-        self.btn_q_all = QPushButton("Unlock All (1-22)")
+        self.btn_q_parts = QPushButton("Unlock Parts (8-12)")
+        self.btn_q_vis = QPushButton("Unlock Visual (13-16)")
+        self.btn_q_all = QPushButton(f"Unlock All ({SAFE_TYPE_MIN}-{SAFE_TYPE_MAX})")
         self.btn_q_clear = QPushButton("Clear All (Want->0)")
         self.btn_q_perf.clicked.connect(lambda: self._quick_set(range(1, 8), 1))
-        self.btn_q_vis.clicked.connect(lambda: self._quick_set(range(8, 17), 1))
+        self.btn_q_parts.clicked.connect(lambda: self._quick_set(range(8, 13), 1))
+        self.btn_q_vis.clicked.connect(lambda: self._quick_set(range(13, 17), 1))
         self.btn_q_all.clicked.connect(lambda: self._quick_set(range(SAFE_TYPE_MIN, SAFE_TYPE_MAX + 1), 1))
         self.btn_q_clear.clicked.connect(self.on_clear_all_want)
-        for b in [self.btn_q_perf, self.btn_q_vis, self.btn_q_all, self.btn_q_clear]:
+        for b in [self.btn_q_perf, self.btn_q_parts, self.btn_q_vis, self.btn_q_all, self.btn_q_clear]:
             left.addWidget(b)
         left.addStretch(1)
 
@@ -277,7 +315,7 @@ class JunkmanMixin:
     def _slot_capacity(self) -> int:
         if self.savefile and self.savefile.junkman:
             return self.savefile.junkman.slot_count
-        return 59
+        return 63  # engine OwnedMarkers[63]
 
     def _current_max(self) -> int:
         cap = self._slot_capacity()
@@ -285,8 +323,17 @@ class JunkmanMixin:
             return min(10, cap)
         return min(63, cap)
 
-    def _unknown_ids(self) -> List[int]:
-        return [t.id for t in self.tokens if t.category == "Unknown"]
+    def _invalid_ids(self) -> List[int]:
+        """Type IDs present in the save that are not real marker types.
+
+        The engine enum ends at 21; anything above is inert leftovers from
+        the early hand-written token experiments. They get no cards - only
+        the preserve/clear machinery sees them.
+        """
+        return sorted(
+            tid for tid in self.have_counts
+            if not (SAFE_TYPE_MIN <= tid <= SAFE_TYPE_MAX)
+        )
 
     def _card_area_width(self, cols: int) -> int:
         margins = self.cards_grid.contentsMargins()
@@ -347,7 +394,7 @@ class JunkmanMixin:
         grid_col = 0
         any_added = False
 
-        for cat in ["Performance", "Visual", "Police", "Unknown"]:
+        for cat in CAT_LIST[1:]:  # section order = game category order, sans "All"
             toks = [t for t in self.tokens if t.category == cat and matches(t)]
             if not toks:
                 continue
@@ -373,6 +420,7 @@ class JunkmanMixin:
                     have=have,
                     want=want,
                     max_val=max_val,
+                    description=self._token_description(t.id),
                     on_change=self.on_want_changed,
                     on_rename=self.on_token_renamed,
                 )
@@ -491,16 +539,21 @@ class JunkmanMixin:
     def on_clear_unknown_confirm(self):
         if not self.savefile:
             return
+        invalid = self._invalid_ids()
+        if not invalid:
+            ToastNotification.show_toast(self, "No invalid token data in this save")
+            return
+        ids = ", ".join(str(t) for t in invalid)
         res = QMessageBox.warning(
-            self, "Clear Unknown",
-            "This will clear all Unknown-category tokens on next Apply.\nContinue?",
+            self, "Clear invalid tokens",
+            f"This save carries token IDs that do not exist in the game\n"
+            f"(engine max is {SAFE_TYPE_MAX}): {ids}\n\n"
+            "They are invisible in game and only waste belt slots.\n"
+            "Clear them on next Apply?",
             QMessageBox.Yes | QMessageBox.No,
         )
         if res == QMessageBox.Yes:
             self.clear_unknown_next = True
-            staged_counts = self.staged_state.counts.ensure(self.have_counts)
-            for tid in self._unknown_ids():
-                staged_counts[tid] = 0
             self.refresh_cards()
 
     def on_reset_want(self):
@@ -552,7 +605,7 @@ class JunkmanMixin:
             want = self.staged_state.counts.get_item(t.id, self.have_counts, have)
             mapping[t.id] = max(0, min(want, max_val))
         if not self.preserve_unknown or self.clear_unknown_next:
-            for tid in self._unknown_ids():
+            for tid in self._invalid_ids():
                 mapping[tid] = 0
         return mapping
 
@@ -565,7 +618,7 @@ class JunkmanMixin:
         remove = max(0, used - needed)
         unknown_preserved = 0
         if self.preserve_unknown and not self.clear_unknown_next:
-            unknown_preserved = sum(want_full.get(tid, 0) for tid in self._unknown_ids())
+            unknown_preserved = sum(self.have_counts.get(tid, 0) for tid in self._invalid_ids())
         slot_changes = []
         transfer_changes: List[str] = []
         if not self.garage_detection_error:
@@ -645,7 +698,7 @@ class JunkmanMixin:
         alias_want = self.staged_state.profile_alias.current(self.have_profile_alias)
         summary_lines = [
             f"Token slots: {total} total, {used} used, {free} free, {needed} needed, delta +{add} / -{remove}",
-            f"Unknown data preserved: {unknown_preserved}",
+            f"Invalid token data preserved: {unknown_preserved}",
             f"Money: {self.have_money} -> {money_want}",
         ]
         if alias_want != self.have_profile_alias:

@@ -15,7 +15,8 @@ from core.race_names import RACE_EVENT_IDS, resolve_event_id
 # Real hashes from the decoded race table (RE/race_table_decoded.txt).
 HASH_1_1_1 = 0xF97E66FB       # career event "1.1.1"
 HASH_16_1_1_R = 0x69360B36    # prologue event "16.1.1.r"
-HASH_UNNAMED = 0xFE87E90B     # challenge-series slot, no EventID
+HASH_CHALLENGE = 0xFE87E90B   # challenge-series slot "19.9.70"
+HASH_ABSENT = 0xDEADBEEF      # not in the race table: resolution fails closed
 
 
 def _pack_milestone(type_key, challenge_key, state, flags, bin_number, req, rec):
@@ -164,12 +165,13 @@ def test_parse_races_decodes_flags_names_and_speeds():
                 top_raw=int(37.2 * 256), avg_raw=int(23.8 * 256))
     _write_race(data, 1, HASH_1_1_1, 0x14)
     _write_race(data, 2, HASH_16_1_1_R, 0x02)
-    _write_race(data, 3, HASH_UNNAMED, 0x04)
+    _write_race(data, 3, HASH_ABSENT, 0x04)
+    _write_race(data, 4, HASH_CHALLENGE, 0x04)
 
     records = career_progress.parse_races(bytes(data))
     assert records is not None and len(records) == career_transplant.RACE_RECORD_COUNT
 
-    done, available, prologue, unnamed = records[:4]
+    done, available, prologue, unnamed, challenge = records[:5]
     assert done.event_id == "1.1.1"
     assert done.chapter == 1
     assert done.is_completed
@@ -187,6 +189,10 @@ def test_parse_races_decodes_flags_names_and_speeds():
     assert unnamed.event_id is None
     assert unnamed.chapter is None
     assert not unnamed.is_completed
+
+    assert challenge.event_id == "19.9.70"
+    assert challenge.chapter == career_progress.CHALLENGE_CHAPTER
+    assert not challenge.is_completed
 
 
 def test_parse_races_rejects_wrong_size():
@@ -244,7 +250,7 @@ def test_race_offering_map_matches_in_game_counts():
 def test_resolve_offering_known_cases():
     assert resolve_offering(HASH_16_1_1_R) == (7, False)  # prologue route, ch7
     assert resolve_offering(0xB352C935) == (1, True)      # 4.2.1, Razor showdown
-    assert resolve_offering(HASH_UNNAMED) is None
+    assert resolve_offering(HASH_CHALLENGE) is None  # challenge series: no offering
 
 
 def test_parse_races_carries_offering_data():
@@ -270,13 +276,95 @@ def test_is_endgame_reads_special_flag_bit():
     assert career_progress.is_endgame(b"\x00" * 100) is None
 
 
+# ── immutable summary model ────────────────────────────────────
+
+
+def test_blacklist_requirement_table_matches_pc_career_gates():
+    expected = {
+        15: (3, 3, 20_000), 14: (4, 3, 50_000),
+        13: (4, 3, 100_000), 12: (4, 3, 180_000),
+        11: (5, 3, 300_000), 10: (5, 4, 500_000),
+        9: (5, 4, 790_000), 8: (5, 4, 1_180_000),
+        7: (7, 4, 1_680_000), 6: (7, 4, 2_300_000),
+        5: (7, 4, 3_050_000), 4: (7, 5, 4_050_000),
+        3: (8, 5, 5_550_000), 2: (8, 5, 7_550_000),
+        1: (9, 5, 10_000_000),
+    }
+    assert len(career_progress.BLACKLIST_REQUIREMENTS) == 15
+    for stage, values in expected.items():
+        requirement = career_progress.BLACKLIST_REQUIREMENTS[stage]
+        assert (requirement.races, requirement.milestones, requirement.bounty) == values
+
+
+def test_build_career_progress_groups_chapter_and_lifetime_state():
+    milestone_rows = tuple(
+        _pack_milestone(i, i + 1, career_progress.MILESTONE_STATE_AWARDED, 0, 15, 1.0, 1.0)
+        for i in range(3)
+    )
+    data = _progress_buffer(milestones=milestone_rows)
+    data[career_transplant.CURRENT_BIN_OFFSET] = 15
+    struct.pack_into("<I", data, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 20_000)
+
+    regular_hashes = [
+        race_hash for race_hash, offering in RACE_OFFERING.items()
+        if offering == (15, False)
+    ][:3]
+    boss_hash = next(
+        race_hash for race_hash, offering in RACE_OFFERING.items()
+        if offering == (15, True)
+    )
+    prologue_hash = next(
+        race_hash for race_hash, event_id in RACE_EVENT_IDS.items()
+        if event_id.startswith("16.") and race_hash not in RACE_OFFERING
+    )
+    for index, race_hash in enumerate(regular_hashes):
+        _write_race(data, index, race_hash, 0x1E)
+    _write_race(data, 3, boss_hash, 0x1E)
+    _write_race(data, 4, prologue_hash, career_progress.RACE_FLAG_PROLOGUE_DONE)
+
+    summary = career_progress.build_career_progress(bytes(data))
+    assert summary is not None
+    assert summary.current_stage == 15
+    assert summary.default_stage == 15
+    assert summary.total_bounty == 20_000
+    assert summary.lifetime_race_wins == 5
+    assert summary.lifetime_race_total == 5
+    assert summary.lifetime_milestone_wins == 3
+    assert summary.lifetime_milestone_total == 3
+    assert len(summary.prologue_races) == 1
+
+    sonny = summary.chapter(15)
+    assert len(sonny.races) == 3
+    assert len(sonny.boss_races) == 1
+    assert sonny.race_wins == 3
+    assert sonny.milestone_wins == 3
+    assert summary.requirements_met(15)
+    assert summary.stage_state(15) == "boss_ready"
+    assert summary.stage_state(14) == "locked"
+
+
+def test_build_career_progress_marks_endgame_ladder_defeated():
+    data = _progress_buffer(milestones=(_pack_milestone(1, 2, 1, 0, 1, 1.0, 0.0),))
+    data[career_transplant.CURRENT_BIN_OFFSET] = 1
+    struct.pack_into("<H", data, career_progress.SPECIAL_FLAGS_OFFSET, 0x1803)
+    summary = career_progress.build_career_progress(bytes(data))
+    assert summary is not None and summary.endgame
+    assert summary.default_stage == 1
+    assert all(summary.stage_state(stage) == "defeated" for stage in range(1, 16))
+
+
+def test_build_career_progress_fails_closed_for_invalid_snapshot():
+    assert career_progress.build_career_progress(b"\x00" * 100) is None
+
+
 # ── generated name dictionary guards ───────────────────────────
 
 
 def test_race_name_dictionary_shape():
-    assert len(RACE_EVENT_IDS) == 209
+    assert len(RACE_EVENT_IDS) == 248
     assert resolve_event_id(HASH_1_1_1) == "1.1.1"
     assert resolve_event_id(HASH_16_1_1_R) == "16.1.1.r"
-    assert resolve_event_id(HASH_UNNAMED) is None
+    assert resolve_event_id(HASH_CHALLENGE) == "19.9.70"
+    assert resolve_event_id(HASH_ABSENT) is None
     chapters = {int(e.split(".", 1)[0]) for e in RACE_EVENT_IDS.values()}
     assert chapters == set(range(1, 17)) | {19, 20, 21, 99}

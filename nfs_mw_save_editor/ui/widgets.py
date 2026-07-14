@@ -1,10 +1,25 @@
 """Reusable widgets for the NFS MW Save Editor UI."""
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional
 
-from PySide6.QtCore import Qt, QEvent, QPropertyAnimation, QTimer, QEasingCurve, Property, QRectF, QPoint
-from PySide6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QEasingCurve,
+    QEvent,
+    QParallelAnimationGroup,
+    QPoint,
+    QPropertyAnimation,
+    QRectF,
+    QSize,
+    QTimer,
+    Qt,
+    Property,
+    QVariantAnimation,
+    Signal,
+)
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPalette, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -19,13 +34,413 @@ from PySide6.QtWidgets import (
     QSlider,
     QSizePolicy,
     QSpinBox,
+    QStackedLayout,
+    QStackedWidget,
+    QStyle,
+    QStyleOptionButton,
+    QStylePainter,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from ui.icon_map import token_icon_path
+from ui.icon_map import token_back_icon_path, token_icon_path
 from ui.theme import apply_popup_theme, resolve_theme_tokens
+
+
+class ShellActionButton(QPushButton):
+    """Header/footer button with deterministic icon/text spacing."""
+
+    _SIDE_PADDING = 8
+    _ICON_TEXT_GAP = 8
+    _HEIGHT = 44
+    _MIN_WIDTH = 140
+
+    def __init__(self, text: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("shellActionButton")
+        self.setMinimumHeight(self._HEIGHT)
+
+    def _content_rects(self) -> tuple[QRectF, QRectF]:
+        inner = QRectF(self.rect()).adjusted(
+            self._SIDE_PADDING, 0, -self._SIDE_PADDING, 0
+        )
+        if self.icon().isNull():
+            return QRectF(), inner
+        icon_size = self.iconSize()
+        icon_rect = QRectF(
+            inner.left(),
+            inner.center().y() - icon_size.height() / 2.0,
+            icon_size.width(),
+            icon_size.height(),
+        )
+        text_rect = QRectF(
+            icon_rect.right() + self._ICON_TEXT_GAP,
+            inner.top(),
+            max(0.0, inner.right() - icon_rect.right() - self._ICON_TEXT_GAP),
+            inner.height(),
+        )
+        return icon_rect, text_rect
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        text_width = self.fontMetrics().horizontalAdvance(self.text())
+        width = self._SIDE_PADDING * 2 + text_width
+        if not self.icon().isNull():
+            width += self.iconSize().width() + self._ICON_TEXT_GAP
+        return QSize(max(self._MIN_WIDTH, width), self._HEIGHT)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return self.sizeHint()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        painter = QStylePainter(self)
+        text = option.text
+        icon = self.icon()
+        option.text = ""
+        option.icon = QIcon()
+        painter.drawControl(QStyle.CE_PushButton, option)
+
+        icon_rect, text_rect = self._content_rects()
+        if option.state & QStyle.State_Sunken:
+            shift_x = self.style().pixelMetric(QStyle.PM_ButtonShiftHorizontal, option, self)
+            shift_y = self.style().pixelMetric(QStyle.PM_ButtonShiftVertical, option, self)
+            icon_rect.translate(shift_x, shift_y)
+            text_rect.translate(shift_x, shift_y)
+
+        enabled = bool(option.state & QStyle.State_Enabled)
+        if not icon.isNull():
+            mode = QIcon.Normal if enabled else QIcon.Disabled
+            state = QIcon.On if self.isChecked() else QIcon.Off
+            icon.paint(painter, icon_rect.toRect(), Qt.AlignCenter, mode, state)
+            alignment = Qt.AlignLeft | Qt.AlignVCenter
+        else:
+            alignment = Qt.AlignCenter
+        painter.setFont(self.font())
+        painter.drawItemText(
+            text_rect.toRect(),
+            int(alignment),
+            option.palette,
+            enabled,
+            text,
+            QPalette.ButtonText,
+        )
+
+
+class _SegmentHitButton(QPushButton):
+    """Accessible click/focus target whose visuals belong entirely to its parent."""
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - intentionally no native/QSS paint
+        return
+
+    def _update_control(self) -> None:
+        parent = self.parentWidget()
+        if parent is not None:
+            parent.update()
+
+    def enterEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().enterEvent(event)
+        self._update_control()
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().leaveEvent(event)
+        self._update_control()
+
+    def focusInEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().focusInEvent(event)
+        self._update_control()
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().focusOutEvent(event)
+        self._update_control()
+
+
+class AnimatedSegmentedControl(QFrame):
+    """Crisp segmented control painted as one interruptible moving surface."""
+
+    currentChanged = Signal(int)
+
+    def __init__(
+        self,
+        labels: list[str] | tuple[str, ...],
+        *,
+        button_object_name: str = "animatedSegmentButton",
+        duration_ms: int = 180,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        if not labels:
+            raise ValueError("AnimatedSegmentedControl needs at least one label")
+        self.setObjectName("animatedSegmentedControl")
+        self._current_index = 0
+        self._duration_ms = duration_ms
+        self._indicator_position = 0.0
+        self._buttons: list[QPushButton] = []
+        self._animation = QPropertyAnimation(self, b"indicatorPosition", self)
+        self._animation.setDuration(duration_ms)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(3, 3, 3, 3)
+        layout.setSpacing(2)
+        for index, label in enumerate(labels):
+            button = _SegmentHitButton(label)
+            button.setObjectName(button_object_name)
+            button.setCheckable(False)
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(lambda _checked=False, i=index: self.setCurrentIndex(i))
+            layout.addWidget(button, 1)
+            self._buttons.append(button)
+        self._sync_button_state()
+        QTimer.singleShot(0, self._snap_indicator)
+
+    def count(self) -> int:
+        return len(self._buttons)
+
+    def currentIndex(self) -> int:  # noqa: N802 - Qt-style API
+        return self._current_index
+
+    def button(self, index: int) -> QPushButton:
+        return self._buttons[index]
+
+    def setCurrentIndex(  # noqa: N802 - Qt-style API
+        self, index: int, *, animate: bool = True, emit: bool = True
+    ) -> None:
+        if not 0 <= index < len(self._buttons):
+            raise IndexError(index)
+        if index == self._current_index:
+            if not animate:
+                self._snap_indicator()
+            return
+        self._current_index = index
+        self._sync_button_state()
+        self._animation.stop()
+        if animate and self.isVisible() and self._button_geometry(index).isValid():
+            self._animation.setStartValue(self._indicator_position)
+            self._animation.setEndValue(float(index))
+            self._animation.start()
+        else:
+            self._set_indicator_position(float(index))
+        if emit:
+            self.currentChanged.emit(index)
+
+    def _sync_button_state(self) -> None:
+        for index, button in enumerate(self._buttons):
+            selected = index == self._current_index
+            if button.property("selected") != selected:
+                button.setProperty("selected", selected)
+
+    def _button_geometry(self, index: int):
+        button = self._buttons[index]
+        return button.geometry()
+
+    def indicatorRect(self) -> QRectF:  # noqa: N802 - Qt-style API
+        """Current painted indicator rectangle, exposed for deterministic UI tests."""
+        if not self._buttons:
+            return QRectF()
+        position = max(0.0, min(float(len(self._buttons) - 1), self._indicator_position))
+        left_index = int(position)
+        right_index = min(left_index + 1, len(self._buttons) - 1)
+        progress = position - left_index
+        left = QRectF(self._button_geometry(left_index))
+        right = QRectF(self._button_geometry(right_index))
+        return QRectF(
+            left.x() + (right.x() - left.x()) * progress,
+            left.y() + (right.y() - left.y()) * progress,
+            left.width() + (right.width() - left.width()) * progress,
+            left.height() + (right.height() - left.height()) * progress,
+        ).adjusted(0.5, 0.5, -0.5, -0.5)
+
+    def _get_indicator_position(self) -> float:
+        return self._indicator_position
+
+    def _set_indicator_position(self, value: float) -> None:
+        self._indicator_position = float(value)
+        self.update()
+
+    indicatorPosition = Property(  # noqa: N815 - Qt property name
+        float, _get_indicator_position, _set_indicator_position
+    )
+
+    def _snap_indicator(self) -> None:
+        if not self._buttons:
+            return
+        self._animation.stop()
+        self._set_indicator_position(float(self._current_index))
+
+    @staticmethod
+    def _radius(tokens: dict[str, str], name: str, fallback: float) -> float:
+        raw = tokens.get(name, str(fallback)).removesuffix("px")
+        try:
+            return float(raw)
+        except ValueError:
+            return fallback
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if not self._buttons:
+            return
+        tokens = resolve_theme_tokens()
+        indicator = self.indicatorRect()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+
+        track = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        track_radius = self._radius(tokens, "RADIUS_LG", 10.0)
+        painter.setPen(QColor(tokens["BORDER"]))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(track, track_radius, track_radius)
+
+        hover_radius = self._radius(tokens, "RADIUS_MD", 8.0)
+        allow_hover = self._animation.state() != QAbstractAnimation.Running
+        for index, button in enumerate(self._buttons):
+            if allow_hover and button.underMouse() and index != self._current_index:
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(tokens["BG_NAV_HOVER"]))
+                painter.drawRoundedRect(QRectF(button.geometry()), hover_radius, hover_radius)
+
+        indicator_radius = self._radius(tokens, "RADIUS_MD", 8.0)
+        painter.setPen(QColor(tokens["ACCENT_BRIGHT"]))
+        painter.setBrush(QColor(tokens["ACCENT"]))
+        painter.drawRoundedRect(indicator, indicator_radius, indicator_radius)
+
+        def draw_labels(color: QColor) -> None:
+            painter.setPen(color)
+            for button in self._buttons:
+                painter.setFont(button.font())
+                painter.drawText(button.geometry(), Qt.AlignCenter, button.text())
+
+        draw_labels(QColor(tokens["MUTED"]))
+        painter.save()
+        painter.setClipRect(indicator)
+        draw_labels(QColor(tokens["TEXT_ON_ACCENT"]))
+        painter.restore()
+
+        for button in self._buttons:
+            if button.hasFocus():
+                focus = QRectF(button.geometry()).adjusted(1.5, 1.5, -1.5, -1.5)
+                focus_color = QColor(tokens["ACCENT_BRIGHT"])
+                focus_color.setAlpha(150)
+                painter.setPen(focus_color)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(focus, hover_radius, hover_radius)
+        painter.end()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        self._snap_indicator()
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().showEvent(event)
+        QTimer.singleShot(0, self._snap_indicator)
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().changeEvent(event)
+        if event.type() in {
+            QEvent.StyleChange,
+            QEvent.PaletteChange,
+            QEvent.ApplicationPaletteChange,
+        }:
+            self._snap_indicator()
+            self.update()
+
+
+class AnimatedStackedWidget(QStackedWidget):
+    """QStackedWidget that crossfades two live pages at native geometry."""
+
+    def __init__(self, parent: Optional[QWidget] = None, *, duration_ms: int = 180) -> None:
+        super().__init__(parent)
+        self._duration_ms = duration_ms
+        self._transition_group: Optional[QParallelAnimationGroup] = None
+        self._transition_widgets: tuple[QWidget, QWidget] | None = None
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        current = self.currentWidget()
+        return current.sizeHint() if current is not None else super().sizeHint()
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        current = self.currentWidget()
+        return current.minimumSizeHint() if current is not None else super().minimumSizeHint()
+
+    def setCurrentIndexAnimated(  # noqa: N802 - Qt-style API
+        self, index: int, *, direction: int = 1
+    ) -> None:
+        if index == self.currentIndex() or not 0 <= index < self.count():
+            return
+        self._finish_transition()
+        outgoing = self.currentWidget()
+        incoming = self.widget(index)
+        if outgoing is None or incoming is None or not self.isVisible():
+            super().setCurrentIndex(index)
+            self.updateGeometry()
+            return
+
+        stack_layout = self.layout()
+        if isinstance(stack_layout, QStackedLayout):
+            stack_layout.setStackingMode(QStackedLayout.StackAll)
+
+        outgoing_effect = QGraphicsOpacityEffect(outgoing)
+        incoming_effect = QGraphicsOpacityEffect(incoming)
+        outgoing_effect.setOpacity(1.0)
+        incoming_effect.setOpacity(0.0)
+        outgoing.setGraphicsEffect(outgoing_effect)
+        incoming.setGraphicsEffect(incoming_effect)
+        super().setCurrentIndex(index)
+        self.updateGeometry()
+        outgoing.show()
+        incoming.show()
+        incoming.raise_()
+
+        fade_out = QPropertyAnimation(outgoing_effect, b"opacity", self)
+        fade_out.setDuration(self._duration_ms)
+        fade_out.setStartValue(1.0)
+        fade_out.setEndValue(0.0)
+        fade_out.setEasingCurve(QEasingCurve.OutCubic)
+        fade_in = QPropertyAnimation(incoming_effect, b"opacity", self)
+        fade_in.setDuration(self._duration_ms)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        fade_in.setEasingCurve(QEasingCurve.OutCubic)
+
+        group = QParallelAnimationGroup(self)
+        group.addAnimation(fade_out)
+        group.addAnimation(fade_in)
+        group.finished.connect(self._finish_transition)
+        self._transition_widgets = (outgoing, incoming)
+        self._transition_group = group
+        group.start()
+
+    def _finish_transition(self) -> None:
+        group = self._transition_group
+        self._transition_group = None
+        if group is not None and group.state() != QAbstractAnimation.Stopped:
+            group.stop()
+        widgets = self._transition_widgets
+        self._transition_widgets = None
+        if widgets is not None:
+            for widget in widgets:
+                widget.setGraphicsEffect(None)
+        stack_layout = self.layout()
+        if isinstance(stack_layout, QStackedLayout):
+            stack_layout.setStackingMode(QStackedLayout.StackOne)
+        current = self.currentWidget()
+        if current is not None:
+            current.show()
+            current.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._finish_transition()
+        super().resizeEvent(event)
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.type() in {
+            QEvent.StyleChange,
+            QEvent.PaletteChange,
+            QEvent.ApplicationPaletteChange,
+        }:
+            self._finish_transition()
+        super().changeEvent(event)
 
 
 def build_perf_level_row(name: str, level: int, max_level: Optional[int]) -> tuple[QWidget, QHBoxLayout]:
@@ -314,6 +729,7 @@ class TokenCard(QWidget):
         max_val: int,
         on_change: Callable[[int, int], None],
         on_rename: Callable[[int, str], None],
+        description: Optional[str] = None,
     ):
         super().__init__()
         self.token_id = token_id
@@ -323,7 +739,10 @@ class TokenCard(QWidget):
         self.setObjectName("tokenCard")
         self.setFixedWidth(self.CARD_WIDTH)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.setToolTip(f"Token ID: {token_id}")
+        tooltip = f"Token ID: {token_id}"
+        if description:
+            tooltip = f"{tooltip}\n{description}"
+        self.setToolTip(tooltip)
         self.setProperty("hovered", False)
 
         root = QVBoxLayout(self)
@@ -334,6 +753,9 @@ class TokenCard(QWidget):
         self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
         self.icon_label.setFixedSize(self.ICON_SIZE, self.ICON_SIZE)
+        self._icon_front: Optional[QPixmap] = None
+        self._icon_back: Optional[QPixmap] = None
+        self._flip_anim: Optional[QVariantAnimation] = None
         icon_path = token_icon_path(token_id)
         if icon_path and icon_path.exists():
             pix = QPixmap(str(icon_path)).scaled(
@@ -342,7 +764,23 @@ class TokenCard(QWidget):
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
+            self._icon_front = pix
             self.icon_label.setPixmap(pix)
+        back_path = token_back_icon_path(token_id)
+        if self._icon_front is not None and back_path and back_path.exists():
+            # Coin-flip on hover: a single half-spin to the back-side icon,
+            # back again on leave — echo of the in-game marker-select spin
+            # (INDUCTION shows turbo up front, supercharger on the back).
+            self._icon_back = QPixmap(str(back_path)).scaled(
+                self.ICON_SIZE,
+                self.ICON_SIZE,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            self._flip_anim = QVariantAnimation(self)
+            self._flip_anim.setDuration(360)
+            self._flip_anim.setEasingCurve(QEasingCurve.InOutQuad)
+            self._flip_anim.valueChanged.connect(self._set_flip_progress)
         icon_row = QHBoxLayout()
         icon_row.setAlignment(Qt.AlignCenter)
         icon_row.addWidget(self.icon_label)
@@ -442,6 +880,31 @@ class TokenCard(QWidget):
         self.name_edit.setCursorPosition(0)
         self._on_rename(self.token_id, new_name)
 
+    # ── Icon coin-flip ───────────────────────────────────────────
+
+    def _set_flip_progress(self, t: float) -> None:
+        # t in 0..1 is a half-spin around the vertical axis: the front face
+        # is edge-on at 0.5, the back face fully shown at 1.
+        sx = math.cos(math.pi * float(t))
+        base = self._icon_front if sx >= 0 else self._icon_back
+        if base is None:
+            return
+        squeezed = base.transformed(
+            QTransform().scale(max(abs(sx), 0.04), 1.0),
+            Qt.SmoothTransformation,
+        )
+        self.icon_label.setPixmap(squeezed)
+
+    def _start_flip(self, to_back: bool) -> None:
+        if self._flip_anim is None:
+            return
+        current = self._flip_anim.currentValue()
+        start = float(current) if current is not None else 0.0
+        self._flip_anim.stop()
+        self._flip_anim.setStartValue(start)
+        self._flip_anim.setEndValue(1.0 if to_back else 0.0)
+        self._flip_anim.start()
+
     def _apply_changed_state(self, changed: bool) -> None:
         self.setProperty("changed", changed)
         self.style().unpolish(self)
@@ -453,12 +916,14 @@ class TokenCard(QWidget):
         self.setProperty("hovered", True)
         self.style().unpolish(self)
         self.style().polish(self)
+        self._start_flip(to_back=True)
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         self.setProperty("hovered", False)
         self.style().unpolish(self)
         self.style().polish(self)
+        self._start_flip(to_back=False)
         super().leaveEvent(event)
 
 

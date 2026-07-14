@@ -9,38 +9,49 @@ Interaction contract (agreed 2026-07-07, see AGENT_CONTEXT.md):
 - After a transplant the staged state is reset and the whole UI refreshes
   through the same path used after opening a file.
 
-The page hosts two views behind a segmented switch: the transplant view
-(above contract) and the read-only "Rap Sheet" progress dossier (blacklist
-board, milestone table, race table). The rap sheet performs no writes; it is
-rebuilt from the in-memory buffer on every refresh, milestones parsed via the
-cellusage anchor (core/career_progress.py), never via fixed offsets.
+The page hosts two animated views: the stage-change workflow above and a
+read-only Blacklist dossier. Progress is parsed into one immutable summary per
+save snapshot, then rendered as a hero, painted 15-node timeline, and selected
+chapter inspector. Timeline browsing performs no writes.
 """
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from types import MappingProxyType
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, QTimer, Qt, Signal
+from PySide6.QtGui import (
+    QBitmap,
+    QColor,
+    QImageReader,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QRadialGradient,
+    QRegion,
+)
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
-    QRadioButton,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
-    QStackedWidget,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
-from core import career_progress, career_transplant
+from core import career_progress, career_transplant, milestone_names
 from core.career_donor_library import (
     VARIANT_BOSS_READY,
     VARIANT_CHAPTER_START,
@@ -48,12 +59,15 @@ from core.career_donor_library import (
     default_user_career_donor_root,
     load_career_donor_library,
 )
-from ui.icon_map import game_icon_path
+from ui.icon_map import game_icon_path, rival_asset_path
 from ui.pages.constants import BLACKLIST_BOSS_NAMES
 from ui.theme import resolve_theme_tokens
-from ui.widgets import ToastNotification
+from ui.widgets import (
+    AnimatedSegmentedControl,
+    AnimatedStackedWidget,
+    ToastNotification,
+)
 
-_STAGE_ROLE = Qt.UserRole
 _KEEPS_TEXT = "Keeps: money, alias, cars, installed parts, garage stats, Junkman inventory."
 _CHANGES_TEXT = (
     "Changes: career stage, milestones, race progress, story SMS, shop unlocks."
@@ -67,6 +81,278 @@ _BOSS_GRID_COLUMNS = 5
 _RAP_DOT_SIZE = 17
 _RAP_BOSS_DOT_SIZE = 17
 _RAP_TRAP_DOT_SIZE = 17
+
+
+@dataclass(frozen=True)
+class HeroPortraitLayout:
+    """Per-rival normalized full-bust crop."""
+
+    crop_x: float
+    crop_y: float
+    crop_width: float
+    crop_height: float
+    x_offset: float = 0.0
+
+
+# Coordinates are normalized against each alpha-trimmed generated foreground.
+# Every source crop includes the full head, chin, neck and shoulders, then the
+# complete crop is fitted inside the Hero rather than enlarged beyond its clip.
+HERO_PORTRAIT_LAYOUTS: Mapping[int, HeroPortraitLayout] = MappingProxyType({
+    15: HeroPortraitLayout(0.00, 0.00, 1.00, 0.94, -0.01),
+    14: HeroPortraitLayout(0.00, 0.00, 1.00, 0.94, 0.00),
+    13: HeroPortraitLayout(0.00, 0.00, 1.00, 0.96, 0.00),
+    12: HeroPortraitLayout(0.00, 0.00, 1.00, 0.96, -0.01),
+    11: HeroPortraitLayout(0.00, 0.00, 1.00, 0.96, 0.00),
+    10: HeroPortraitLayout(0.00, 0.00, 1.00, 0.94, -0.01),
+    9: HeroPortraitLayout(0.00, 0.00, 1.00, 0.94, -0.01),
+    8: HeroPortraitLayout(0.00, 0.00, 1.00, 0.96, 0.00),
+    7: HeroPortraitLayout(0.00, 0.00, 1.00, 0.96, 0.00),
+    6: HeroPortraitLayout(0.00, 0.00, 1.00, 0.95, 0.00),
+    5: HeroPortraitLayout(0.00, 0.00, 1.00, 0.94, -0.01),
+    4: HeroPortraitLayout(0.00, 0.00, 1.00, 0.96, 0.00),
+    3: HeroPortraitLayout(0.00, 0.00, 1.00, 0.98, 0.00),
+    2: HeroPortraitLayout(0.00, 0.00, 1.00, 0.98, 0.00),
+    1: HeroPortraitLayout(0.00, 0.00, 1.00, 0.94, 0.00),
+})
+
+
+class _CareerHero(QFrame):
+    """Theme-built rival banner with graffiti and portrait art layers."""
+
+    _art_cache: "OrderedDict[int, tuple[QPixmap, QPixmap]]" = OrderedDict()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("careerHero")
+        self.setFixedHeight(220)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._stage: Optional[int] = None
+        self._graffiti = QPixmap()
+        self._portrait = QPixmap()
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt override
+        return 240 if width >= 1450 else 220
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(1100, self.heightForWidth(max(1100, self.width())))
+
+    def set_stage(self, stage: Optional[int]) -> None:
+        if stage == self._stage:
+            return
+        self._stage = stage
+        if stage is None:
+            self._graffiti = QPixmap()
+            self._portrait = QPixmap()
+            self.update()
+            return
+        cached = self._art_cache.get(stage)
+        if cached is not None:
+            self._art_cache.move_to_end(stage)
+            self._graffiti, self._portrait = cached
+            self.update()
+            return
+
+        graffiti_path = rival_asset_path(stage, "graffiti")
+        portrait_path = rival_asset_path(stage, "hero_portrait")
+        graffiti = QPixmap(str(graffiti_path)) if graffiti_path is not None else QPixmap()
+        portrait = QPixmap(str(portrait_path)) if portrait_path is not None else QPixmap()
+        if portrait.isNull():
+            portrait = self._fallback_portrait(stage)
+        self._graffiti = graffiti
+        self._portrait = portrait
+        self._art_cache[stage] = (graffiti, portrait)
+        while len(self._art_cache) > 3:
+            self._art_cache.popitem(last=False)
+        self.update()
+
+    @staticmethod
+    def _fallback_portrait(stage: int) -> QPixmap:
+        source = rival_asset_path(stage, "portrait")
+        if source is None:
+            return QPixmap()
+        reader = QImageReader(str(source))
+        reader.setScaledSize(QSize(1024, 1024))
+        return QPixmap.fromImage(reader.read())
+
+    def portraitSourceRect(self, stage: int) -> QRectF:  # noqa: N802
+        """Normalized bust crop mapped onto the loaded foreground pixmap."""
+        if self._portrait.isNull():
+            return QRectF()
+        layout = HERO_PORTRAIT_LAYOUTS[stage]
+        return QRectF(
+            self._portrait.width() * layout.crop_x,
+            self._portrait.height() * layout.crop_y,
+            self._portrait.width() * layout.crop_width,
+            self._portrait.height() * layout.crop_height,
+        )
+
+    def portraitRect(self, stage: int, width: int, height: int) -> QRectF:  # noqa: N802
+        """Bust target fully contained inside the Hero clip."""
+        if self._portrait.isNull() or height <= 0:
+            return QRectF()
+        layout = HERO_PORTRAIT_LAYOUTS[stage]
+        source = self.portraitSourceRect(stage)
+        target_height = max(1.0, height - 14.0)
+        target_width = target_height * source.width() / source.height()
+        return QRectF(
+            width - target_width - 7.0 + layout.x_offset * height,
+            14.0,
+            target_width,
+            target_height,
+        )
+
+    def bustSafeRect(self, stage: int, width: int, height: int) -> QRectF:  # noqa: N802
+        return self.portraitRect(stage, width, height)
+
+    def _paint_theme_background(self, painter: QPainter, tokens: Mapping[str, str]) -> None:
+        width = self.width()
+        height = self.height()
+        base = QLinearGradient(0, 0, width, 0)
+        base.setColorAt(0.0, QColor(tokens["BG_PANEL"]))
+        base.setColorAt(0.48, QColor(tokens["BG_CARD"]))
+        base.setColorAt(1.0, QColor(tokens["ACCENT_SOFT"]))
+        painter.fillRect(self.rect(), base)
+
+        glow_color = QColor(tokens["ACCENT_BRIGHT"])
+        glow_color.setAlpha(74)
+        clear_glow = QColor(glow_color)
+        clear_glow.setAlpha(0)
+        glow = QRadialGradient(width * 0.83, height * 0.38, width * 0.48)
+        glow.setColorAt(0.0, glow_color)
+        glow.setColorAt(0.42, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 24))
+        glow.setColorAt(1.0, clear_glow)
+        painter.fillRect(self.rect(), glow)
+
+        # Restrained dossier grid: enough structure to feel authored, never a
+        # competing illustration behind the metrics and rival portrait.
+        grid = QColor(tokens["BORDER"])
+        grid.setAlpha(42)
+        painter.setPen(QPen(grid, 1.0))
+        start_x = int(width * 0.43)
+        for x in range(start_x, width, 54):
+            painter.drawLine(x, 0, x, height)
+        for y in range(42, height, 42):
+            painter.drawLine(start_x, y, width, y)
+
+        band = QColor(tokens["ACCENT"])
+        band.setAlpha(24)
+        diagonal = QPainterPath(QPointF(width * 0.56, height))
+        diagonal.lineTo(width * 0.72, 0)
+        diagonal.lineTo(width * 0.78, 0)
+        diagonal.lineTo(width * 0.62, height)
+        diagonal.closeSubpath()
+        painter.fillPath(diagonal, band)
+
+        left_shade = QLinearGradient(0, 0, width * 0.72, 0)
+        opaque = QColor(tokens["BG_PANEL"])
+        soft = QColor(tokens["BG_PANEL"])
+        clear = QColor(tokens["BG_PANEL"])
+        soft.setAlpha(205)
+        clear.setAlpha(0)
+        left_shade.setColorAt(0.0, opaque)
+        left_shade.setColorAt(0.52, soft)
+        left_shade.setColorAt(1.0, clear)
+        painter.fillRect(self.rect(), left_shade)
+
+    def _paint_graffiti(self, painter: QPainter) -> None:
+        if self._stage is None or self._graffiti.isNull():
+            return
+        portrait = self.portraitRect(self._stage, self.width(), self.height())
+        max_width = min(self.width() * 0.36, 360.0)
+        max_height = self.height() * 0.60
+        scale = min(
+            max_width / self._graffiti.width(),
+            max_height / self._graffiti.height(),
+        )
+        target_width = self._graffiti.width() * scale
+        target_height = self._graffiti.height() * scale
+        # The signature bridges the empty middle and the portrait, but ends
+        # underneath the subject so no isolated tail can survive at the edge.
+        target_right = portrait.left() + portrait.width() * 0.20
+        target = QRectF(
+            target_right - target_width,
+            (self.height() - target_height) * 0.52,
+            target_width,
+            target_height,
+        )
+        painter.setOpacity(0.22)
+        painter.drawPixmap(target, self._graffiti, QRectF(self._graffiti.rect()))
+        painter.setOpacity(1.0)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
+        super().paintEvent(_event)
+        tokens = resolve_theme_tokens()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        clip = QPainterPath()
+        clip.addRoundedRect(rect, 12.0, 12.0)
+        painter.setClipPath(clip)
+        self._paint_theme_background(painter, tokens)
+        self._paint_graffiti(painter)
+
+        if self._stage is not None and not self._portrait.isNull():
+            painter.setOpacity(0.98)
+            painter.drawPixmap(self.portraitRect(
+                self._stage, self.width(), self.height()
+            ), self._portrait, self.portraitSourceRect(self._stage))
+            painter.setOpacity(1.0)
+
+        painter.setClipping(False)
+        painter.setPen(QPen(QColor(tokens["BORDER"]), 1.0))
+        painter.drawRoundedRect(rect, 12.0, 12.0)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        desired_height = 240 if event.size().width() >= 1450 else 220
+        if self.height() != desired_height:
+            self.setFixedHeight(desired_height)
+        super().resizeEvent(event)
+
+
+class _ResponsiveProgressColumns(QWidget):
+    """Places milestone/race dossiers side-by-side only when space permits."""
+
+    _WIDE_BREAKPOINT = 1050
+
+    def __init__(self, milestones: QWidget, races: QWidget) -> None:
+        super().__init__()
+        self.setObjectName("careerProgressColumns")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self._milestones = milestones
+        self._races = races
+        self._wide: Optional[bool] = None
+        self._layout = QGridLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setHorizontalSpacing(10)
+        self._layout.setVerticalSpacing(10)
+        self._reflow(False)
+
+    def _reflow(self, wide: bool) -> None:
+        if self._wide == wide:
+            return
+        self._wide = wide
+        self._layout.removeWidget(self._milestones)
+        self._layout.removeWidget(self._races)
+        if wide:
+            self._layout.addWidget(self._milestones, 0, 0)
+            self._layout.addWidget(self._races, 0, 1)
+            self._layout.setColumnStretch(0, 4)
+            self._layout.setColumnStretch(1, 7)
+        else:
+            self._layout.addWidget(self._milestones, 0, 0)
+            self._layout.addWidget(self._races, 1, 0)
+            self._layout.setColumnStretch(0, 1)
+            self._layout.setColumnStretch(1, 0)
+        self.updateGeometry()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._reflow(event.size().width() >= self._WIDE_BREAKPOINT)
+        super().resizeEvent(event)
 
 
 def _stage_title(stage: int) -> str:
@@ -84,6 +370,44 @@ def _fmt_num(value: float) -> str:
     return f"{value:,.1f}"
 
 
+def _fmt_compact(value: int) -> str:
+    if value >= 1_000_000:
+        number = value / 1_000_000
+        return f"{number:.2f}".rstrip("0").rstrip(".") + "M"
+    if value >= 1_000:
+        number = value / 1_000
+        return f"{number:.1f}".rstrip("0").rstrip(".") + "K"
+    return f"{value:,}"
+
+
+def _milestone_display(type_key: int, value: float) -> str:
+    info = milestone_names.type_label_and_unit(type_key)
+    if info is None:
+        return _fmt_num(value)
+    _label, unit = info
+    if unit == "money":
+        return f"${int(round(value)):,}"
+    if unit == "seconds":
+        seconds = max(0, int(round(value)))
+        return f"{seconds // 60}:{seconds % 60:02d}"
+    return f"{int(round(value)):,}"
+
+
+def _milestone_icon(type_key: int) -> Optional[Path]:
+    name = milestone_names.resolve_type_name(type_key)
+    icon_names = {
+        "bounty_in_pursuit": "milestone_pursuit_bounty",
+        "cops_damaged": "cops_damaged",
+        "cost_to_state_in_pursuit": "milestone_cost_to_state",
+        "pursuit_evasion_time": "milestone_pursuit_mintime",
+        "pursuit_length": "milestone_pursuit_duration",
+        "roadblocks_dodged": "milestone_roadblocks",
+        "tire_spikes_dodged": "milestone_spikestrips",
+        "total_infractions": "milestone_infractions",
+    }
+    return game_icon_path(icon_names.get(name, "milestone"))
+
+
 def _event_sort_key(record: career_progress.RaceRecord) -> Tuple[int, int, int]:
     parts = (record.event_id or "").split(".")
     try:
@@ -92,254 +416,1055 @@ def _event_sort_key(record: career_progress.RaceRecord) -> Tuple[int, int, int]:
         return (99, record.index, 0)
 
 
-class _RapMarker(QFrame):
-    """Theme-aware progress marker for the Rap Sheet dot matrices."""
+class _BlacklistTimeline(QWidget):
+    """Single painted Blacklist ladder with read-only stage selection."""
 
-    _source_cache: Dict[str, QImage] = {}
-    _tint_cache: Dict[Tuple[str, int], QImage] = {}
+    stageSelected = Signal(int)
+    _glyph_cache: "OrderedDict[tuple[str, int], QPixmap]" = OrderedDict()
 
-    def __init__(self, shape: str, icon_path: Optional[Path] = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._shape = shape
-        self._icon_path = str(icon_path) if icon_path is not None else None
-        self.setObjectName("rapDot")
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setObjectName("careerTimeline")
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumHeight(82)
+        self._summary: Optional[career_progress.CareerProgressSummary] = None
+        self._selected_stage: Optional[int] = None
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(1000, 88)
+
+    def set_progress(
+        self,
+        summary: Optional[career_progress.CareerProgressSummary],
+        selected_stage: Optional[int],
+    ) -> None:
+        self._summary = summary
+        self._selected_stage = selected_stage
+        self.update()
+
+    def set_selected_stage(self, stage: int) -> None:
+        if stage != self._selected_stage:
+            self._selected_stage = stage
+            self.update()
+
+    def _nodes(self) -> list[tuple[int, QPointF]]:
+        left = 26.0
+        right = max(left, self.width() - 26.0)
+        span = max(1.0, right - left)
+        return [
+            (stage, QPointF(left + index * span / 14.0, 30.0))
+            for index, stage in enumerate(range(15, 0, -1))
+        ]
+
+    def _state(self, stage: int) -> str:
+        if self._summary is None:
+            return "locked"
+        return self._summary.stage_state(stage)
 
     @classmethod
-    def _source_image(cls, path: str) -> QImage:
-        image = cls._source_cache.get(path)
-        if image is None:
-            image = QImage(path).convertToFormat(QImage.Format_ARGB32)
-            cls._source_cache[path] = image
-        return image
-
-    @classmethod
-    def _tinted_image(cls, path: str, color: QColor) -> QImage:
-        key = (path, int(color.rgba()))
-        cached = cls._tint_cache.get(key)
+    def _glyph(cls, icon_name: str, size: int) -> QPixmap:
+        key = (icon_name, size)
+        cached = cls._glyph_cache.get(key)
         if cached is not None:
+            cls._glyph_cache.move_to_end(key)
             return cached
-
-        source = cls._source_image(path)
-        tinted = QImage(source.size(), QImage.Format_ARGB32)
-        tinted.fill(Qt.transparent)
-        for y in range(source.height()):
-            for x in range(source.width()):
-                pixel = source.pixelColor(x, y)
-                alpha = pixel.alpha()
-                if alpha <= 0:
-                    continue
-                luminance = (
-                    0.2126 * pixel.red()
-                    + 0.7152 * pixel.green()
-                    + 0.0722 * pixel.blue()
-                )
-                out = QColor(8, 8, 8) if luminance < 45 else QColor(color)
-                out.setAlpha(alpha)
-                tinted.setPixelColor(x, y, out)
-
-        cls._tint_cache[key] = tinted
-        return tinted
+        path = game_icon_path(icon_name)
+        source = QPixmap(str(path)) if path is not None else QPixmap()
+        if source.isNull():
+            return QPixmap()
+        bounds = QRegion(QBitmap.fromImage(
+            source.toImage().createAlphaMask()
+        )).boundingRect()
+        if not bounds.isEmpty():
+            source = source.copy(bounds)
+        source = source.scaled(
+            size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        cls._glyph_cache[key] = source
+        while len(cls._glyph_cache) > 8:
+            cls._glyph_cache.popitem(last=False)
+        return source
 
     def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
+        super().paintEvent(_event)
         tokens = resolve_theme_tokens()
-        state = self.property("state")
-        if state == "done":
-            fill = QColor(tokens["ACCENT_BRIGHT"])
-            border = QColor(tokens["ACCENT_BRIGHT"])
-        elif state == "open":
-            fill = QColor(tokens["ACCENT_SOFT"])
-            border = QColor(tokens["ACCENT"])
-        else:
-            fill = QColor(tokens["BG_DISABLED"])
-            border = QColor(tokens["BORDER"])
-
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        if self._icon_path and not self._source_image(self._icon_path).isNull():
-            icon = self._tinted_image(self._icon_path, border if state == "locked" else fill)
-            target = QRectF(self.rect()).adjusted(0.3, 0.3, -0.3, -0.3)
-            painter.drawImage(target, icon)
+        nodes = self._nodes()
+        if not nodes:
             return
 
-        painter.setBrush(fill)
-        pen = QPen(border)
-        pen.setWidthF(1.4 if self._shape != "square" else 1.6)
-        painter.setPen(pen)
+        base_pen = QPen(QColor(tokens["BORDER"]), 2.0)
+        painter.setPen(base_pen)
+        painter.drawLine(nodes[0][1], nodes[-1][1])
+        for (stage, point), (next_stage, next_point) in zip(nodes, nodes[1:]):
+            if self._state(stage) == "defeated" and self._state(next_stage) in {
+                "defeated", "current", "boss_ready"
+            }:
+                painter.setPen(QPen(QColor(tokens["ACCENT"]), 3.0))
+                painter.drawLine(point, next_point)
 
-        rect = QRectF(self.rect()).adjusted(1.4, 1.4, -1.4, -1.4)
-        if self._shape == "triangle":
-            path = QPainterPath()
-            path.moveTo(QPointF(rect.center().x(), rect.top()))
-            path.lineTo(QPointF(rect.right(), rect.bottom()))
-            path.lineTo(QPointF(rect.left(), rect.bottom()))
-            path.closeSubpath()
-            painter.drawPath(path)
-        elif self._shape == "square":
-            painter.drawRoundedRect(rect, 2.0, 2.0)
+        wide = self.width() >= 1180
+        node_radius = 12.5 if wide else 11.5
+        selected_radius = node_radius + 5.5
+        for stage, point in nodes:
+            state = self._state(stage)
+            selected = stage == self._selected_stage
+            if state == "defeated":
+                fill = QColor(tokens["ACCENT_BRIGHT"])
+                border = QColor(tokens["ACCENT_BRIGHT"])
+            elif state == "boss_ready":
+                fill = QColor(tokens["ACCENT"])
+                border = QColor(tokens["TEXT"])
+            elif state == "current":
+                fill = QColor(tokens["BG_PANEL"])
+                border = QColor(tokens["ACCENT_BRIGHT"])
+            else:
+                fill = QColor(tokens["BG_DISABLED"])
+                border = QColor(tokens["BORDER"])
+
+            if selected:
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QPen(QColor(tokens["ACCENT_BRIGHT"]), 2.0))
+                painter.drawEllipse(point, selected_radius, selected_radius)
+            painter.setBrush(fill)
+            painter.setPen(QPen(border, 2.0 if state in {"current", "boss_ready"} else 1.3))
+            painter.drawEllipse(point, node_radius, node_radius)
+
+            glyph_name = "timeline_check" if state == "defeated" else "timeline_arrow"
+            if state == "defeated":
+                glyph_size = 18 if wide else 17
+            else:
+                glyph_size = 10 if wide else 9
+            glyph = self._glyph(glyph_name, glyph_size)
+            if not glyph.isNull():
+                painter.drawPixmap(
+                    QRectF(
+                        point.x() - glyph.width() / 2.0,
+                        point.y() - glyph.height() / 2.0,
+                        glyph.width(),
+                        glyph.height(),
+                    ),
+                    glyph,
+                    QRectF(glyph.rect()),
+                )
+
+            font = painter.font()
+            font.setFamily("Bahnschrift SemiCondensed")
+            font.setBold(selected or state in {"current", "boss_ready"})
+            font.setPointSizeF(7.5 if wide else 7.0)
+            painter.setFont(font)
+            label_color = QColor(tokens["TEXT"])
+            if not selected:
+                label_color.setAlpha(175)
+            painter.setPen(label_color)
+            text_rect = QRectF(
+                point.x() - 44,
+                point.y() + node_radius + 4,
+                88,
+                32,
+            )
+            if wide:
+                label = f"#{stage}\n{BLACKLIST_BOSS_NAMES.get(stage, '?').upper()}"
+            else:
+                label = f"#{stage}"
+            painter.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, label)
+
+    def _stage_at(self, pos: QPoint) -> Optional[int]:
+        nearest: tuple[float, Optional[int]] = (22.0, None)
+        for stage, point in self._nodes():
+            distance = abs(point.x() - pos.x())
+            if distance < nearest[0] and abs(point.y() - pos.y()) <= 24:
+                nearest = (distance, stage)
+        return nearest[1]
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.button() == Qt.LeftButton:
+            stage = self._stage_at(event.position().toPoint())
+            if stage is not None:
+                self.stageSelected.emit(stage)
+                return
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        stage = self._stage_at(event.position().toPoint())
+        if stage is None:
+            self.setToolTip("")
         else:
-            painter.drawEllipse(rect)
+            state = self._state(stage).replace("_", " ")
+            self.setToolTip(f"{_stage_title(stage)} — {state}")
+        super().mouseMoveEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self._selected_stage is not None and event.key() in (Qt.Key_Left, Qt.Key_Right):
+            delta = 1 if event.key() == Qt.Key_Left else -1
+            stage = min(15, max(1, self._selected_stage + delta))
+            self.stageSelected.emit(stage)
+            return
+        super().keyPressEvent(event)
+
+
+@dataclass(frozen=True)
+class _InspectorMarker:
+    label: str
+    state: str
+    kind: str
+    icon_path: Optional[Path]
+    tooltip: str
+
+
+class _ProgressMarkerStrip(QFrame):
+    """Paint a responsive set of large event markers without child widgets."""
+
+    _pixmap_cache: "OrderedDict[tuple[str, int], QPixmap]" = OrderedDict()
+    _MARKER_SIZE = 38
+    _MARKER_STEP = 50
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.setObjectName("careerInspectorSection")
+        self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self._title = title
+        self._subtitle = ""
+        self._items: Tuple[_InspectorMarker, ...] = ()
+        self._item_rects: list[QRect] = []
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt override
+        columns = max(1, (max(80, width) - 30) // self._MARKER_STEP)
+        rows = max(1, (len(self._items) + columns - 1) // columns)
+        return 70 + rows * 50
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(520, self.heightForWidth(max(520, self.width())))
+
+    def set_items(self, subtitle: str, items: Sequence[_InspectorMarker]) -> None:
+        self._subtitle = subtitle
+        self._items = tuple(items)
+        self.setMinimumHeight(self.heightForWidth(max(360, self.width())))
+        self.updateGeometry()
+        self.update()
+
+    @classmethod
+    def _source_pixmap(cls, path: Optional[Path], size: int) -> QPixmap:
+        if path is None:
+            return QPixmap()
+        key = (str(path), size)
+        cached = cls._pixmap_cache.get(key)
+        if cached is not None:
+            cls._pixmap_cache.move_to_end(key)
+            return cached
+        source = QPixmap(str(path))
+        if source.isNull():
+            return QPixmap()
+        source = source.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        original = QPixmap(size, size)
+        original.fill(Qt.transparent)
+        painter = QPainter(original)
+        x = (size - source.width()) // 2
+        y = (size - source.height()) // 2
+        painter.drawPixmap(x, y, source)
+        painter.end()
+        cls._pixmap_cache[key] = original
+        while len(cls._pixmap_cache) > 128:
+            cls._pixmap_cache.popitem(last=False)
+        return original
+
+    def _layout_rects(self) -> list[QRect]:
+        columns = max(1, (max(80, self.width()) - 30) // self._MARKER_STEP)
+        rects = []
+        for index in range(len(self._items)):
+            row, column = divmod(index, columns)
+            rects.append(QRect(15 + column * self._MARKER_STEP, 62 + row * 50, 38, 38))
+        return rects
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().paintEvent(event)
+        tokens = resolve_theme_tokens()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        font = painter.font()
+        font.setFamily("Bahnschrift SemiCondensed")
+        font.setBold(True)
+        font.setPointSizeF(10.0)
+        painter.setFont(font)
+        painter.setPen(QColor(tokens["TEXT"]))
+        painter.drawText(QRectF(15, 11, self.width() - 30, 20), Qt.AlignLeft, self._title)
+        font.setBold(False)
+        font.setPointSizeF(8.5)
+        painter.setFont(font)
+        painter.setPen(QColor(tokens["MUTED"]))
+        painter.drawText(QRectF(15, 32, self.width() - 30, 20), Qt.AlignLeft, self._subtitle)
+
+        self._item_rects = self._layout_rects()
+        for item, rect in zip(self._items, self._item_rects):
+            if item.state == "done":
+                border = QColor(tokens["ACCENT_BRIGHT"])
+                background = QColor(tokens["ACCENT"])
+            elif item.state == "open":
+                border = QColor(tokens["ACCENT"])
+                background = QColor(tokens["BG_INPUT"])
+            else:
+                border = QColor(tokens["BORDER"])
+                background = QColor(tokens["BG_INPUT"])
+            painter.setBrush(background)
+            painter.setPen(QPen(border, 2.0 if item.kind == "boss" else 1.2))
+            radius = 4.0 if item.kind == "boss" else 9.0
+            painter.drawRoundedRect(QRectF(rect), radius, radius)
+            icon = self._source_pixmap(item.icon_path, 25)
+            if not icon.isNull():
+                painter.drawPixmap(rect.x() + 6, rect.y() + 5, icon)
+            small = painter.font()
+            small.setFamily("Bahnschrift SemiCondensed")
+            small.setBold(True)
+            small.setPointSizeF(6.5)
+            painter.setFont(small)
+            painter.setPen(border)
+            painter.drawText(rect.adjusted(2, 21, -3, -2), Qt.AlignRight | Qt.AlignBottom, item.label)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        for item, rect in zip(self._items, self._item_rects):
+            if rect.contains(event.position().toPoint()):
+                self.setToolTip(item.tooltip)
+                return super().mouseMoveEvent(event)
+        self.setToolTip("")
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
+
+class _ResponsivePanelPair(QWidget):
+    def __init__(self, first: QWidget, second: QWidget, *, breakpoint: int) -> None:
+        super().__init__()
+        self.setObjectName("careerResponsivePair")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self._first = first
+        self._second = second
+        self._breakpoint = breakpoint
+        self._wide: Optional[bool] = None
+        self._layout = QGridLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setHorizontalSpacing(12)
+        self._layout.setVerticalSpacing(12)
+        self._reflow(False)
+
+    def _reflow(self, wide: bool) -> None:
+        if wide == self._wide:
+            return
+        self._wide = wide
+        self._layout.removeWidget(self._first)
+        self._layout.removeWidget(self._second)
+        if wide:
+            self._layout.addWidget(self._first, 0, 0, Qt.AlignTop)
+            self._layout.addWidget(self._second, 0, 1, Qt.AlignTop)
+            self._layout.setColumnStretch(0, 1)
+            self._layout.setColumnStretch(1, 1)
+        else:
+            self._layout.addWidget(self._first, 0, 0, Qt.AlignTop)
+            self._layout.addWidget(self._second, 1, 0, Qt.AlignTop)
+            self._layout.setColumnStretch(0, 1)
+            self._layout.setColumnStretch(1, 0)
+        self.updateGeometry()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._reflow(event.size().width() >= self._breakpoint)
+        super().resizeEvent(event)
+
+
+class _ChapterInspectorPage(QFrame):
+    """Selected chapter details backed by one CareerProgressSummary."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("careerInspector")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self._wide: Optional[bool] = None
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 14, 18, 16)
+        root.setSpacing(12)
+        root.setAlignment(Qt.AlignTop)
+
+        self._header = QGridLayout()
+        self._header.setContentsMargins(0, 0, 0, 0)
+        self._header.setHorizontalSpacing(16)
+        self._header.setVerticalSpacing(8)
+        self._header_copy = QWidget()
+        self._header_copy.setObjectName("careerInspectorHeaderCopy")
+        self._header_copy.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        copy_layout = QVBoxLayout(self._header_copy)
+        copy_layout.setContentsMargins(0, 0, 0, 0)
+        copy_layout.setSpacing(2)
+        self.eyebrow = QLabel("CHAPTER INSPECTOR")
+        self.eyebrow.setObjectName("careerInspectorEyebrow")
+        copy_layout.addWidget(self.eyebrow)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        self.title = QLabel("OPEN A SAVE")
+        self.title.setObjectName("careerInspectorTitle")
+        title_row.addWidget(self.title)
+        self.status = QLabel("NO DATA")
+        self.status.setObjectName("careerInspectorStatus")
+        self.status.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        title_row.addWidget(self.status)
+        title_row.addStretch(1)
+        copy_layout.addLayout(title_row)
+        self.copy = QLabel("Career progress will appear here.")
+        self.copy.setObjectName("careerInspectorCopy")
+        self.copy.setWordWrap(True)
+        copy_layout.addWidget(self.copy)
+
+        self.lifetime = QFrame()
+        self.lifetime.setObjectName("careerLifetimeStrip")
+        self.lifetime.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        lifetime_layout = QHBoxLayout(self.lifetime)
+        lifetime_layout.setContentsMargins(12, 8, 12, 8)
+        lifetime_layout.setSpacing(13)
+        self.lifetime_races = QLabel("RACES —")
+        self.lifetime_milestones = QLabel("MILESTONES —")
+        self.lifetime_bounty = QLabel("BOUNTY —")
+        self.prologue = QLabel("PROLOGUE —")
+        for label in (
+            self.lifetime_races,
+            self.lifetime_milestones,
+            self.lifetime_bounty,
+            self.prologue,
+        ):
+            label.setObjectName("careerLifetimeValue")
+            lifetime_layout.addWidget(label)
+
+        root.addLayout(self._header)
+        self.race_strip = _ProgressMarkerStrip("RACE SCHEDULE")
+        self.milestone_strip = _ProgressMarkerStrip("MILESTONES")
+        self._body = _ResponsivePanelPair(
+            self.race_strip, self.milestone_strip, breakpoint=1400
+        )
+        root.addWidget(self._body)
+        self._reflow_header(False)
+
+    def _reflow_header(self, wide: bool) -> None:
+        if self._wide == wide:
+            return
+        self._wide = wide
+        self._header.removeWidget(self._header_copy)
+        self._header.removeWidget(self.lifetime)
+        self._header.addWidget(self._header_copy, 0, 0)
+        self._header.addWidget(self.lifetime, 0 if wide else 1, 1 if wide else 0)
+        self._header.setColumnStretch(0, 1)
+        self._header.setColumnStretch(1, 0)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._reflow_header(event.size().width() >= 1400)
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._sync_stack_height)
+
+    def _sync_stack_height(self) -> None:
+        stack = self.parentWidget()
+        if not isinstance(stack, AnimatedStackedWidget) or stack.currentWidget() is not self:
+            return
+        desired = max(self.sizeHint().height(), self.minimumSizeHint().height())
+        if stack.height() != desired:
+            stack.setFixedHeight(desired)
+
+    def set_progress(
+        self,
+        summary: Optional[career_progress.CareerProgressSummary],
+        stage: Optional[int],
+    ) -> None:
+        if summary is None or stage is None:
+            self.eyebrow.setText("CHAPTER INSPECTOR")
+            self.title.setText("OPEN A SAVE")
+            self.status.setText("NO DATA")
+            self.status.setProperty("state", "locked")
+            self.copy.setText("Career progress will appear here.")
+            self.lifetime_races.setText("RACES —")
+            self.lifetime_milestones.setText("MILESTONES —")
+            self.lifetime_bounty.setText("BOUNTY —")
+            self.prologue.setText("PROLOGUE —")
+            self.race_strip.set_items("No race table loaded", ())
+            self.milestone_strip.set_items("No milestone table loaded", ())
+            self._polish_status()
+            return
+
+        chapter = summary.chapter(stage)
+        state = summary.stage_state(stage)
+        status_text = {
+            "defeated": "DEFEATED",
+            "current": "CURRENT TARGET",
+            "boss_ready": "BOSS READY",
+            "locked": "LOCKED",
+        }[state]
+        if summary.endgame and stage == 1:
+            status_text = "BLACKLIST CLEARED"
+        self.eyebrow.setText(f"CHAPTER INSPECTOR // {status_text}")
+        self.title.setText(_stage_title(stage).replace(":", "  · ").upper())
+        self.status.setText(status_text)
+        self.status.setProperty("state", state)
+        requirement = chapter.requirement
+        self.copy.setText(
+            f"Challenge gate: {requirement.races} race wins, "
+            f"{requirement.milestones} milestones and {_fmt_compact(requirement.bounty)} bounty."
+        )
+        self.lifetime_races.setText(
+            f"RACES {summary.lifetime_race_wins}/{summary.lifetime_race_total}"
+        )
+        self.lifetime_milestones.setText(
+            f"MILESTONES {summary.lifetime_milestone_wins}/{summary.lifetime_milestone_total}"
+        )
+        self.lifetime_bounty.setText(f"BOUNTY {_fmt_compact(summary.total_bounty)}")
+        prologue_done = sum(record.is_completed for record in summary.prologue_races)
+        self.prologue.setText(f"PROLOGUE {prologue_done}/{len(summary.prologue_races)}")
+
+        race_items = []
+        for index, record in enumerate(sorted(chapter.races, key=_event_sort_key), 1):
+            race_items.append(_race_marker(record, f"{index:02d}", boss=False))
+        for index, record in enumerate(sorted(chapter.boss_races, key=_event_sort_key), 1):
+            race_items.append(_race_marker(record, f"B{index}", boss=True))
+        self.race_strip.set_items(
+            f"{chapter.race_wins}/{requirement.races} required  ·  "
+            f"{len(chapter.races)} available  ·  {len(chapter.boss_races)} boss",
+            race_items,
+        )
+
+        milestone_items = []
+        for index, record in enumerate(chapter.milestones, 1):
+            status = "awarded" if record.is_awarded else f"state {record.state}"
+            type_info = milestone_names.type_label_and_unit(record.type_key)
+            title = type_info[0] if type_info is not None else f"Milestone {index}"
+            milestone_items.append(_InspectorMarker(
+                label=f"M{index}",
+                state="done" if record.is_awarded else "open",
+                kind="milestone",
+                icon_path=_milestone_icon(record.type_key),
+                tooltip=(
+                    f"{title} — {status}\n"
+                    f"Required {_milestone_display(record.type_key, record.required_value)} · "
+                    f"recorded {_milestone_display(record.type_key, record.recorded_value)}"
+                ),
+            ))
+        for index, trap in enumerate(chapter.speedtraps, 1):
+            ordinal = milestone_names.speedtrap_ordinal(trap.trap_hash) or index
+            required_mph = trap.required_speed * 2.2369362920544
+            best = (
+                f"{trap.best_speed * 2.2369362920544:.1f} mph"
+                if trap.best_speed > 0
+                else "—"
+            )
+            milestone_items.append(_InspectorMarker(
+                label=f"S{ordinal}",
+                state="done" if trap.is_complete else "open",
+                kind="trap",
+                icon_path=game_icon_path("trap"),
+                tooltip=(
+                    f"Speedtrap {ordinal} — required {required_mph:.1f} mph\n"
+                    f"Progress {trap.counter}/{career_progress.SPEEDTRAP_COMPLETE_COUNT} · best {best}"
+                ),
+            ))
+        self.milestone_strip.set_items(
+            f"{chapter.milestone_wins}/{requirement.milestones} required  ·  "
+            f"{chapter.milestone_total} available",
+            milestone_items,
+        )
+        self._polish_status()
+
+    def _polish_status(self) -> None:
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
+
+
+def _race_marker(
+    record: career_progress.RaceRecord, label: str, *, boss: bool
+) -> _InspectorMarker:
+    suffix = " (reversed)" if record.is_reversed else ""
+    title = f"{'Boss race' if boss else 'Event'} {record.event_id}{suffix}"
+    if record.is_completed:
+        state = "done"
+        detail = (
+            f"completed\nHigh score {record.high_score:,} · "
+            f"top {record.top_speed:.1f} · avg {record.average_speed:.1f}"
+        )
+    elif record.flags & 0x10:
+        state = "open"
+        detail = "available"
+    else:
+        state = "locked"
+        detail = "locked"
+    return _InspectorMarker(
+        label=label,
+        state=state,
+        kind="boss" if boss else "race",
+        icon_path=game_icon_path("boss_race" if boss else "race"),
+        tooltip=f"{title} — {detail}",
+    )
 
 
 class CareerMixin:
     def _build_career_page(self) -> QWidget:
         w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(10, 6, 10, 8)
-        layout.setSpacing(12)
+        outer = QHBoxLayout(w)
+        outer.setContentsMargins(10, 8, 10, 8)
+        outer.setSpacing(0)
+        self.career_canvas = QWidget()
+        self.career_canvas.setObjectName("careerCanvas")
+        self.career_canvas.setMaximumWidth(1640)
+        self.career_canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        layout = QVBoxLayout(self.career_canvas)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        outer.addStretch(1)
+        outer.addWidget(self.career_canvas, 100)
+        outer.addStretch(1)
 
         self.career_donor_root = default_user_career_donor_root()
         self.career_donor_library: tuple[CareerDonorEntry, ...] = ()
+        self._career_donor_signature: Optional[tuple] = None
+        self._career_snapshot_cache: Optional[bytes] = None
+        self._career_summary_cache: Optional[career_progress.CareerProgressSummary] = None
+        self._career_selected_stage: Optional[int] = None
 
-        # ── Read-only progression strip ────────────────────────
-        strip = QHBoxLayout()
-        strip.setSpacing(10)
+        # ── Current target hero + compact progression summary ──
+        self.career_hero = _CareerHero()
+        hero_layout = QHBoxLayout(self.career_hero)
+        hero_layout.setContentsMargins(28, 18, 20, 16)
+        hero_layout.setSpacing(14)
 
+        hero_copy = QVBoxLayout()
+        hero_copy.setSpacing(3)
+        eyebrow = QLabel("CAREER // BLACKLIST DOSSIER")
+        eyebrow.setObjectName("careerHeroEyebrow")
+        hero_copy.addWidget(eyebrow)
+
+        headline = QHBoxLayout()
+        headline.setSpacing(10)
         self.career_stage_value = QLabel("-")
-        self.career_stage_value.setObjectName("statTileValue")
+        self.career_stage_value.setObjectName("careerHeroRank")
         self.career_stage_value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        self.career_stage_value.setAlignment(Qt.AlignCenter)
-        self.career_stage_sub = QLabel("Current blacklist stage")
-        self.career_stage_sub.setObjectName("statTileSub")
-        self.career_stage_sub.setAlignment(Qt.AlignCenter)
-        strip.addWidget(self._build_stat_tile("Stage", self.career_stage_value, self.career_stage_sub), 1)
+        headline.addWidget(self.career_stage_value)
+        self.career_boss_value = QLabel("NO SAVE LOADED")
+        self.career_boss_value.setObjectName("careerHeroBoss")
+        headline.addWidget(self.career_boss_value)
+        self.career_hero_status = QLabel("NO DATA")
+        self.career_hero_status.setObjectName("careerHeroStatus")
+        self.career_hero_status.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        headline.addWidget(self.career_hero_status, 0, Qt.AlignVCenter)
+        headline.addStretch(1)
+        hero_copy.addLayout(headline)
 
+        self.career_stage_sub = QLabel("Open a save to inspect its career.")
+        self.career_stage_sub.setObjectName("careerHeroSub")
+        hero_copy.addWidget(self.career_stage_sub)
+
+        metrics = QHBoxLayout()
+        metrics.setSpacing(8)
         self.career_races_value = QLabel("-")
-        self.career_races_value.setObjectName("statTileValue")
-        self.career_races_value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        self.career_races_value.setAlignment(Qt.AlignCenter)
-        self.career_races_sub = QLabel("Completed career events, prologue included")
-        self.career_races_sub.setObjectName("statTileSub")
-        self.career_races_sub.setAlignment(Qt.AlignCenter)
-        strip.addWidget(self._build_stat_tile("Races done", self.career_races_value, self.career_races_sub), 1)
-
+        self.career_races_metric = self._build_career_hero_metric(
+            "RACES TO CHALLENGE", self.career_races_value, "race"
+        )
+        metrics.addWidget(self.career_races_metric)
         self.career_milestones_value = QLabel("-")
-        self.career_milestones_value.setObjectName("statTileValue")
-        self.career_milestones_value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        self.career_milestones_value.setAlignment(Qt.AlignCenter)
-        self.career_milestones_sub = QLabel("Milestones awarded")
-        self.career_milestones_sub.setObjectName("statTileSub")
-        self.career_milestones_sub.setAlignment(Qt.AlignCenter)
-        strip.addWidget(self._build_stat_tile("Milestones", self.career_milestones_value, self.career_milestones_sub), 1)
-
-        layout.addLayout(strip)
-
-        # ── View switch: Transplant | Rap Sheet ────────────────
-        switch_row = QHBoxLayout()
-        switch_row.setSpacing(8)
-        self.career_view_transplant_btn = self._make_card_action_button(
-            "TRANSPLANT", object_name="careerViewTab"
+        self.career_milestones_metric = self._build_career_hero_metric(
+            "MILESTONES", self.career_milestones_value, "milestone"
         )
-        self.career_view_rapsheet_btn = self._make_card_action_button(
-            "RAP SHEET", object_name="careerViewTab"
+        metrics.addWidget(self.career_milestones_metric)
+        self.career_bounty_value = QLabel("-")
+        self.career_bounty_metric = self._build_career_hero_metric(
+            "BOUNTY", self.career_bounty_value, "bounty"
         )
-        for btn in (self.career_view_transplant_btn, self.career_view_rapsheet_btn):
-            btn.setCheckable(True)
-        self.career_view_transplant_btn.setChecked(True)
-        group = QButtonGroup(w)
-        group.setExclusive(True)
-        group.addButton(self.career_view_transplant_btn)
-        group.addButton(self.career_view_rapsheet_btn)
-        switch_row.addStretch(1)
-        switch_row.addWidget(self.career_view_transplant_btn)
-        switch_row.addWidget(self.career_view_rapsheet_btn)
-        switch_row.addStretch(1)
-        layout.addLayout(switch_row)
+        metrics.addWidget(self.career_bounty_metric)
+        metrics.addStretch(1)
+        hero_copy.addLayout(metrics)
 
-        self.career_view_stack = QStackedWidget()
+        # ── View switch: safe progress overview | stage change ──
+        self.career_view_switch = AnimatedSegmentedControl(
+            ("PROGRESS", "CHANGE STAGE"), button_object_name="careerViewTab"
+        )
+        self.career_view_rapsheet_btn = self.career_view_switch.button(0)
+        self.career_view_transplant_btn = self.career_view_switch.button(1)
+        hero_switch_row = QHBoxLayout()
+        hero_switch_row.addWidget(self.career_view_switch)
+        hero_switch_row.addStretch(1)
+        hero_copy.addLayout(hero_switch_row)
+
+        hero_layout.addLayout(hero_copy, 3)
+        hero_layout.addStretch(2)
+        layout.addWidget(self.career_hero)
+
+        self.career_view_stack = AnimatedStackedWidget(duration_ms=180)
         self.career_view_stack.addWidget(self._build_career_transplant_view())
-        self.career_view_stack.addWidget(self._build_career_rap_sheet_view())
-        self.career_view_rapsheet_btn.toggled.connect(
-            lambda checked: self.career_view_stack.setCurrentIndex(1 if checked else 0)
-        )
+        self.career_view_stack.addWidget(self._build_career_progress_view())
+        self.career_view_stack.setCurrentIndex(1)
+        self.career_view_switch.currentChanged.connect(self._on_career_view_changed)
         layout.addWidget(self.career_view_stack, 1)
 
-        self._reload_career_donor_library()
+        self._reload_career_donor_library(force=True)
         self._rebuild_career_stage_list()
         self._refresh_career_preview()
-        self._refresh_rap_sheet()
+        self._refresh_career_progress(None, animate=False)
         return w
+
+    def _build_career_hero_metric(
+        self, caption: str, value: QLabel, icon_name: str
+    ) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("careerHeroMetric")
+        frame.setProperty("met", False)
+        metric_layout = QHBoxLayout(frame)
+        metric_layout.setContentsMargins(9, 5, 10, 5)
+        metric_layout.setSpacing(7)
+
+        icon_path = game_icon_path(icon_name)
+        if icon_path is not None:
+            pixmap = QPixmap(str(icon_path))
+            if not pixmap.isNull():
+                icon = QLabel()
+                icon.setObjectName("careerHeroMetricIcon")
+                icon.setFixedSize(24, 24)
+                icon.setAlignment(Qt.AlignCenter)
+                icon.setPixmap(self._tight_icon(
+                    icon_path, QSize(22, 22)
+                ).pixmap(22, 22))
+                metric_layout.addWidget(icon, 0, Qt.AlignVCenter)
+
+        copy = QVBoxLayout()
+        copy.setContentsMargins(0, 0, 0, 0)
+        copy.setSpacing(0)
+        value.setObjectName("careerHeroMetricValue")
+        value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        label = QLabel(caption)
+        label.setObjectName("careerHeroMetricLabel")
+        copy.addWidget(value)
+        copy.addWidget(label)
+        metric_layout.addLayout(copy)
+        return frame
 
     def _build_career_transplant_view(self) -> QWidget:
         view = QWidget()
+        view.setObjectName("careerTransplantView")
         layout = QVBoxLayout(view)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 0, 6, 0)
         layout.setSpacing(0)
 
-        card, card_layout = self._make_card_frame(vertical_policy=QSizePolicy.Expanding)
-
-        title = self._make_card_field_label("Career stage transplant")
-        card_layout.addWidget(title)
-
+        target_card, target_layout = self._make_card_frame(
+            object_name="careerTargetPanel",
+            vertical_policy=QSizePolicy.Maximum,
+        )
+        target_layout.setContentsMargins(18, 16, 18, 16)
+        target_layout.setSpacing(9)
+        step = QLabel("STEP 01")
+        step.setObjectName("careerStepLabel")
+        target_layout.addWidget(step)
+        title = QLabel("Pick the target chapter")
+        title.setObjectName("careerPanelTitle")
+        target_layout.addWidget(title)
         intro = QLabel(
-            "Move your profile to another blacklist stage by transplanting the "
-            "career progression from a known-good donor save. Your property is untouched."
+            "Choose where the Blacklist story should resume. Only stages backed by "
+            "a validated donor snapshot can be selected."
         )
-        intro.setObjectName("mutedLabel")
+        intro.setObjectName("careerPanelCopy")
         intro.setWordWrap(True)
-        intro.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(intro)
+        target_layout.addWidget(intro)
 
-        variant_row = QHBoxLayout()
-        variant_row.setSpacing(12)
-        self.career_variant_start = QRadioButton("Chapter start")
-        self.career_variant_ready = QRadioButton("Boss fight ready")
-        self.career_variant_start.setObjectName("careerVariantRadio")
-        self.career_variant_ready.setObjectName("careerVariantRadio")
-        self.career_variant_start.setChecked(True)
-        self.career_variant_start.toggled.connect(self._on_career_variant_changed)
-        variant_row.addStretch(1)
-        variant_row.addWidget(self.career_variant_start)
-        variant_row.addWidget(self.career_variant_ready)
-        variant_row.addStretch(1)
-        card_layout.addLayout(variant_row)
-
-        self.career_stage_list = QListWidget()
-        self.career_stage_list.setObjectName("careerStageList")
-        self.career_stage_list.setUniformItemSizes(True)
-        self.career_stage_list.currentItemChanged.connect(
-            lambda *_: self._refresh_career_preview()
+        self.career_variant_switch = AnimatedSegmentedControl(
+            ("CHAPTER START", "BOSS FIGHT READY"),
+            button_object_name="careerVariantButton",
         )
-        card_layout.addWidget(self.career_stage_list, 1)
+        self.career_variant_start = self.career_variant_switch.button(0)
+        self.career_variant_ready = self.career_variant_switch.button(1)
+        self.career_variant_switch.currentChanged.connect(self._on_career_variant_changed)
+        target_layout.addWidget(self.career_variant_switch)
 
-        card_layout.addWidget(self._make_card_separator())
+        self.career_stage_grid_host = QWidget()
+        self.career_stage_grid_host.setObjectName("careerStageGrid")
+        stage_grid = QGridLayout(self.career_stage_grid_host)
+        stage_grid.setContentsMargins(0, 2, 0, 2)
+        stage_grid.setHorizontalSpacing(6)
+        stage_grid.setVerticalSpacing(6)
+        self.career_stage_buttons: Dict[int, QPushButton] = {}
+        self.career_stage_group = QButtonGroup(view)
+        self.career_stage_group.setExclusive(True)
+        for pos, stage in enumerate(range(15, 0, -1)):
+            button = QPushButton(f"#{stage}  {BLACKLIST_BOSS_NAMES.get(stage, '?').upper()}")
+            button.setObjectName("careerStageButton")
+            button.setCheckable(True)
+            button.setMinimumHeight(43)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setProperty("stage", stage)
+            button.toggled.connect(
+                lambda checked, s=stage: self._on_career_stage_toggled(s, checked)
+            )
+            self.career_stage_group.addButton(button)
+            self.career_stage_buttons[stage] = button
+            stage_grid.addWidget(button, pos // 3, pos % 3)
+        for column in range(3):
+            stage_grid.setColumnStretch(column, 1)
+        target_layout.addWidget(self.career_stage_grid_host, 1)
+
+        self.career_library_status = QLabel("")
+        self.career_library_status.setObjectName("careerLibraryStatus")
+        target_layout.addWidget(self.career_library_status)
+
+        review_card, review_layout = self._make_card_frame(
+            object_name="careerReviewPanel",
+            vertical_policy=QSizePolicy.Maximum,
+        )
+        review_layout.setContentsMargins(18, 16, 18, 16)
+        review_layout.setSpacing(9)
+        self.career_review_panel = review_card
+        step = QLabel("STEP 02")
+        step.setObjectName("careerStepLabel")
+        review_layout.addWidget(step)
+        title = QLabel("Review the transfer")
+        title.setObjectName("careerPanelTitle")
+        review_layout.addWidget(title)
+
+        route = QFrame()
+        route.setObjectName("careerRoute")
+        route_layout = QHBoxLayout(route)
+        route_layout.setContentsMargins(12, 10, 12, 10)
+        route_layout.setSpacing(8)
+        self.career_route_from = QLabel("OPEN A SAVE")
+        self.career_route_from.setObjectName("careerRouteStage")
+        self.career_route_from.setAlignment(Qt.AlignCenter)
+        route_layout.addWidget(self.career_route_from, 1)
+        arrow = QLabel("→")
+        arrow.setObjectName("careerRouteArrow")
+        arrow.setAlignment(Qt.AlignCenter)
+        route_layout.addWidget(arrow)
+        self.career_route_to = QLabel("SELECT TARGET")
+        self.career_route_to.setObjectName("careerRouteStage")
+        self.career_route_to.setAlignment(Qt.AlignCenter)
+        route_layout.addWidget(self.career_route_to, 1)
+        review_layout.addWidget(route)
 
         self.career_preview_status = QLabel("")
-        self.career_preview_status.setObjectName("contentCardMeta")
+        self.career_preview_status.setObjectName("careerPreviewStatus")
         self.career_preview_status.setWordWrap(True)
-        self.career_preview_status.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(self.career_preview_status)
+        self.career_preview_status.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        review_layout.addWidget(self.career_preview_status)
 
-        self.career_preview_changes = QLabel(_CHANGES_TEXT)
-        self.career_preview_changes.setObjectName("contentCardNote")
+        impact_row = QHBoxLayout()
+        impact_row.setSpacing(8)
+        changes, changes_layout = self._build_career_impact_box("CHANGES", "changes")
+        self.career_preview_changes = QLabel(
+            "Career stage\nRace & milestone progress\nStory SMS & shop unlocks"
+        )
+        self.career_preview_changes.setObjectName("careerImpactItems")
         self.career_preview_changes.setWordWrap(True)
-        self.career_preview_changes.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(self.career_preview_changes)
-
-        self.career_preview_keeps = QLabel(_KEEPS_TEXT)
-        self.career_preview_keeps.setObjectName("contentCardNote")
+        changes_layout.addWidget(self.career_preview_changes)
+        impact_row.addWidget(changes, 1)
+        keeps, keeps_layout = self._build_career_impact_box("STAYS YOURS", "keeps")
+        self.career_preview_keeps = QLabel(
+            "Money & profile alias\nCars, parts & garage stats\nJunkman inventory"
+        )
+        self.career_preview_keeps.setObjectName("careerImpactItems")
         self.career_preview_keeps.setWordWrap(True)
-        self.career_preview_keeps.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(self.career_preview_keeps)
+        keeps_layout.addWidget(self.career_preview_keeps)
+        impact_row.addWidget(keeps, 1)
+        review_layout.addLayout(impact_row)
 
         self.career_preview_caveat = QLabel(_BOUNTY_CAVEAT_TEXT)
-        self.career_preview_caveat.setObjectName("contentCardNote")
+        self.career_preview_caveat.setObjectName("careerSafetyNote")
         self.career_preview_caveat.setWordWrap(True)
-        self.career_preview_caveat.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(self.career_preview_caveat)
+        review_layout.addWidget(self.career_preview_caveat)
+        review_layout.addStretch(1)
 
-        action_row = QHBoxLayout()
-        action_row.addStretch(1)
-        self.btn_career_transplant = self._make_card_action_button("Transplant (memory)")
+        self.btn_career_transplant = self._make_card_action_button(
+            "APPLY STAGE TO MEMORY", object_name="careerTransplantButton"
+        )
+        self.btn_career_transplant.setMinimumHeight(42)
+        self.btn_career_transplant.setCursor(Qt.PointingHandCursor)
         self.btn_career_transplant.clicked.connect(self._on_career_transplant_clicked)
-        action_row.addWidget(self.btn_career_transplant)
-        action_row.addStretch(1)
-        card_layout.addLayout(action_row)
+        review_layout.addWidget(self.btn_career_transplant)
+        disk_note = QLabel("Disk stays untouched until you choose Save + backup.")
+        disk_note.setObjectName("careerDiskNote")
+        disk_note.setAlignment(Qt.AlignCenter)
+        review_layout.addWidget(disk_note)
 
-        layout.addWidget(card, 1)
-        return view
+        layout.addWidget(
+            _ResponsivePanelPair(target_card, review_card, breakpoint=1200),
+            0,
+            Qt.AlignTop,
+        )
+        scroll = QScrollArea()
+        scroll.setObjectName("cardScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(view)
+        return scroll
+
+    def _build_career_impact_box(
+        self, title: str, impact: str
+    ) -> tuple[QFrame, QVBoxLayout]:
+        box = QFrame()
+        box.setObjectName("careerImpactBox")
+        box.setProperty("impact", impact)
+        box_layout = QVBoxLayout(box)
+        box_layout.setContentsMargins(11, 9, 11, 9)
+        box_layout.setSpacing(4)
+        heading = QLabel(title)
+        heading.setObjectName("careerImpactTitle")
+        box_layout.addWidget(heading)
+        return box, box_layout
 
     # ── Rap Sheet view (read-only dossier) ─────────────────────
+
+    def _build_career_progress_view(self) -> QWidget:
+        host = QWidget()
+        host.setObjectName("careerProgressView")
+        host_layout = QVBoxLayout(host)
+        host_layout.setContentsMargins(0, 0, 6, 0)
+        host_layout.setSpacing(10)
+        host_layout.setAlignment(Qt.AlignTop)
+
+        self.career_timeline = _BlacklistTimeline()
+        self.career_timeline.stageSelected.connect(self._on_career_timeline_selected)
+        host_layout.addWidget(self.career_timeline)
+
+        self.career_inspector_stack = AnimatedStackedWidget(duration_ms=150)
+        self.career_inspector_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.career_inspector_pages = (_ChapterInspectorPage(), _ChapterInspectorPage())
+        for page in self.career_inspector_pages:
+            self.career_inspector_stack.addWidget(page)
+        self.career_inspector_stack.setCurrentIndex(0)
+        host_layout.addWidget(self.career_inspector_stack, 0, Qt.AlignTop)
+        host_layout.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("cardScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(host)
+        return scroll
+
+    def _on_career_view_changed(self, index: int) -> None:
+        target = 1 if index == 0 else 0
+        summary = self._career_summary_cache
+        if summary is not None:
+            hero_stage = (
+                self._career_selected_stage if index == 0 else summary.current_stage
+            )
+            self._update_career_hero(summary, hero_stage)
+        self.career_view_stack.setCurrentIndexAnimated(
+            target, direction=-1 if target == 0 else 1
+        )
+
+    def _on_career_timeline_selected(self, stage: int) -> None:
+        summary = self._career_summary_cache
+        if summary is None or stage == self._career_selected_stage:
+            return
+        previous = self._career_selected_stage or summary.default_stage
+        self._career_selected_stage = stage
+        self.career_timeline.set_selected_stage(stage)
+        self._update_career_hero(summary, stage)
+        target_index = 1 - self.career_inspector_stack.currentIndex()
+        self.career_inspector_pages[target_index].set_progress(summary, stage)
+        self.career_inspector_pages[target_index].updateGeometry()
+        self.career_inspector_stack.setCurrentIndexAnimated(
+            target_index, direction=1 if stage < previous else -1
+        )
+
+    def _refresh_career_progress(
+        self,
+        summary: Optional[career_progress.CareerProgressSummary],
+        *,
+        animate: bool,
+    ) -> None:
+        if summary is not None and self._career_selected_stage is None:
+            self._career_selected_stage = summary.default_stage
+        stage = self._career_selected_stage if summary is not None else None
+        self.career_timeline.set_progress(summary, stage)
+        current = self.career_inspector_stack.currentIndex()
+        self.career_inspector_pages[current].set_progress(summary, stage)
+        self.career_inspector_pages[current].updateGeometry()
+        self.career_inspector_stack.updateGeometry()
+        self._update_career_hero(summary, stage)
+
+    def _update_career_hero(
+        self,
+        summary: Optional[career_progress.CareerProgressSummary],
+        stage: Optional[int],
+    ) -> None:
+        if summary is None or stage is None:
+            self.career_hero.set_stage(None)
+            self.career_stage_value.setText("-")
+            self.career_boss_value.setText("NO SAVE LOADED")
+            self.career_stage_sub.setText("Open a save to inspect its career.")
+            self.career_hero_status.setText("NO DATA")
+            self.career_hero_status.setProperty("state", "locked")
+            for frame, label in (
+                (self.career_races_metric, self.career_races_value),
+                (self.career_milestones_metric, self.career_milestones_value),
+                (self.career_bounty_metric, self.career_bounty_value),
+            ):
+                self._set_career_metric(frame, label, "-", False)
+            self._polish_career_hero_status()
+            return
+
+        chapter = summary.chapter(stage)
+        requirement = chapter.requirement
+        state = summary.stage_state(stage)
+        status_text = {
+            "defeated": "DEFEATED",
+            "current": "CURRENT TARGET",
+            "boss_ready": "BOSS READY",
+            "locked": "LOCKED",
+        }[state]
+        if summary.endgame and stage == 1:
+            status_text = "BLACKLIST CLEARED"
+        boss = BLACKLIST_BOSS_NAMES.get(stage, "Unknown")
+        self.career_hero.set_stage(stage)
+        self.career_stage_value.setText(f"#{stage}")
+        self.career_boss_value.setText(boss.upper())
+        self.career_hero_status.setText(status_text)
+        self.career_hero_status.setProperty("state", state)
+        if summary.endgame and stage == 1:
+            sub = "Razor is down · career complete"
+        elif stage == summary.current_stage:
+            sub = f"TO CHALLENGE {boss.upper()} · {15 - stage} RIVALS DOWN"
+        elif stage > summary.current_stage:
+            sub = "ARCHIVE VIEW · COMPLETED CHAPTER"
+        else:
+            sub = "LOCKED CHAPTER · READ-ONLY PREVIEW"
+        self.career_stage_sub.setText(sub)
+        self._set_career_metric(
+            self.career_races_metric,
+            self.career_races_value,
+            f"{chapter.race_wins} / {requirement.races}",
+            chapter.race_wins >= requirement.races,
+        )
+        self._set_career_metric(
+            self.career_milestones_metric,
+            self.career_milestones_value,
+            f"{chapter.milestone_wins} / {requirement.milestones}",
+            chapter.milestone_wins >= requirement.milestones,
+        )
+        self._set_career_metric(
+            self.career_bounty_metric,
+            self.career_bounty_value,
+            f"{_fmt_compact(summary.total_bounty)} / {_fmt_compact(requirement.bounty)}",
+            summary.total_bounty >= requirement.bounty,
+        )
+        self._polish_career_hero_status()
+
+    @staticmethod
+    def _set_career_metric(frame: QFrame, label: QLabel, text: str, met: bool) -> None:
+        label.setText(text)
+        if frame.property("met") != met:
+            frame.setProperty("met", met)
+            frame.style().unpolish(frame)
+            frame.style().polish(frame)
+
+    def _polish_career_hero_status(self) -> None:
+        self.career_hero_status.style().unpolish(self.career_hero_status)
+        self.career_hero_status.style().polish(self.career_hero_status)
 
     def _build_career_rap_sheet_view(self) -> QWidget:
         host = QWidget()
@@ -381,8 +1506,12 @@ class CareerMixin:
 
         endgame = bool(career_progress.is_endgame(data))
         self.rap_sheet_layout.addWidget(self._build_rap_board_card(current_bin, endgame))
-        self.rap_sheet_layout.addWidget(self._build_rap_milestones_card(milestones, speedtraps))
-        self.rap_sheet_layout.addWidget(self._build_rap_races_card(races))
+
+        progress_columns = _ResponsiveProgressColumns(
+            self._build_rap_milestones_card(milestones, speedtraps),
+            self._build_rap_races_card(races),
+        )
+        self.rap_sheet_layout.addWidget(progress_columns)
         self.rap_sheet_layout.addStretch(1)
 
     def _rap_count_chip(self, done: int, total: int) -> QLabel:
@@ -395,10 +1524,12 @@ class CareerMixin:
         return chip
 
     def _rap_card(self, title: str, done: int, total: int) -> tuple[QFrame, QVBoxLayout]:
-        card, card_layout = self._make_card_frame()
+        card, card_layout = self._make_card_frame(vertical_policy=QSizePolicy.Minimum)
         head = QHBoxLayout()
         head.setSpacing(8)
-        head.addWidget(self._make_card_field_label(title))
+        heading = self._make_card_field_label(title, "careerSectionTitle")
+        heading.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        head.addWidget(heading)
         head.addStretch(1)
         head.addWidget(self._rap_count_chip(done, total))
         card_layout.addLayout(head)
@@ -416,7 +1547,10 @@ class CareerMixin:
         if boss:
             shape = "square"
             icon_name = "boss_race"
-        elif kind in ("milestone", "trap"):
+        elif kind == "trap":
+            shape = "triangle"
+            icon_name = "trap"
+        elif kind == "milestone":
             shape = "triangle"
             icon_name = "milestone"
         elif kind == "race":
@@ -450,7 +1584,7 @@ class CareerMixin:
         row_layout.setSpacing(4)
         label = QLabel(label_text)
         label.setObjectName("rapRowLabel")
-        label.setMinimumWidth(110)
+        label.setFixedWidth(92)
         row_layout.addWidget(label)
         for dot in dots:
             row_layout.addWidget(dot)
@@ -469,7 +1603,7 @@ class CareerMixin:
             1 for s in stages
             if (in_career and s > current_bin) or not in_career
         )
-        card, card_layout = self._rap_card("BLACKLIST", defeated, len(stages))
+        card, card_layout = self._rap_card("BLACKLIST LADDER", defeated, len(stages))
 
         grid_host = QWidget()
         grid_host.setObjectName("rapBoardGrid")
@@ -497,6 +1631,7 @@ class CareerMixin:
         cell = QFrame()
         cell.setObjectName("rapBossCell")
         cell.setProperty("state", state)
+        cell.setMinimumHeight(54)
         cell_layout = QVBoxLayout(cell)
         cell_layout.setContentsMargins(9, 6, 9, 7)
         cell_layout.setSpacing(1)
@@ -707,14 +1842,33 @@ class CareerMixin:
 
     # ── Library / list state ───────────────────────────────────
 
-    def _reload_career_donor_library(self) -> None:
+    def _career_donor_directory_signature(self) -> tuple:
+        root = Path(self.career_donor_root)
+        if not root.is_dir():
+            return ()
+        entries = []
+        try:
+            for path in sorted(root.iterdir(), key=lambda item: item.name.lower()):
+                if not path.is_file():
+                    continue
+                stat = path.stat()
+                entries.append((path.name, stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            return ()
+        return tuple(entries)
+
+    def _reload_career_donor_library(self, *, force: bool = False) -> None:
+        signature = self._career_donor_directory_signature()
+        if not force and signature == self._career_donor_signature:
+            return
         try:
             self.career_donor_library = load_career_donor_library(self.career_donor_root)
         except Exception:
             self.career_donor_library = ()
+        self._career_donor_signature = signature
 
     def _career_selected_variant(self) -> str:
-        if self.career_variant_ready.isChecked():
+        if self.career_variant_switch.currentIndex() == 1:
             return VARIANT_BOSS_READY
         return VARIANT_CHAPTER_START
 
@@ -726,33 +1880,46 @@ class CareerMixin:
         return donors
 
     def _rebuild_career_stage_list(self) -> None:
-        selected_stage = None
-        current = self.career_stage_list.currentItem()
-        if current is not None:
-            selected_stage = current.data(_STAGE_ROLE)
-
+        selected_stage = self._selected_career_stage()
         donors = self._career_donors_for_variant(self._career_selected_variant())
-        self.career_stage_list.blockSignals(True)
-        self.career_stage_list.clear()
-        for stage in range(15, 0, -1):
-            item = QListWidgetItem(_stage_title(stage))
-            item.setData(_STAGE_ROLE, stage)
-            item.setTextAlignment(Qt.AlignCenter)
-            item.setSizeHint(QSize(0, 36))
-            if stage not in donors:
-                item.setFlags(item.flags() & ~Qt.ItemIsEnabled & ~Qt.ItemIsSelectable)
-                item.setToolTip("No donor save for this stage in the library")
-            self.career_stage_list.addItem(item)
-            if stage == selected_stage and stage in donors:
-                self.career_stage_list.setCurrentItem(item)
-        self.career_stage_list.blockSignals(False)
+        if selected_stage not in donors:
+            current = (
+                career_transplant.read_current_bin(bytes(self.savefile.data))
+                if self.savefile is not None else None
+            )
+            selected_stage = current if current in donors else (max(donors) if donors else None)
+        for stage, button in self.career_stage_buttons.items():
+            button.blockSignals(True)
+            available = stage in donors
+            button.setEnabled(available)
+            button.setChecked(available and stage == selected_stage)
+            button.setToolTip(
+                "" if available else "No donor save for this stage in the library"
+            )
+            button.blockSignals(False)
+        variant_label = (
+            "boss-ready" if self._career_selected_variant() == VARIANT_BOSS_READY
+            else "chapter-start"
+        )
+        self.career_library_status.setText(
+            f"{len(donors)} / 15 {variant_label} donor snapshots ready"
+        )
+
+    def _selected_career_stage(self) -> Optional[int]:
+        for stage, button in self.career_stage_buttons.items():
+            if button.isChecked() and button.isEnabled():
+                return stage
+        return None
 
     def _selected_career_donor(self) -> Optional[CareerDonorEntry]:
-        item = self.career_stage_list.currentItem()
-        if item is None or not (item.flags() & Qt.ItemIsEnabled):
+        stage = self._selected_career_stage()
+        if stage is None:
             return None
-        stage = item.data(_STAGE_ROLE)
         return self._career_donors_for_variant(self._career_selected_variant()).get(stage)
+
+    def _on_career_stage_toggled(self, _stage: int, checked: bool) -> None:
+        if checked:
+            self._refresh_career_preview()
 
     # ── Refresh / preview ──────────────────────────────────────
 
@@ -760,16 +1927,30 @@ class CareerMixin:
         data = bytes(self.savefile.data) if self.savefile is not None else b""
         current_bin = career_transplant.read_current_bin(data)
         if current_bin is None:
+            self.career_hero.set_stage(None)
             self.career_stage_value.setText("-")
+            self.career_boss_value.setText("NO SAVE LOADED")
+            self.career_stage_sub.setText("Open a save to inspect its career.")
+            self.career_rivals_value.setText("-")
             self.career_races_value.setText("-")
             self.career_milestones_value.setText("-")
         else:
-            if career_progress.is_endgame(data):
-                self.career_stage_value.setText("Blacklist cleared")
+            endgame = bool(career_progress.is_endgame(data))
+            self.career_hero.set_stage(current_bin)
+            self.career_stage_value.setText(f"#{current_bin}")
+            if endgame:
+                self.career_boss_value.setText("BLACKLIST CLEARED")
                 self.career_stage_sub.setText("Razor is down — career complete")
+                self.career_rivals_value.setText("15 / 15")
             else:
-                self.career_stage_value.setText(_stage_title(current_bin))
-                self.career_stage_sub.setText("Current blacklist stage")
+                boss = BLACKLIST_BOSS_NAMES.get(current_bin, "Unknown")
+                self.career_boss_value.setText(boss.upper())
+                defeated = max(0, 15 - current_bin)
+                remaining = max(0, current_bin - 1)
+                self.career_stage_sub.setText(
+                    f"Current target · {defeated} down · {remaining} still ahead"
+                )
+                self.career_rivals_value.setText(f"{defeated} / 15")
             races = career_progress.parse_races(data)
             if races is None:
                 self.career_races_value.setText("-")
@@ -796,10 +1977,51 @@ class CareerMixin:
                 self.career_milestones_value.setText(f"{awarded} / {total}")
         self._reload_career_donor_library()
         self._rebuild_career_stage_list()
+        for stage, button in self.career_stage_buttons.items():
+            is_current = current_bin is not None and stage == current_bin
+            if button.property("current") != is_current:
+                button.setProperty("current", is_current)
+                button.style().unpolish(button)
+                button.style().polish(button)
         self._refresh_career_preview()
         self._refresh_rap_sheet()
 
-    def _on_career_variant_changed(self, _checked: bool = False) -> None:
+    def _on_career_variant_changed(self, checked: bool = False) -> None:
+        if not checked:
+            return
+        self._rebuild_career_stage_list()
+        self._refresh_career_preview()
+
+    def _refresh_career_page(self) -> None:
+        data = bytes(self.savefile.data) if self.savefile is not None else b""
+        previous = self._career_summary_cache
+        if data != self._career_snapshot_cache:
+            self._career_snapshot_cache = data
+            self._career_summary_cache = career_progress.build_career_progress(data)
+        summary = self._career_summary_cache
+        if summary is None:
+            self._career_selected_stage = None
+        elif (
+            self._career_selected_stage is None
+            or previous is None
+            or previous.current_stage != summary.current_stage
+            or previous.endgame != summary.endgame
+        ):
+            self._career_selected_stage = summary.default_stage
+
+        self._refresh_career_progress(summary, animate=False)
+        self._reload_career_donor_library()
+        self._rebuild_career_stage_list()
+        current_bin = summary.current_stage if summary is not None else None
+        for stage, button in self.career_stage_buttons.items():
+            is_current = current_bin is not None and stage == current_bin
+            if button.property("current") != is_current:
+                button.setProperty("current", is_current)
+                button.style().unpolish(button)
+                button.style().polish(button)
+        self._refresh_career_preview()
+
+    def _on_career_variant_changed(self, _index: int) -> None:
         self._rebuild_career_stage_list()
         self._refresh_career_preview()
 
@@ -816,6 +2038,20 @@ class CareerMixin:
         lines: List[str] = []
         donor = self._selected_career_donor()
         block_reason = self._career_block_reason()
+        current = (
+            career_transplant.read_current_bin(bytes(self.savefile.data))
+            if self.savefile is not None else None
+        )
+        self.career_route_from.setText(
+            _stage_title(current).replace(":", "").upper()
+            if current is not None else "OPEN A SAVE"
+        )
+        self.career_route_to.setText(
+            _stage_title(donor.stage_bin).replace(":", "").upper()
+            if donor is not None else "SELECT TARGET"
+        )
+        state = "idle"
+        can_apply = block_reason is None
 
         if donor is not None and self.savefile is not None:
             try:
@@ -823,27 +2059,43 @@ class CareerMixin:
                 plan = self.savefile.plan_career_transplant(donor_data)
             except Exception as exc:
                 lines.append(f"Donor could not be read: {exc}")
+                state = "blocked"
+                can_apply = False
             else:
                 if plan.refusal_reason:
                     lines.append(f"Refused: {plan.refusal_reason}")
+                    state = "blocked"
+                    can_apply = False
                 else:
-                    current = career_transplant.read_current_bin(bytes(self.savefile.data))
                     lines.append(
-                        f"Ready: {_stage_title(current)} -> {_stage_title(plan.donor_bin)}"
-                        f" ({_display_name_text(donor.display_name)})"
+                        f"{_display_name_text(donor.display_name)} is ready. "
+                        "The profile will change in memory only."
                     )
+                    state = "ready"
                     if current == plan.donor_bin:
                         lines.append("Same stage: this resets the chapter's progress.")
+                        state = "warning"
                     if plan.bounty_compensation > 0:
                         lines.append(
                             f"Bounty compensation: +{plan.bounty_compensation:,} via sold-cars history."
                         )
-                    lines.extend(f"Warning: {w}" for w in plan.warnings)
+                    if plan.warnings:
+                        state = "warning"
+                        lines.extend(f"Warning: {w}" for w in plan.warnings)
         if block_reason:
-            lines.append(block_reason)
+            if self.savefile is None:
+                lines.append("Open a save before building a stage-change plan.")
+            elif donor is None:
+                lines.append("Choose a target stage to assemble the transplant plan.")
+            else:
+                lines.append(block_reason)
+            state = "blocked" if self.savefile is None or self._has_pending_changes() else "idle"
 
         self.career_preview_status.setText("\n".join(lines))
-        self.btn_career_transplant.setEnabled(block_reason is None)
+        self.career_preview_status.setProperty("state", state)
+        self.career_preview_status.style().unpolish(self.career_preview_status)
+        self.career_preview_status.style().polish(self.career_preview_status)
+        self.btn_career_transplant.setEnabled(can_apply)
 
     # ── Apply ──────────────────────────────────────────────────
 
@@ -855,10 +2107,10 @@ class CareerMixin:
             donor_data = Path(donor.save_path).read_bytes()
             plan = self.savefile.plan_career_transplant(donor_data)
         except Exception as exc:
-            QMessageBox.critical(self, "Transplant failed", str(exc))
+            QMessageBox.critical(self, "Stage change failed", str(exc))
             return
         if plan.refusal_reason:
-            QMessageBox.warning(self, "Transplant refused", plan.refusal_reason)
+            QMessageBox.warning(self, "Stage change blocked", plan.refusal_reason)
             self._refresh_career_preview()
             return
 
@@ -870,11 +2122,11 @@ class CareerMixin:
             )
         answer = QMessageBox.question(
             self,
-            "Career stage transplant",
+            "Confirm career stage change",
             (
-                f"Transplant career progression?\n\n"
+                f"Change career progression in memory?\n\n"
                 f"{_stage_title(current)}  ->  {_stage_title(plan.donor_bin)}\n"
-                f"Donor: {_display_name_text(donor.display_name)}\n\n"
+                f"Target snapshot: {_display_name_text(donor.display_name)}\n\n"
                 f"{_CHANGES_TEXT}\n{_KEEPS_TEXT}\n\n"
                 f"This edits memory only; use Save + backup to write the file."
                 f"{warning_lines}"
@@ -888,11 +2140,11 @@ class CareerMixin:
         try:
             self.savefile.apply_career_transplant(donor_data)
         except Exception as exc:
-            QMessageBox.critical(self, "Transplant failed", str(exc))
+            QMessageBox.critical(self, "Stage change failed", str(exc))
             return
 
         self._reset_want_edit_state()
         self.refresh_state()
         ToastNotification.show_toast(
-            self, "Career stage transplanted (memory). Save + backup to write"
+            self, "Career stage changed in memory. Save + backup to write"
         )
