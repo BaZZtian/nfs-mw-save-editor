@@ -159,6 +159,7 @@ class _SegmentHitButton(QPushButton):
 class AnimatedSegmentedControl(QFrame):
     """Crisp segmented control painted as one interruptible moving surface."""
 
+    _TRACK_INSET = 3
     currentChanged = Signal(int)
 
     def __init__(
@@ -167,12 +168,16 @@ class AnimatedSegmentedControl(QFrame):
         *,
         button_object_name: str = "animatedSegmentButton",
         duration_ms: int = 180,
+        fixed_height: Optional[int] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         if not labels:
             raise ValueError("AnimatedSegmentedControl needs at least one label")
         self.setObjectName("animatedSegmentedControl")
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        if fixed_height is not None:
+            self.setFixedHeight(fixed_height)
         self._current_index = 0
         self._duration_ms = duration_ms
         self._indicator_position = 0.0
@@ -182,13 +187,19 @@ class AnimatedSegmentedControl(QFrame):
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(3, 3, 3, 3)
+        layout.setContentsMargins(
+            self._TRACK_INSET,
+            self._TRACK_INSET,
+            self._TRACK_INSET,
+            self._TRACK_INSET,
+        )
         layout.setSpacing(2)
         for index, label in enumerate(labels):
             button = _SegmentHitButton(label)
             button.setObjectName(button_object_name)
             button.setCheckable(False)
             button.setCursor(Qt.PointingHandCursor)
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             button.clicked.connect(lambda _checked=False, i=index: self.setCurrentIndex(i))
             layout.addWidget(button, 1)
             self._buttons.append(button)
@@ -292,18 +303,17 @@ class AnimatedSegmentedControl(QFrame):
         painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(track, track_radius, track_radius)
 
-        hover_radius = self._radius(tokens, "RADIUS_MD", 8.0)
+        inner_radius = max(0.0, track_radius - self._TRACK_INSET)
         allow_hover = self._animation.state() != QAbstractAnimation.Running
         for index, button in enumerate(self._buttons):
             if allow_hover and button.underMouse() and index != self._current_index:
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(tokens["BG_NAV_HOVER"]))
-                painter.drawRoundedRect(QRectF(button.geometry()), hover_radius, hover_radius)
+                painter.drawRoundedRect(QRectF(button.geometry()), inner_radius, inner_radius)
 
-        indicator_radius = self._radius(tokens, "RADIUS_MD", 8.0)
         painter.setPen(QColor(tokens["ACCENT_BRIGHT"]))
         painter.setBrush(QColor(tokens["ACCENT"]))
-        painter.drawRoundedRect(indicator, indicator_radius, indicator_radius)
+        painter.drawRoundedRect(indicator, inner_radius, inner_radius)
 
         def draw_labels(color: QColor) -> None:
             painter.setPen(color)
@@ -324,7 +334,7 @@ class AnimatedSegmentedControl(QFrame):
                 focus_color.setAlpha(150)
                 painter.setPen(focus_color)
                 painter.setBrush(Qt.NoBrush)
-                painter.drawRoundedRect(focus, hover_radius, hover_radius)
+                painter.drawRoundedRect(focus, inner_radius, inner_radius)
         painter.end()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override

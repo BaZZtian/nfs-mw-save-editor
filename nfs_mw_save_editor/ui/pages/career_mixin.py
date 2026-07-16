@@ -17,13 +17,14 @@ chapter inspector. Timeline browsing performs no writes.
 
 from __future__ import annotations
 
+import struct
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, QTimer, Qt, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QBitmap,
     QColor,
@@ -35,6 +36,7 @@ from PySide6.QtGui import (
     QPixmap,
     QRadialGradient,
     QRegion,
+    QTransform,
 )
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -51,7 +53,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import career_progress, career_transplant, milestone_names
+from core import (
+    career_progress,
+    career_transplant,
+    milestone_names,
+    race_display_names,
+    rival_bios,
+    rival_challenge,
+)
 from core.career_donor_library import (
     VARIANT_BOSS_READY,
     VARIANT_CHAPTER_START,
@@ -81,6 +90,90 @@ _BOSS_GRID_COLUMNS = 5
 _RAP_DOT_SIZE = 17
 _RAP_BOSS_DOT_SIZE = 17
 _RAP_TRAP_DOT_SIZE = 17
+
+# EventID type digit -> packaged game icon (ground truth for the digits:
+# the events' internal names in GLOBAL/gameplay.bin, see race_display_names).
+_RACE_TYPE_ICONS = {
+    1: "race_circuit",
+    2: "race_sprint",
+    3: "race_lap_knockout",
+    4: "milestone_tollbooth",
+    5: "trap",
+    7: "race_drag",
+}
+
+
+def _norm_event_id(event_id: Optional[str]) -> str:
+    if not event_id:
+        return ""
+    return event_id[:-2] if event_id.endswith(".r") else event_id
+
+
+def _boss_series_rows(
+    stage: int, boss_races: Sequence[career_progress.RaceRecord]
+) -> list[_InspectorRow]:
+    """Rival Challenge rows in the game's canon screen order.
+
+    Series entries without a save slot (only 1.5.2, Razor's Warrent
+    speedtrap) render synthetically; the guard on empty boss_races keeps
+    ghost rows out of saves whose race table did not parse."""
+    if not boss_races:
+        return []
+    series = rival_challenge.BOSS_SERIES.get(stage, ())
+    tracked = {_norm_event_id(record.event_id): record for record in boss_races}
+    rows = []
+    used = set()
+    for canon_id in series:
+        record = tracked.get(_norm_event_id(canon_id))
+        if record is not None:
+            rows.append(_race_row(record, boss=True))
+            used.add(_norm_event_id(canon_id))
+        else:
+            rows.append(_untracked_boss_row(canon_id, boss_races))
+    for record in sorted(boss_races, key=_event_sort_key):
+        if _norm_event_id(record.event_id) not in used:
+            rows.append(_race_row(record, boss=True))
+    return rows
+
+
+def _untracked_boss_row(
+    event_id: str, siblings: Sequence[career_progress.RaceRecord]
+) -> _InspectorRow:
+    if siblings and all(record.is_completed for record in siblings):
+        state, detail = "done", "SERIES COMPLETE"
+    elif any(record.flags & 0x10 for record in siblings):
+        state, detail = "open", "AVAILABLE"
+    else:
+        state, detail = "locked", "LOCKED"
+    title = race_display_names.display_name(event_id) or f"Event {event_id}"
+    type_label = race_display_names.type_label(event_id) or "Event"
+    return _InspectorRow(
+        title=title,
+        tag="",
+        state=state,
+        kind="boss",
+        icon_path=game_icon_path("boss_race"),
+        detail=detail,
+        fraction=None,
+        tooltip=(
+            f"{title} — rival race\n{type_label} · {event_id} · boss race\n"
+            "The save keeps no record for this event — its state follows "
+            "the rest of the rival series."
+        ),
+    )
+
+
+def _race_type_icon(event_id: Optional[str]) -> str:
+    if race_display_names.type_label(event_id) == "Pursuit":
+        return "heat"
+    if event_id:
+        parts = event_id.split(".")
+        if len(parts) >= 3:
+            try:
+                return _RACE_TYPE_ICONS.get(int(parts[1]), "race")
+            except ValueError:
+                pass
+    return "race"
 
 
 @dataclass(frozen=True)
@@ -119,12 +212,15 @@ HERO_PORTRAIT_LAYOUTS: Mapping[int, HeroPortraitLayout] = MappingProxyType({
 class _CareerHero(QFrame):
     """Theme-built rival banner with graffiti and portrait art layers."""
 
+    _COMPACT_HEIGHT = 320
+    _WIDE_HEIGHT = 340
+    _WIDE_BREAKPOINT = 1450
     _art_cache: "OrderedDict[int, tuple[QPixmap, QPixmap]]" = OrderedDict()
 
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("careerHero")
-        self.setFixedHeight(220)
+        self.setFixedHeight(self._COMPACT_HEIGHT)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._stage: Optional[int] = None
         self._graffiti = QPixmap()
@@ -134,7 +230,7 @@ class _CareerHero(QFrame):
         return True
 
     def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt override
-        return 240 if width >= 1450 else 220
+        return self._WIDE_HEIGHT if width >= self._WIDE_BREAKPOINT else self._COMPACT_HEIGHT
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
         return QSize(1100, self.heightForWidth(max(1100, self.width())))
@@ -257,9 +353,9 @@ class _CareerHero(QFrame):
         left_shade.setColorAt(1.0, clear)
         painter.fillRect(self.rect(), left_shade)
 
-    def _paint_graffiti(self, painter: QPainter) -> None:
+    def _graffiti_rect(self) -> QRectF:
         if self._stage is None or self._graffiti.isNull():
-            return
+            return QRectF()
         portrait = self.portraitRect(self._stage, self.width(), self.height())
         max_width = min(self.width() * 0.36, 360.0)
         max_height = self.height() * 0.60
@@ -272,12 +368,17 @@ class _CareerHero(QFrame):
         # The signature bridges the empty middle and the portrait, but ends
         # underneath the subject so no isolated tail can survive at the edge.
         target_right = portrait.left() + portrait.width() * 0.20
-        target = QRectF(
+        return QRectF(
             target_right - target_width,
             (self.height() - target_height) * 0.52,
             target_width,
             target_height,
         )
+
+    def _paint_graffiti(self, painter: QPainter) -> None:
+        target = self._graffiti_rect()
+        if target.isNull():
+            return
         painter.setOpacity(0.22)
         painter.drawPixmap(target, self._graffiti, QRectF(self._graffiti.rect()))
         painter.setOpacity(1.0)
@@ -308,7 +409,7 @@ class _CareerHero(QFrame):
         painter.drawRoundedRect(rect, 12.0, 12.0)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
-        desired_height = 240 if event.size().width() >= 1450 else 220
+        desired_height = self.heightForWidth(event.size().width())
         if self.height() != desired_height:
             self.setFixedHeight(desired_height)
         super().resizeEvent(event)
@@ -555,7 +656,7 @@ class _BlacklistTimeline(QWidget):
             font = painter.font()
             font.setFamily("Bahnschrift SemiCondensed")
             font.setBold(selected or state in {"current", "boss_ready"})
-            font.setPointSizeF(7.5 if wide else 7.0)
+            font.setPointSizeF(9.0 if wide else 8.5)
             painter.setFont(font)
             label_color = QColor(tokens["TEXT"])
             if not selected:
@@ -608,46 +709,59 @@ class _BlacklistTimeline(QWidget):
 
 
 @dataclass(frozen=True)
-class _InspectorMarker:
-    label: str
+class _InspectorRow:
+    title: str
+    tag: str
     state: str
     kind: str
     icon_path: Optional[Path]
+    detail: str
+    fraction: Optional[float]
     tooltip: str
 
 
-class _ProgressMarkerStrip(QFrame):
-    """Paint a responsive set of large event markers without child widgets."""
+class _ProgressRowList(QFrame):
+    """Painted dossier list: one readable row per event with state and result."""
 
     _pixmap_cache: "OrderedDict[tuple[str, int], QPixmap]" = OrderedDict()
-    _MARKER_SIZE = 38
-    _MARKER_STEP = 50
+    _ROWS_TOP = 58
+    _ROW_HEIGHT = 30
+    _SECTION_GAP = 27
+    _BOTTOM_PAD = 14
 
     def __init__(self, title: str) -> None:
         super().__init__()
         self.setObjectName("careerInspectorSection")
         self.setMouseTracking(True)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._title = title
         self._subtitle = ""
-        self._items: Tuple[_InspectorMarker, ...] = ()
-        self._item_rects: list[QRect] = []
+        self._rows: Tuple[_InspectorRow, ...] = ()
+        self._boss_rows: Tuple[_InspectorRow, ...] = ()
+        self._row_rects: list[tuple[QRect, _InspectorRow]] = []
 
-    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt override
-        columns = max(1, (max(80, width) - 30) // self._MARKER_STEP)
-        rows = max(1, (len(self._items) + columns - 1) // columns)
-        return 70 + rows * 50
+    def _content_height(self) -> int:
+        height = self._ROWS_TOP + len(self._rows) * self._ROW_HEIGHT
+        if self._boss_rows:
+            height += self._SECTION_GAP + len(self._boss_rows) * self._ROW_HEIGHT
+        return height + self._BOTTOM_PAD
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
-        return QSize(520, self.heightForWidth(max(520, self.width())))
+        return QSize(520, self._content_height())
 
-    def set_items(self, subtitle: str, items: Sequence[_InspectorMarker]) -> None:
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(340, self._content_height())
+
+    def set_items(
+        self,
+        subtitle: str,
+        rows: Sequence[_InspectorRow],
+        boss_rows: Sequence[_InspectorRow] = (),
+    ) -> None:
         self._subtitle = subtitle
-        self._items = tuple(items)
-        self.setMinimumHeight(self.heightForWidth(max(360, self.width())))
+        self._rows = tuple(rows)
+        self._boss_rows = tuple(boss_rows)
+        self.setMinimumHeight(self._content_height())
         self.updateGeometry()
         self.update()
 
@@ -676,13 +790,12 @@ class _ProgressMarkerStrip(QFrame):
             cls._pixmap_cache.popitem(last=False)
         return original
 
-    def _layout_rects(self) -> list[QRect]:
-        columns = max(1, (max(80, self.width()) - 30) // self._MARKER_STEP)
-        rects = []
-        for index in range(len(self._items)):
-            row, column = divmod(index, columns)
-            rects.append(QRect(15 + column * self._MARKER_STEP, 62 + row * 50, 38, 38))
-        return rects
+    def _condensed_font(self, painter: QPainter, size: float, *, bold: bool) -> None:
+        font = painter.font()
+        font.setFamily("Bahnschrift SemiCondensed")
+        font.setBold(bold)
+        font.setPointSizeF(size)
+        painter.setFont(font)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().paintEvent(event)
@@ -690,49 +803,132 @@ class _ProgressMarkerStrip(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        font = painter.font()
-        font.setFamily("Bahnschrift SemiCondensed")
-        font.setBold(True)
-        font.setPointSizeF(10.0)
-        painter.setFont(font)
+        self._condensed_font(painter, 11.0, bold=True)
         painter.setPen(QColor(tokens["TEXT"]))
         painter.drawText(QRectF(15, 11, self.width() - 30, 20), Qt.AlignLeft, self._title)
-        font.setBold(False)
-        font.setPointSizeF(8.5)
-        painter.setFont(font)
+        self._condensed_font(painter, 9.5, bold=False)
         painter.setPen(QColor(tokens["MUTED"]))
         painter.drawText(QRectF(15, 32, self.width() - 30, 20), Qt.AlignLeft, self._subtitle)
 
-        self._item_rects = self._layout_rects()
-        for item, rect in zip(self._items, self._item_rects):
-            if item.state == "done":
-                border = QColor(tokens["ACCENT_BRIGHT"])
-                background = QColor(tokens["ACCENT"])
-            elif item.state == "open":
-                border = QColor(tokens["ACCENT"])
-                background = QColor(tokens["BG_INPUT"])
+        self._row_rects = []
+        top = self._paint_rows(painter, tokens, self._rows, self._ROWS_TOP)
+        if self._boss_rows:
+            self._condensed_font(painter, 9.0, bold=True)
+            painter.setPen(QColor(tokens["BOSS_GOLD"]))
+            painter.drawText(
+                QRectF(15, top + 5, self.width() - 30, 16), Qt.AlignLeft, "BOSS"
+            )
+            self._paint_rows(painter, tokens, self._boss_rows, top + self._SECTION_GAP)
+
+    def _paint_rows(
+        self,
+        painter: QPainter,
+        tokens: Mapping[str, str],
+        rows: Sequence[_InspectorRow],
+        top: int,
+    ) -> int:
+        width = self.width()
+        for index, row in enumerate(rows):
+            rect = QRect(10, top, width - 20, self._ROW_HEIGHT)
+            self._row_rects.append((rect, row))
+            boss = row.kind == "boss"
+            if row.state == "done":
+                box_fill = QColor(tokens["BOSS_GOLD" if boss else "ACCENT"])
+                box_border = QColor(tokens["BOSS_GOLD_BRIGHT" if boss else "ACCENT_BRIGHT"])
+                title_color = QColor(tokens["TEXT"])
+                detail_color = QColor(tokens["BOSS_GOLD_BRIGHT" if boss else "ACCENT_BRIGHT"])
+                icon_opacity = 1.0
+            elif row.state == "open":
+                box_fill = QColor(tokens["BG_INPUT"])
+                box_border = QColor(tokens["BOSS_GOLD" if boss else "ACCENT"])
+                title_color = QColor(tokens["TEXT"])
+                detail_color = QColor(tokens["MUTED"])
+                icon_opacity = 1.0
             else:
-                border = QColor(tokens["BORDER"])
-                background = QColor(tokens["BG_INPUT"])
-            painter.setBrush(background)
-            painter.setPen(QPen(border, 2.0 if item.kind == "boss" else 1.2))
-            radius = 4.0 if item.kind == "boss" else 9.0
-            painter.drawRoundedRect(QRectF(rect), radius, radius)
-            icon = self._source_pixmap(item.icon_path, 25)
+                box_fill = QColor(tokens["BG_INPUT"])
+                box_border = QColor(tokens["BOSS_GOLD_DIM" if boss else "BORDER"])
+                title_color = QColor(tokens["MUTED_DARK"])
+                detail_color = QColor(tokens["MUTED_DARK"])
+                icon_opacity = 0.38
+
+            box = QRectF(rect.left() + 5, rect.top() + 4, 22, 22)
+            painter.setBrush(box_fill)
+            painter.setPen(QPen(box_border, 1.2))
+            box_radius = 4.0 if boss else 6.0
+            painter.drawRoundedRect(box, box_radius, box_radius)
+            icon = self._source_pixmap(row.icon_path, 16)
             if not icon.isNull():
-                painter.drawPixmap(rect.x() + 6, rect.y() + 5, icon)
-            small = painter.font()
-            small.setFamily("Bahnschrift SemiCondensed")
-            small.setBold(True)
-            small.setPointSizeF(6.5)
-            painter.setFont(small)
-            painter.setPen(border)
-            painter.drawText(rect.adjusted(2, 21, -3, -2), Qt.AlignRight | Qt.AlignBottom, item.label)
+                painter.setOpacity(icon_opacity)
+                painter.drawPixmap(int(box.left()) + 3, int(box.top()) + 3, icon)
+                painter.setOpacity(1.0)
+
+            self._condensed_font(painter, 10.0, bold=False)
+            title_x = rect.left() + 37
+            title_advance = painter.fontMetrics().horizontalAdvance(row.title)
+            painter.setPen(title_color)
+            painter.drawText(
+                QRectF(title_x, rect.top(), rect.width() - 37, rect.height()),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                row.title,
+            )
+
+            if row.tag:
+                self._condensed_font(painter, 7.5, bold=True)
+                tag_width = painter.fontMetrics().horizontalAdvance(row.tag) + 10
+                tag_rect = QRectF(
+                    title_x + title_advance + 8, rect.center().y() - 7.5, tag_width, 15
+                )
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QPen(QColor(tokens["MUTED_DARK"]), 1.0))
+                painter.drawRoundedRect(tag_rect, 4.0, 4.0)
+                painter.setPen(QColor(tokens["MUTED"]))
+                painter.drawText(tag_rect, Qt.AlignCenter, row.tag)
+
+            self._condensed_font(painter, 9.0, bold=True)
+            detail_width = painter.fontMetrics().horizontalAdvance(row.detail)
+            painter.setPen(detail_color)
+            painter.drawText(
+                QRectF(rect.right() - 5 - detail_width, rect.top(), detail_width, rect.height()),
+                Qt.AlignRight | Qt.AlignVCenter,
+                row.detail,
+            )
+
+            if row.fraction is not None and row.state == "open" and rect.width() >= 330:
+                bar = QRectF(
+                    rect.right() - 5 - detail_width - 10 - 64,
+                    rect.center().y() - 2.5,
+                    64,
+                    5,
+                )
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(tokens["BG_INPUT"]))
+                painter.drawRoundedRect(bar, 2.5, 2.5)
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QPen(QColor(tokens["BORDER"]), 1.0))
+                painter.drawRoundedRect(bar.adjusted(0.5, 0.5, -0.5, -0.5), 2.5, 2.5)
+                filled = max(0.0, min(1.0, row.fraction))
+                if filled > 0.0:
+                    fill_rect = QRectF(bar)
+                    fill_rect.setWidth(max(5.0, bar.width() * filled))
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QColor(tokens["ACCENT_BRIGHT"]))
+                    painter.drawRoundedRect(fill_rect, 2.5, 2.5)
+
+            if index < len(rows) - 1:
+                separator = QColor(tokens["BORDER"])
+                separator.setAlpha(120)
+                painter.setPen(QPen(separator, 1.0))
+                painter.drawLine(
+                    rect.left() + 2, rect.bottom(), rect.right() - 2, rect.bottom()
+                )
+            top += self._ROW_HEIGHT
+        return top
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
-        for item, rect in zip(self._items, self._item_rects):
-            if rect.contains(event.position().toPoint()):
-                self.setToolTip(item.tooltip)
+        position = event.position().toPoint()
+        for rect, row in self._row_rects:
+            if rect.contains(position):
+                self.setToolTip(row.tooltip)
                 return super().mouseMoveEvent(event)
         self.setToolTip("")
         super().mouseMoveEvent(event)
@@ -743,10 +939,16 @@ class _ProgressMarkerStrip(QFrame):
 
 
 class _ResponsivePanelPair(QWidget):
-    def __init__(self, first: QWidget, second: QWidget, *, breakpoint: int) -> None:
+    def __init__(
+        self, first: QWidget, second: QWidget, *, breakpoint: int, fill: bool = False
+    ) -> None:
         super().__init__()
         self.setObjectName("careerResponsivePair")
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self._fill = fill
+        self.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Expanding if fill else QSizePolicy.Maximum,
+        )
         self._first = first
         self._second = second
         self._breakpoint = breakpoint
@@ -763,16 +965,21 @@ class _ResponsivePanelPair(QWidget):
         self._wide = wide
         self._layout.removeWidget(self._first)
         self._layout.removeWidget(self._second)
+        alignment = Qt.Alignment() if self._fill else Qt.AlignTop
         if wide:
-            self._layout.addWidget(self._first, 0, 0, Qt.AlignTop)
-            self._layout.addWidget(self._second, 0, 1, Qt.AlignTop)
+            self._layout.addWidget(self._first, 0, 0, alignment)
+            self._layout.addWidget(self._second, 0, 1, alignment)
             self._layout.setColumnStretch(0, 1)
             self._layout.setColumnStretch(1, 1)
+            self._layout.setRowStretch(0, 1 if self._fill else 0)
+            self._layout.setRowStretch(1, 0)
         else:
-            self._layout.addWidget(self._first, 0, 0, Qt.AlignTop)
-            self._layout.addWidget(self._second, 1, 0, Qt.AlignTop)
+            self._layout.addWidget(self._first, 0, 0, alignment)
+            self._layout.addWidget(self._second, 1, 0, alignment)
             self._layout.setColumnStretch(0, 1)
             self._layout.setColumnStretch(1, 0)
+            self._layout.setRowStretch(0, 1 if self._fill else 0)
+            self._layout.setRowStretch(1, 1 if self._fill else 0)
         self.updateGeometry()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
@@ -781,98 +988,24 @@ class _ResponsivePanelPair(QWidget):
 
 
 class _ChapterInspectorPage(QFrame):
-    """Selected chapter details backed by one CareerProgressSummary."""
+    """Selected chapter dossier lists backed by one CareerProgressSummary.
+
+    Identity and gate progress live on the Hero (which follows the selected
+    stage), so this page deliberately has no header of its own."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("careerInspector")
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self._wide: Optional[bool] = None
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 14, 18, 16)
+        root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(12)
-        root.setAlignment(Qt.AlignTop)
-
-        self._header = QGridLayout()
-        self._header.setContentsMargins(0, 0, 0, 0)
-        self._header.setHorizontalSpacing(16)
-        self._header.setVerticalSpacing(8)
-        self._header_copy = QWidget()
-        self._header_copy.setObjectName("careerInspectorHeaderCopy")
-        self._header_copy.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        copy_layout = QVBoxLayout(self._header_copy)
-        copy_layout.setContentsMargins(0, 0, 0, 0)
-        copy_layout.setSpacing(2)
-        self.eyebrow = QLabel("CHAPTER INSPECTOR")
-        self.eyebrow.setObjectName("careerInspectorEyebrow")
-        copy_layout.addWidget(self.eyebrow)
-        title_row = QHBoxLayout()
-        title_row.setSpacing(8)
-        self.title = QLabel("OPEN A SAVE")
-        self.title.setObjectName("careerInspectorTitle")
-        title_row.addWidget(self.title)
-        self.status = QLabel("NO DATA")
-        self.status.setObjectName("careerInspectorStatus")
-        self.status.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        title_row.addWidget(self.status)
-        title_row.addStretch(1)
-        copy_layout.addLayout(title_row)
-        self.copy = QLabel("Career progress will appear here.")
-        self.copy.setObjectName("careerInspectorCopy")
-        self.copy.setWordWrap(True)
-        copy_layout.addWidget(self.copy)
-
-        self.lifetime = QFrame()
-        self.lifetime.setObjectName("careerLifetimeStrip")
-        self.lifetime.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        lifetime_layout = QHBoxLayout(self.lifetime)
-        lifetime_layout.setContentsMargins(12, 8, 12, 8)
-        lifetime_layout.setSpacing(13)
-        self.lifetime_races = QLabel("RACES —")
-        self.lifetime_milestones = QLabel("MILESTONES —")
-        self.lifetime_bounty = QLabel("BOUNTY —")
-        self.prologue = QLabel("PROLOGUE —")
-        for label in (
-            self.lifetime_races,
-            self.lifetime_milestones,
-            self.lifetime_bounty,
-            self.prologue,
-        ):
-            label.setObjectName("careerLifetimeValue")
-            lifetime_layout.addWidget(label)
-
-        root.addLayout(self._header)
-        self.race_strip = _ProgressMarkerStrip("RACE SCHEDULE")
-        self.milestone_strip = _ProgressMarkerStrip("MILESTONES")
+        self.race_list = _ProgressRowList("RACE SCHEDULE")
+        self.milestone_list = _ProgressRowList("MILESTONES")
         self._body = _ResponsivePanelPair(
-            self.race_strip, self.milestone_strip, breakpoint=1400
+            self.race_list, self.milestone_list, breakpoint=1150, fill=True
         )
         root.addWidget(self._body)
-        self._reflow_header(False)
-
-    def _reflow_header(self, wide: bool) -> None:
-        if self._wide == wide:
-            return
-        self._wide = wide
-        self._header.removeWidget(self._header_copy)
-        self._header.removeWidget(self.lifetime)
-        self._header.addWidget(self._header_copy, 0, 0)
-        self._header.addWidget(self.lifetime, 0 if wide else 1, 1 if wide else 0)
-        self._header.setColumnStretch(0, 1)
-        self._header.setColumnStretch(1, 0)
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
-        self._reflow_header(event.size().width() >= 1400)
-        super().resizeEvent(event)
-        QTimer.singleShot(0, self._sync_stack_height)
-
-    def _sync_stack_height(self) -> None:
-        stack = self.parentWidget()
-        if not isinstance(stack, AnimatedStackedWidget) or stack.currentWidget() is not self:
-            return
-        desired = max(self.sizeHint().height(), self.minimumSizeHint().height())
-        if stack.height() != desired:
-            stack.setFixedHeight(desired)
 
     def set_progress(
         self,
@@ -880,129 +1013,176 @@ class _ChapterInspectorPage(QFrame):
         stage: Optional[int],
     ) -> None:
         if summary is None or stage is None:
-            self.eyebrow.setText("CHAPTER INSPECTOR")
-            self.title.setText("OPEN A SAVE")
-            self.status.setText("NO DATA")
-            self.status.setProperty("state", "locked")
-            self.copy.setText("Career progress will appear here.")
-            self.lifetime_races.setText("RACES —")
-            self.lifetime_milestones.setText("MILESTONES —")
-            self.lifetime_bounty.setText("BOUNTY —")
-            self.prologue.setText("PROLOGUE —")
-            self.race_strip.set_items("No race table loaded", ())
-            self.milestone_strip.set_items("No milestone table loaded", ())
-            self._polish_status()
+            self.race_list.set_items("No race table loaded", ())
+            self.milestone_list.set_items("No milestone table loaded", ())
             return
 
         chapter = summary.chapter(stage)
-        state = summary.stage_state(stage)
-        status_text = {
-            "defeated": "DEFEATED",
-            "current": "CURRENT TARGET",
-            "boss_ready": "BOSS READY",
-            "locked": "LOCKED",
-        }[state]
-        if summary.endgame and stage == 1:
-            status_text = "BLACKLIST CLEARED"
-        self.eyebrow.setText(f"CHAPTER INSPECTOR // {status_text}")
-        self.title.setText(_stage_title(stage).replace(":", "  · ").upper())
-        self.status.setText(status_text)
-        self.status.setProperty("state", state)
         requirement = chapter.requirement
-        self.copy.setText(
-            f"Challenge gate: {requirement.races} race wins, "
-            f"{requirement.milestones} milestones and {_fmt_compact(requirement.bounty)} bounty."
-        )
-        self.lifetime_races.setText(
-            f"RACES {summary.lifetime_race_wins}/{summary.lifetime_race_total}"
-        )
-        self.lifetime_milestones.setText(
-            f"MILESTONES {summary.lifetime_milestone_wins}/{summary.lifetime_milestone_total}"
-        )
-        self.lifetime_bounty.setText(f"BOUNTY {_fmt_compact(summary.total_bounty)}")
-        prologue_done = sum(record.is_completed for record in summary.prologue_races)
-        self.prologue.setText(f"PROLOGUE {prologue_done}/{len(summary.prologue_races)}")
 
-        race_items = []
-        for index, record in enumerate(sorted(chapter.races, key=_event_sort_key), 1):
-            race_items.append(_race_marker(record, f"{index:02d}", boss=False))
-        for index, record in enumerate(sorted(chapter.boss_races, key=_event_sort_key), 1):
-            race_items.append(_race_marker(record, f"B{index}", boss=True))
-        self.race_strip.set_items(
-            f"{chapter.race_wins}/{requirement.races} required  ·  "
-            f"{len(chapter.races)} available  ·  {len(chapter.boss_races)} boss",
-            race_items,
+        world_rank = {
+            _norm_event_id(event_id): position
+            for position, event_id in enumerate(
+                rival_challenge.WORLD_ORDER.get(stage, ())
+            )
+        }
+        race_rows = [
+            _race_row(record, boss=False)
+            for record in sorted(
+                chapter.races,
+                key=lambda r: (
+                    world_rank.get(_norm_event_id(r.event_id), 99),
+                    _event_sort_key(r),
+                ),
+            )
+        ]
+        boss_rows = _boss_series_rows(stage, chapter.boss_races)
+        self.race_list.set_items(
+            f"{chapter.race_wins}/{requirement.races} wins  ·  "
+            f"{len(chapter.races)} events  ·  {len(boss_rows)} boss",
+            race_rows,
+            boss_rows,
         )
 
-        milestone_items = []
+        milestone_rows = []
         for index, record in enumerate(chapter.milestones, 1):
-            status = "awarded" if record.is_awarded else f"state {record.state}"
             type_info = milestone_names.type_label_and_unit(record.type_key)
             title = type_info[0] if type_info is not None else f"Milestone {index}"
-            milestone_items.append(_InspectorMarker(
-                label=f"M{index}",
-                state="done" if record.is_awarded else "open",
+            required = _milestone_display(record.type_key, record.required_value)
+            recorded = _milestone_display(record.type_key, record.recorded_value)
+            if record.is_awarded:
+                state = "done"
+                detail = f"AWARDED · {recorded}"
+                fraction: Optional[float] = None
+            else:
+                state = "open"
+                detail = f"{recorded} / {required}"
+                fraction = (
+                    record.recorded_value / record.required_value
+                    if record.required_value > 0
+                    else None
+                )
+            status = "awarded" if record.is_awarded else f"state {record.state}"
+            milestone_rows.append(_InspectorRow(
+                title=title,
+                tag="",
+                state=state,
                 kind="milestone",
                 icon_path=_milestone_icon(record.type_key),
+                detail=detail,
+                fraction=fraction,
                 tooltip=(
                     f"{title} — {status}\n"
-                    f"Required {_milestone_display(record.type_key, record.required_value)} · "
-                    f"recorded {_milestone_display(record.type_key, record.recorded_value)}"
+                    f"Required {required} · recorded {recorded}"
                 ),
             ))
-        for index, trap in enumerate(chapter.speedtraps, 1):
+        traps_in_route_order = sorted(
+            chapter.speedtraps,
+            key=lambda trap: milestone_names.speedtrap_ordinal(trap.trap_hash) or 99,
+        )
+        for index, trap in enumerate(traps_in_route_order, 1):
             ordinal = milestone_names.speedtrap_ordinal(trap.trap_hash) or index
             required_mph = trap.required_speed * 2.2369362920544
-            best = (
-                f"{trap.best_speed * 2.2369362920544:.1f} mph"
-                if trap.best_speed > 0
-                else "—"
-            )
-            milestone_items.append(_InspectorMarker(
-                label=f"S{ordinal}",
-                state="done" if trap.is_complete else "open",
+            best_mph = trap.best_speed * 2.2369362920544
+            best = f"{best_mph:.1f} mph" if trap.best_speed > 0 else "—"
+            # The 0..5 counter is chapter-wide (shared by every trap record of
+            # the bin), so it never appears on individual rows — only the
+            # trap's own speeds do; the shared counter stays in the tooltip.
+            if trap.is_complete:
+                state = "done"
+                detail = f"DONE · BEST {best_mph:.0f} MPH" if trap.best_speed > 0 else "DONE"
+                fraction: Optional[float] = None
+            else:
+                state = "open"
+                if trap.best_speed > 0:
+                    detail = f"BEST {best_mph:.0f} / {required_mph:.0f} MPH"
+                    fraction = best_mph / required_mph if required_mph > 0 else None
+                else:
+                    detail = f"REQ {required_mph:.0f} MPH"
+                    fraction = None
+            milestone_rows.append(_InspectorRow(
+                title=f"Speedtrap {ordinal}",
+                tag="",
+                state=state,
                 kind="trap",
                 icon_path=game_icon_path("trap"),
+                detail=detail,
+                fraction=fraction,
                 tooltip=(
                     f"Speedtrap {ordinal} — required {required_mph:.1f} mph\n"
-                    f"Progress {trap.counter}/{career_progress.SPEEDTRAP_COMPLETE_COUNT} · best {best}"
+                    f"Chapter counter {trap.counter}/{career_progress.SPEEDTRAP_COMPLETE_COUNT}"
+                    f" · best {best}"
                 ),
             ))
-        self.milestone_strip.set_items(
-            f"{chapter.milestone_wins}/{requirement.milestones} required  ·  "
+        self.milestone_list.set_items(
+            f"{chapter.milestone_wins}/{requirement.milestones} wins  ·  "
             f"{chapter.milestone_total} available",
-            milestone_items,
+            milestone_rows,
         )
-        self._polish_status()
-
-    def _polish_status(self) -> None:
-        self.status.style().unpolish(self.status)
-        self.status.style().polish(self.status)
 
 
-def _race_marker(
-    record: career_progress.RaceRecord, label: str, *, boss: bool
-) -> _InspectorMarker:
-    suffix = " (reversed)" if record.is_reversed else ""
-    title = f"{'Boss race' if boss else 'Event'} {record.event_id}{suffix}"
+def _fmt_race_time(seconds: float) -> str:
+    if seconds < 60.0:
+        return f"{seconds:.2f}"
+    minutes = int(seconds // 60)
+    return f"{minutes}:{seconds - minutes * 60:05.2f}"
+
+
+def _race_best_result(record: career_progress.RaceRecord, type_label: str) -> Optional[str]:
+    """Human reading of the race-table high_score field.
+
+    The u32 stores IEEE-754 float bits: the best TIME in seconds for every
+    mode except speedtrap races, which accumulate a speed score (the HUD's
+    running total). Out-of-range values fall back to the raw int."""
+    if record.high_score == 0:
+        return None
+    value = struct.unpack("<f", struct.pack("<I", record.high_score))[0]
+    if not 1.0 <= value < 100_000.0:
+        return f"{record.high_score:,}"
+    if type_label == "Speedtrap":
+        return f"SCORE {value:,.0f}"
+    return _fmt_race_time(value)
+
+
+def _race_row(record: career_progress.RaceRecord, *, boss: bool) -> _InspectorRow:
+    event = record.event_id or f"slot {record.index}"
+    fallback = f"Event {event[:-2] if event.endswith('.r') else event}"
+    # A few save slots track a route with a different EventID (slot 8.3.2
+    # drives 13.3.1.r); name, type and icon follow the DRIVEN route.
+    route_id = rival_challenge.ROUTE_REMAP.get(record.event_id or "", record.event_id)
+    title = race_display_names.display_name(route_id) or fallback
+    type_label = race_display_names.type_label(route_id) or "Event"
+    kind_line = f"{type_label} · {record.event_id}" + (" · boss race" if boss else "")
+    if route_id != record.event_id:
+        kind_line += f" · route {route_id}"
     if record.is_completed:
         state = "done"
-        detail = (
-            f"completed\nHigh score {record.high_score:,} · "
+        best = _race_best_result(record, type_label)
+        detail = f"WON · {best}" if best else "WON"
+        tooltip_detail = (
+            f"completed{f' · best {best}' if best else ''}\n"
             f"top {record.top_speed:.1f} · avg {record.average_speed:.1f}"
         )
     elif record.flags & 0x10:
         state = "open"
-        detail = "available"
+        detail = "AVAILABLE"
+        tooltip_detail = "available"
     else:
         state = "locked"
-        detail = "locked"
-    return _InspectorMarker(
-        label=label,
+        detail = "LOCKED"
+        tooltip_detail = "locked"
+    reversed_route = record.is_reversed or bool(route_id and route_id.endswith(".r"))
+    return _InspectorRow(
+        title=title,
+        tag="REVERSED" if reversed_route else "",
         state=state,
         kind="boss" if boss else "race",
-        icon_path=game_icon_path("boss_race" if boss else "race"),
-        tooltip=f"{title} — {detail}",
+        icon_path=game_icon_path(
+            "boss_race" if boss else _race_type_icon(route_id)
+        ),
+        detail=detail,
+        fraction=None,
+        tooltip=f"{title} — {tooltip_detail}\n{kind_line}",
     )
 
 
@@ -1029,6 +1209,7 @@ class CareerMixin:
         self._career_snapshot_cache: Optional[bytes] = None
         self._career_summary_cache: Optional[career_progress.CareerProgressSummary] = None
         self._career_selected_stage: Optional[int] = None
+        self._career_defeated_stamp: Optional[QPixmap] = None
 
         # ── Current target hero + compact progression summary ──
         self.career_hero = _CareerHero()
@@ -1037,9 +1218,11 @@ class CareerMixin:
         hero_layout.setSpacing(14)
 
         hero_copy = QVBoxLayout()
+        hero_copy.setContentsMargins(0, 34, 0, 0)
         hero_copy.setSpacing(3)
-        eyebrow = QLabel("CAREER // BLACKLIST DOSSIER")
+        eyebrow = QLabel("BLACKLIST")
         eyebrow.setObjectName("careerHeroEyebrow")
+        eyebrow.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         hero_copy.addWidget(eyebrow)
 
         headline = QHBoxLayout()
@@ -1050,6 +1233,7 @@ class CareerMixin:
         headline.addWidget(self.career_stage_value)
         self.career_boss_value = QLabel("NO SAVE LOADED")
         self.career_boss_value.setObjectName("careerHeroBoss")
+        self.career_boss_value.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         headline.addWidget(self.career_boss_value)
         self.career_hero_status = QLabel("NO DATA")
         self.career_hero_status.setObjectName("careerHeroStatus")
@@ -1057,16 +1241,20 @@ class CareerMixin:
         headline.addWidget(self.career_hero_status, 0, Qt.AlignVCenter)
         headline.addStretch(1)
         hero_copy.addLayout(headline)
-
-        self.career_stage_sub = QLabel("Open a save to inspect its career.")
-        self.career_stage_sub.setObjectName("careerHeroSub")
-        hero_copy.addWidget(self.career_stage_sub)
+        self.career_hero_tagline = QLabel("")
+        self.career_hero_tagline.setObjectName("careerHeroTagline")
+        self.career_hero_tagline.setWordWrap(True)
+        self.career_hero_tagline.setMaximumWidth(640)
+        self.career_hero_tagline.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.career_hero_tagline.setVisible(False)
+        hero_copy.addWidget(self.career_hero_tagline)
+        hero_copy.addStretch(1)
 
         metrics = QHBoxLayout()
         metrics.setSpacing(8)
         self.career_races_value = QLabel("-")
         self.career_races_metric = self._build_career_hero_metric(
-            "RACES TO CHALLENGE", self.career_races_value, "race"
+            "RACE WINS", self.career_races_value, "race"
         )
         metrics.addWidget(self.career_races_metric)
         self.career_milestones_value = QLabel("-")
@@ -1081,10 +1269,13 @@ class CareerMixin:
         metrics.addWidget(self.career_bounty_metric)
         metrics.addStretch(1)
         hero_copy.addLayout(metrics)
+        hero_copy.addSpacing(12)
 
         # ── View switch: safe progress overview | stage change ──
         self.career_view_switch = AnimatedSegmentedControl(
-            ("PROGRESS", "CHANGE STAGE"), button_object_name="careerViewTab"
+            ("PROGRESS", "CHANGE RIVAL"),
+            button_object_name="careerViewTab",
+            fixed_height=44,
         )
         self.career_view_rapsheet_btn = self.career_view_switch.button(0)
         self.career_view_transplant_btn = self.career_view_switch.button(1)
@@ -1116,9 +1307,10 @@ class CareerMixin:
         frame = QFrame()
         frame.setObjectName("careerHeroMetric")
         frame.setProperty("met", False)
+        frame.setFixedSize(188, 72)
         metric_layout = QHBoxLayout(frame)
-        metric_layout.setContentsMargins(9, 5, 10, 5)
-        metric_layout.setSpacing(7)
+        metric_layout.setContentsMargins(12, 9, 14, 9)
+        metric_layout.setSpacing(10)
 
         icon_path = game_icon_path(icon_name)
         if icon_path is not None:
@@ -1126,11 +1318,11 @@ class CareerMixin:
             if not pixmap.isNull():
                 icon = QLabel()
                 icon.setObjectName("careerHeroMetricIcon")
-                icon.setFixedSize(24, 24)
+                icon.setFixedSize(32, 32)
                 icon.setAlignment(Qt.AlignCenter)
                 icon.setPixmap(self._tight_icon(
-                    icon_path, QSize(22, 22)
-                ).pixmap(22, 22))
+                    icon_path, QSize(30, 30)
+                ).pixmap(30, 30))
                 metric_layout.addWidget(icon, 0, Qt.AlignVCenter)
 
         copy = QVBoxLayout()
@@ -1329,13 +1521,15 @@ class CareerMixin:
         host_layout.addWidget(self.career_timeline)
 
         self.career_inspector_stack = AnimatedStackedWidget(duration_ms=150)
-        self.career_inspector_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.career_inspector_stack.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
         self.career_inspector_pages = (_ChapterInspectorPage(), _ChapterInspectorPage())
         for page in self.career_inspector_pages:
             self.career_inspector_stack.addWidget(page)
         self.career_inspector_stack.setCurrentIndex(0)
-        host_layout.addWidget(self.career_inspector_stack, 0, Qt.AlignTop)
-        host_layout.addStretch(1)
+        host_layout.addWidget(self.career_inspector_stack, 1)
+        host_layout.addWidget(self._build_career_totals_strip())
 
         scroll = QScrollArea()
         scroll.setObjectName("cardScroll")
@@ -1343,6 +1537,52 @@ class CareerMixin:
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setWidget(host)
         return scroll
+
+    def _build_career_totals_strip(self) -> QFrame:
+        strip = QFrame()
+        strip.setObjectName("careerTotalsStrip")
+        strip.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row = QHBoxLayout(strip)
+        row.setContentsMargins(24, 11, 24, 11)
+        row.setSpacing(12)
+        self.career_total_races_value = QLabel("—")
+        self.career_total_milestones_value = QLabel("—")
+        self.career_total_bounty_value = QLabel("—")
+        self.career_total_prologue_value = QLabel("—")
+        cells = (
+            ("race", "RACES", self.career_total_races_value),
+            ("milestone", "MILESTONES", self.career_total_milestones_value),
+            ("bounty", "BOUNTY", self.career_total_bounty_value),
+            ("rival_race", "PROLOGUE", self.career_total_prologue_value),
+        )
+        row.addStretch(1)
+        for position, (icon_name, caption, value) in enumerate(cells):
+            if position:
+                row.addStretch(2)
+            cell = QHBoxLayout()
+            cell.setSpacing(10)
+            icon_path = game_icon_path(icon_name)
+            if icon_path is not None:
+                icon = QLabel()
+                icon.setObjectName("careerTotalsIcon")
+                icon.setFixedSize(26, 26)
+                icon.setAlignment(Qt.AlignCenter)
+                icon.setPixmap(self._tight_icon(
+                    icon_path, QSize(24, 24)
+                ).pixmap(24, 24))
+                cell.addWidget(icon, 0, Qt.AlignVCenter)
+            copy = QVBoxLayout()
+            copy.setContentsMargins(0, 0, 0, 0)
+            copy.setSpacing(0)
+            caption_label = QLabel(caption)
+            caption_label.setObjectName("careerTotalsCaption")
+            value.setObjectName("careerTotalsValue")
+            copy.addWidget(caption_label)
+            copy.addWidget(value)
+            cell.addLayout(copy)
+            row.addLayout(cell)
+        row.addStretch(1)
+        return strip
 
     def _on_career_view_changed(self, index: int) -> None:
         target = 1 if index == 0 else 0
@@ -1385,7 +1625,32 @@ class CareerMixin:
         self.career_inspector_pages[current].set_progress(summary, stage)
         self.career_inspector_pages[current].updateGeometry()
         self.career_inspector_stack.updateGeometry()
+        self._update_career_totals(summary)
         self._update_career_hero(summary, stage)
+
+    def _update_career_totals(
+        self, summary: Optional[career_progress.CareerProgressSummary]
+    ) -> None:
+        if summary is None:
+            for label in (
+                self.career_total_races_value,
+                self.career_total_milestones_value,
+                self.career_total_bounty_value,
+                self.career_total_prologue_value,
+            ):
+                label.setText("—")
+            return
+        self.career_total_races_value.setText(
+            f"{summary.lifetime_race_wins} / {summary.lifetime_race_total}"
+        )
+        self.career_total_milestones_value.setText(
+            f"{summary.lifetime_milestone_wins} / {summary.lifetime_milestone_total}"
+        )
+        self.career_total_bounty_value.setText(_fmt_compact(summary.total_bounty))
+        prologue_done = sum(record.is_completed for record in summary.prologue_races)
+        self.career_total_prologue_value.setText(
+            f"{prologue_done} / {len(summary.prologue_races)}"
+        )
 
     def _update_career_hero(
         self,
@@ -1396,9 +1661,10 @@ class CareerMixin:
             self.career_hero.set_stage(None)
             self.career_stage_value.setText("-")
             self.career_boss_value.setText("NO SAVE LOADED")
-            self.career_stage_sub.setText("Open a save to inspect its career.")
-            self.career_hero_status.setText("NO DATA")
-            self.career_hero_status.setProperty("state", "locked")
+            self.career_hero_tagline.setVisible(False)
+            self.career_hero_tagline.clear()
+            self.career_hero_tagline.setToolTip("")
+            self._set_career_hero_status("NO DATA", "locked")
             for frame, label in (
                 (self.career_races_metric, self.career_races_value),
                 (self.career_milestones_metric, self.career_milestones_value),
@@ -1423,17 +1689,16 @@ class CareerMixin:
         self.career_hero.set_stage(stage)
         self.career_stage_value.setText(f"#{stage}")
         self.career_boss_value.setText(boss.upper())
-        self.career_hero_status.setText(status_text)
-        self.career_hero_status.setProperty("state", state)
-        if summary.endgame and stage == 1:
-            sub = "Razor is down · career complete"
-        elif stage == summary.current_stage:
-            sub = f"TO CHALLENGE {boss.upper()} · {15 - stage} RIVALS DOWN"
-        elif stage > summary.current_stage:
-            sub = "ARCHIVE VIEW · COMPLETED CHAPTER"
+        tagline = rival_bios.tagline(stage)
+        if tagline:
+            self.career_hero_tagline.setText(tagline)
+            self.career_hero_tagline.setToolTip(rival_bios.bio(stage) or "")
+            self.career_hero_tagline.setVisible(True)
         else:
-            sub = "LOCKED CHAPTER · READ-ONLY PREVIEW"
-        self.career_stage_sub.setText(sub)
+            self.career_hero_tagline.setVisible(False)
+            self.career_hero_tagline.clear()
+            self.career_hero_tagline.setToolTip("")
+        self._set_career_hero_status(status_text, state)
         self._set_career_metric(
             self.career_races_metric,
             self.career_races_value,
@@ -1465,6 +1730,98 @@ class CareerMixin:
     def _polish_career_hero_status(self) -> None:
         self.career_hero_status.style().unpolish(self.career_hero_status)
         self.career_hero_status.style().polish(self.career_hero_status)
+
+    def _set_career_hero_status(self, text: str, state: str) -> None:
+        label = self.career_hero_status
+        label.clear()
+        label.setProperty("state", state)
+        label.setAccessibleName(text)
+        label.setToolTip(text if state == "defeated" else "")
+        label.setHidden(state == "current")
+
+        if state == "current":
+            label.setProperty("stamp", False)
+            label.setMinimumSize(0, 0)
+            label.setMaximumSize(QSize(16777215, 16777215))
+            label.updateGeometry()
+            return
+
+        stamp = self._defeated_stamp_pixmap() if state == "defeated" else QPixmap()
+        if not stamp.isNull():
+            label.setProperty("stamp", True)
+            label.setPixmap(stamp)
+            label.setFixedSize(stamp.size())
+        else:
+            label.setProperty("stamp", False)
+            label.setMinimumSize(0, 0)
+            label.setMaximumSize(QSize(16777215, 16777215))
+            label.setText(text)
+        label.updateGeometry()
+
+    def _defeated_stamp_pixmap(self) -> QPixmap:
+        if self._career_defeated_stamp is not None:
+            return self._career_defeated_stamp
+
+        path = game_icon_path("status_defeated")
+        if path is None:
+            self._career_defeated_stamp = QPixmap()
+            return self._career_defeated_stamp
+
+        # The rotated artwork needs a generous transparent gutter.  Keeping the
+        # source a little smaller than the label also prevents the ragged stamp
+        # border from reading as clipped against the following empty space.
+        source = self._tight_icon(path, QSize(146, 36)).pixmap(146, 36)
+        if source.isNull():
+            self._career_defeated_stamp = QPixmap()
+            return self._career_defeated_stamp
+
+        def tinted_layer(color: str) -> QPixmap:
+            layer = QPixmap(source.size())
+            layer.fill(Qt.transparent)
+            layer_painter = QPainter(layer)
+            layer_painter.drawPixmap(0, 0, source)
+            layer_painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            layer_painter.fillRect(layer.rect(), QColor(color))
+            layer_painter.end()
+            return layer
+
+        # The game stamp is not a flat red mask: weak ink reads almost black while
+        # dense lettering and frame edges carry the brighter crimson.  Layering the
+        # same worn mask in two tones recreates that range on our uniform navy Hero
+        # instead of making every variation look like blue background transparency.
+        dark_ink = tinted_layer("#430506")
+        bright_ink = tinted_layer("#930A0A")
+        inked = QPixmap(source.size())
+        inked.fill(Qt.transparent)
+        painter = QPainter(inked)
+        backing = QPainterPath()
+        backing.moveTo(3.0, 5.0)
+        backing.lineTo(141.0, 1.0)
+        backing.lineTo(145.0, 27.0)
+        backing.lineTo(139.0, 33.0)
+        backing.lineTo(7.0, 35.0)
+        backing.lineTo(1.0, 30.0)
+        backing.closeSubpath()
+        painter.fillPath(backing, QColor(7, 8, 9, 234))
+        painter.drawPixmap(0, 0, dark_ink)
+        painter.drawPixmap(0, 0, bright_ink)
+        painter.end()
+
+        rotated = inked.transformed(
+            QTransform().rotate(-4.0), Qt.SmoothTransformation
+        )
+        canvas = QPixmap(180, 56)
+        canvas.fill(Qt.transparent)
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.drawPixmap(
+            (canvas.width() - rotated.width()) // 2,
+            (canvas.height() - rotated.height()) // 2,
+            rotated,
+        )
+        painter.end()
+        self._career_defeated_stamp = canvas
+        return canvas
 
     def _build_career_rap_sheet_view(self) -> QWidget:
         host = QWidget()
@@ -1823,21 +2180,28 @@ class CareerMixin:
         self, record: career_progress.RaceRecord, *, boss_race: bool = False
     ) -> QFrame:
         suffix = " (reversed)" if record.is_reversed else ""
-        prefix = "Boss race — route " if boss_race else "Event "
-        title = f"{prefix}{record.event_id}{suffix}"
+        route_id = rival_challenge.ROUTE_REMAP.get(
+            record.event_id or "", record.event_id
+        )
+        name = race_display_names.display_name(route_id)
+        type_label = race_display_names.type_label(route_id) or "Event"
+        prefix = "Boss race — " if boss_race else ""
+        title = f"{prefix}{name or f'Event {record.event_id}'}{suffix}"
+        kind_line = f"\n{type_label} · {record.event_id}"
         if record.is_completed:
             state = "done"
+            best = _race_best_result(record, type_label)
             tooltip = (
-                f"{title} — completed\n"
-                f"high score {record.high_score:,}\n"
+                f"{title} — completed{f' · best {best}' if best else ''}\n"
                 f"top {record.top_speed:.1f} · avg {record.average_speed:.1f}"
+                f"{kind_line}"
             )
         elif record.flags & 0x10:
             state = "open"
-            tooltip = f"{title} — available"
+            tooltip = f"{title} — available{kind_line}"
         else:
             state = "locked"
-            tooltip = f"{title} — locked"
+            tooltip = f"{title} — locked{kind_line}"
         return self._rap_dot(state, tooltip, kind="race", boss=boss_race)
 
     # ── Library / list state ───────────────────────────────────
@@ -1930,7 +2294,6 @@ class CareerMixin:
             self.career_hero.set_stage(None)
             self.career_stage_value.setText("-")
             self.career_boss_value.setText("NO SAVE LOADED")
-            self.career_stage_sub.setText("Open a save to inspect its career.")
             self.career_rivals_value.setText("-")
             self.career_races_value.setText("-")
             self.career_milestones_value.setText("-")
@@ -1940,16 +2303,11 @@ class CareerMixin:
             self.career_stage_value.setText(f"#{current_bin}")
             if endgame:
                 self.career_boss_value.setText("BLACKLIST CLEARED")
-                self.career_stage_sub.setText("Razor is down — career complete")
                 self.career_rivals_value.setText("15 / 15")
             else:
                 boss = BLACKLIST_BOSS_NAMES.get(current_bin, "Unknown")
                 self.career_boss_value.setText(boss.upper())
                 defeated = max(0, 15 - current_bin)
-                remaining = max(0, current_bin - 1)
-                self.career_stage_sub.setText(
-                    f"Current target · {defeated} down · {remaining} still ahead"
-                )
                 self.career_rivals_value.setText(f"{defeated} / 15")
             races = career_progress.parse_races(data)
             if races is None:

@@ -381,6 +381,19 @@ def _derive_semantic_status_tokens(tokens: dict[str, str]) -> dict[str, str]:
         "ACTIVE_CAR_BORDER": derived["STATUS_ACTIVE_BORDER"],
         "ACTIVE_CAR": derived["STATUS_ACTIVE_FG"],
     })
+
+    # Boss-gold family: fixed canon hue instead of an accent seed, because boss
+    # identity must stay gold on every preset (accent-seeded "gold" turns blue
+    # on Blueprint). Shades still mix with the preset's bg/text so the tone
+    # sits inside each theme's tonality.
+    boss_seed = "#D4A853"
+    derived.update({
+        "BOSS_GOLD": _mix(boss_seed, text, 0.06),
+        "BOSS_GOLD_BRIGHT": _mix(boss_seed, text, 0.30),
+        "BOSS_GOLD_DIM": _mix(boss_seed, bg, 0.56),
+        "BOSS_GOLD_BG": _mix(bg, boss_seed, 0.16),
+        "BOSS_GOLD_BORDER": _mix(bg, boss_seed, 0.50),
+    })
     return derived
 
 
@@ -1244,26 +1257,28 @@ QFrame#careerHero QLabel {{
 QLabel#careerHeroEyebrow {{
     color: {ACCENT_BRIGHT};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 1.8px;
 }}
 QLabel#careerHeroRank {{
     color: {ACCENT_BRIGHT};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 32px;
+    font-size: 46px;
     font-weight: 700;
 }}
 QLabel#careerHeroBoss {{
     color: {TEXT};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 27px;
+    font-size: 42px;
     font-weight: 700;
     letter-spacing: 1.2px;
 }}
-QLabel#careerHeroSub {{
+QLabel#careerHeroTagline {{
+    background: transparent;
     color: {MUTED};
-    font-size: 11px;
+    font-size: 13px;
+    letter-spacing: 0.2px;
 }}
 QFrame#careerHeroMetric {{
     background: {BG_INPUT};
@@ -1273,12 +1288,12 @@ QFrame#careerHeroMetric {{
 QLabel#careerHeroMetricValue {{
     color: {TEXT};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 700;
 }}
 QLabel#careerHeroMetricLabel {{
     color: {MUTED_DARK};
-    font-size: 8.5px;
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.8px;
 }}
@@ -1290,10 +1305,10 @@ QPushButton#careerViewTab {{
     background: transparent;
     border: none;
     border-radius: {RADIUS_MD};
-    padding: 5px 14px;
+    padding: 7px 16px;
     color: {MUTED};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.9px;
 }}
@@ -1558,7 +1573,7 @@ QLabel#rapFootnote {{
 }}
 /* Career v2: image-led hero, timeline and one chapter inspector. */
 QWidget#careerCanvas, QWidget#careerProgressView,
-QWidget#careerResponsivePair, QWidget#careerInspectorHeaderCopy {{
+QWidget#careerResponsivePair {{
     background: transparent;
 }}
 QPushButton#careerViewTab, QPushButton#careerVariantButton {{
@@ -1573,34 +1588,37 @@ QFrame#careerHeroMetric[met="true"] {{
 QFrame#careerHeroMetric[met="true"] QLabel#careerHeroMetricValue {{
     color: {STATUS_SUCCESS_FG};
 }}
-QLabel#careerHeroStatus, QLabel#careerInspectorStatus {{
+QLabel#careerHeroStatus {{
     background: {STATUS_NEUTRAL_BG};
     border: 1px solid {STATUS_NEUTRAL_BORDER};
     border-radius: {RADIUS_MD};
-    padding: 3px 8px;
+    padding: 4px 10px;
     color: {STATUS_NEUTRAL_FG};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.8px;
 }}
-QLabel#careerHeroStatus[state="current"],
-QLabel#careerInspectorStatus[state="current"] {{
+QLabel#careerHeroStatus[state="current"] {{
     background: {BG_NAV_ACTIVE};
     border-color: {BORDER_NAV_ACTIVE};
     color: {TEXT_NAV_ACTIVE};
 }}
-QLabel#careerHeroStatus[state="boss_ready"],
-QLabel#careerInspectorStatus[state="boss_ready"] {{
+QLabel#careerHeroStatus[state="boss_ready"] {{
     background: {STATUS_SUCCESS_BG};
     border-color: {STATUS_SUCCESS_BORDER};
     color: {STATUS_SUCCESS_FG};
 }}
-QLabel#careerHeroStatus[state="defeated"],
-QLabel#careerInspectorStatus[state="defeated"] {{
+QLabel#careerHeroStatus[state="defeated"] {{
     background: {BG_DISABLED};
     border-color: {BORDER};
     color: {MUTED};
+}}
+QLabel#careerHeroStatus[stamp="true"] {{
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
 }}
 QWidget#careerTimeline {{
     background: {BG_CARD};
@@ -1608,47 +1626,33 @@ QWidget#careerTimeline {{
     border-radius: {RADIUS_XL};
 }}
 QFrame#careerInspector {{
+    background: transparent;
+    border: none;
+}}
+QFrame#careerInspectorSection {{
     background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
-QFrame#careerInspector QLabel {{
+QFrame#careerTotalsStrip {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+}}
+QFrame#careerTotalsStrip QLabel {{
     background: transparent;
 }}
-QLabel#careerInspectorEyebrow {{
-    color: {ACCENT_BRIGHT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 9px;
+QLabel#careerTotalsCaption {{
+    color: {MUTED_DARK};
+    font-size: 10px;
     font-weight: 700;
     letter-spacing: 1.4px;
 }}
-QLabel#careerInspectorTitle {{
+QLabel#careerTotalsValue {{
     color: {TEXT};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 21px;
+    font-size: 17px;
     font-weight: 700;
-    letter-spacing: 0.8px;
-}}
-QLabel#careerInspectorCopy {{
-    color: {MUTED};
-    font-size: 10.5px;
-}}
-QFrame#careerLifetimeStrip {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_LG};
-}}
-QLabel#careerLifetimeValue {{
-    color: {MUTED};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-}}
-QFrame#careerInspectorSection {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_LG};
 }}
 QLabel#contentCardStatBadge {{
     background: {STATUS_NEUTRAL_BG};

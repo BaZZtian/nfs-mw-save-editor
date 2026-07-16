@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QRectF, QSize, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (
 from core import career_progress, career_transplant
 from ui.icon_map import game_icon_path, nav_icon_path, rival_asset_path
 from ui.main_window import MainWindow
-from ui.pages.career_mixin import _CareerHero, _ProgressMarkerStrip
-from ui.theme import apply_theme_palette
+from ui.pages.career_mixin import _CareerHero, _ProgressRowList, _race_row
+from ui.theme import apply_theme_palette, resolve_theme_tokens
 from ui.widgets import AnimatedSegmentedControl, AnimatedStackedWidget, ShellActionButton
 
 APP = QApplication.instance() or QApplication([])
@@ -88,12 +88,12 @@ def test_hero_art_layers_are_packaged_at_runtime_size():
 def test_progress_marker_icons_keep_original_pixels_across_themes():
     path = game_icon_path("race_circuit")
     assert path is not None
-    _ProgressMarkerStrip._pixmap_cache.clear()
+    _ProgressRowList._pixmap_cache.clear()
 
     apply_theme_palette(_app(), "Cherry")
-    cherry = _ProgressMarkerStrip._source_pixmap(path, 25).toImage()
+    cherry = _ProgressRowList._source_pixmap(path, 25).toImage()
     apply_theme_palette(_app(), "Kiwi")
-    kiwi = _ProgressMarkerStrip._source_pixmap(path, 25).toImage()
+    kiwi = _ProgressRowList._source_pixmap(path, 25).toImage()
 
     assert cherry == kiwi
     opaque_colors = {
@@ -110,14 +110,24 @@ def test_game_icons_are_wired_to_hero_actions_and_tuning_nav():
     window = MainWindow()
     app.processEvents()
 
-    for metric in (
+    metrics = (
         window.career_races_metric,
         window.career_milestones_metric,
         window.career_bounty_metric,
-    ):
+    )
+    for metric in metrics:
         icon = metric.findChild(QLabel, "careerHeroMetricIcon")
         assert icon is not None
         assert icon.pixmap() is not None and not icon.pixmap().isNull()
+        assert metric.size() == QSize(188, 72)
+        assert metric.findChild(QWidget, "careerHeroMetricProgress") is None
+
+    captions = [
+        metric.findChild(QLabel, "careerHeroMetricLabel").text()
+        for metric in metrics
+    ]
+    assert captions == ["RACE WINS", "MILESTONES", "BOUNTY"]
+    assert window.career_view_transplant_btn.text() == "CHANGE RIVAL"
 
     for button in (
         window.btn_save_header,
@@ -175,6 +185,25 @@ def test_animated_segmented_control_rapid_switch_lands_on_last_choice():
     target = control.button(1).geometry()
     assert abs(control.indicatorRect().center().x() - target.center().x()) <= 1.0
     assert control.findChildren(QWidget, "animatedSegmentIndicator") == []
+    host.close()
+    app.processEvents()
+
+
+def test_segmented_control_indicator_follows_the_track_inset():
+    app = _app()
+    host = QWidget()
+    layout = QHBoxLayout(host)
+    control = AnimatedSegmentedControl(("PROGRESS", "CHANGE STAGE"))
+    layout.addWidget(control)
+    host.resize(420, 72)
+    host.show()
+    QTest.qWait(20)
+    app.processEvents()
+
+    track = QRectF(control.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+    indicator = control.indicatorRect()
+    assert abs(indicator.top() - track.top() - control._TRACK_INSET) <= 0.5
+    assert abs(track.bottom() - indicator.bottom() - control._TRACK_INSET) <= 0.5
     host.close()
     app.processEvents()
 
@@ -350,7 +379,7 @@ def test_all_hero_busts_stay_inside_compact_and_fullscreen_banners():
     app = _app()
     hero = _CareerHero()
     hero.show()
-    for width, expected_height in ((790, 220), (1180, 220), (1640, 240)):
+    for width, expected_height in ((790, 320), (1180, 320), (1640, 340)):
         hero.resize(width, expected_height)
         app.processEvents()
         assert hero.height() == expected_height
@@ -390,6 +419,67 @@ def test_timeline_selection_is_read_only_and_updates_selected_dossier():
     assert window.career_timeline._state(14) == "locked"
     assert window.career_boss_value.text() == "TAZ"
     assert window.career_hero_status.text() == "LOCKED"
+    window.close()
+    app.processEvents()
+
+
+def test_defeated_hero_uses_the_game_stamp_and_other_states_keep_text():
+    app = _app()
+    window = MainWindow()
+    window.resize(1180, 780)
+    window.savefile = SimpleNamespace(data=_synthetic_career(8))
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+
+    window._on_career_timeline_selected(9)
+    QTest.qWait(180)
+    stamp = window.career_hero_status.pixmap()
+    assert window.career_hero_status.property("stamp") is True
+    assert window.career_hero_status.text() == ""
+    assert stamp is not None and not stamp.isNull()
+    assert stamp.size() == QSize(180, 56)
+    assert window.career_hero_status.accessibleName() == "DEFEATED"
+
+    image = stamp.toImage()
+    visible = [
+        (x, image.pixelColor(x, y))
+        for y in range(image.height())
+        for x in range(image.width())
+        if image.pixelColor(x, y).alpha() > 0
+    ]
+    assert visible
+    assert min(x for x, _color in visible) >= 10
+    assert max(x for x, _color in visible) <= image.width() - 11
+    solid = [color for _x, color in visible if color.alpha() >= 250]
+    assert solid
+    assert max(color.red() for color in solid) == 147
+    assert max(color.green() for color in solid) == 10
+    assert max(color.blue() for color in solid) == 10
+    ink_reds = {color.red() for _x, color in visible if color.alpha() >= 8}
+    assert len(ink_reds) >= 50
+    assert min(ink_reds) <= 80
+    dark_backing = [
+        color
+        for _x, color in visible
+        if color.alpha() >= 180
+        and color.red() <= 24
+        and color.green() <= 24
+        and color.blue() <= 24
+    ]
+    assert len(dark_backing) >= 1000
+
+    window._on_career_timeline_selected(8)
+    QTest.qWait(180)
+    assert window.career_hero_status.isHidden()
+    assert window.career_hero_status.text() == ""
+
+    window._on_career_timeline_selected(7)
+    QTest.qWait(180)
+    assert not window.career_hero_status.isHidden()
+    assert window.career_hero_status.property("stamp") is False
+    assert window.career_hero_status.text() == "LOCKED"
+    assert window.career_hero_status.pixmap().isNull()
     window.close()
     app.processEvents()
 
@@ -435,14 +525,312 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     assert window.career_stage_grid_host.graphicsEffect() is None
     window.career_variant_switch.setCurrentIndex(0)
     window.career_view_switch.setCurrentIndex(0)
-    window.career_hero.resize(1000, 220)
+    window.career_hero.resize(1000, 320)
     window.career_hero.layout().activate()
     app.processEvents()
 
     assert bytes(data) == before
-    gap = window.career_hero_status.geometry().left() - window.career_boss_value.geometry().right()
-    assert 0 <= gap <= 16
-    assert window.career_hero_status.geometry().center().x() < window.career_hero.width() * 0.5
+    metric_gap = (
+        window.career_view_switch.geometry().top()
+        - window.career_races_metric.geometry().bottom()
+        - 1
+    )
+    assert metric_gap >= 12
+    assert window.career_hero_status.isHidden()
+    assert not hasattr(window, "career_stage_sub")
+    assert window.findChild(QLabel, "careerHeroSub") is None
+    eyebrow = window.findChild(QLabel, "careerHeroEyebrow")
+    assert eyebrow is not None
+    assert eyebrow.text() == "BLACKLIST"
+    headline_gap = window.career_stage_value.geometry().top() - eyebrow.geometry().bottom() - 1
+    assert 0 <= headline_gap <= 8
+    assert window.career_stage_value.font().pixelSize() == 46
+    assert window.career_boss_value.font().pixelSize() == 42
     assert not hasattr(window.career_stage_grid_host, "_refresh_transition_overlay")
+    inspector = window.career_inspector_pages[window.career_inspector_stack.currentIndex()]
+    assert not hasattr(inspector, "title")
+    assert not hasattr(inspector, "copy")
+    assert not hasattr(inspector, "lifetime")
+    assert inspector.findChild(QLabel, "careerInspectorTitle") is None
+    assert inspector.findChild(QLabel, "careerInspectorEyebrow") is None
+    assert inspector.findChild(QLabel, "careerInspectorStatus") is None
+    assert inspector.race_list._title == "RACE SCHEDULE"
+    assert inspector.milestone_list._title == "MILESTONES"
     window.close()
     app.processEvents()
+
+
+def test_career_totals_strip_lives_on_page_and_tracks_summary():
+    from PySide6.QtWidgets import QFrame
+
+    app = _app()
+    window = MainWindow()
+    window.resize(1180, 780)
+    strip = window.findChild(QFrame, "careerTotalsStrip")
+    assert strip is not None
+    assert window.findChild(QFrame, "careerLifetimeStrip") is None
+    assert window.career_total_races_value.text() == "—"
+
+    window.savefile = SimpleNamespace(data=_synthetic_career(8))
+    window._refresh_career_page()
+    app.processEvents()
+    summary = window._career_summary_cache
+    assert summary is not None
+    assert window.career_total_races_value.text() == (
+        f"{summary.lifetime_race_wins} / {summary.lifetime_race_total}"
+    )
+    assert window.career_total_milestones_value.text() == (
+        f"{summary.lifetime_milestone_wins} / {summary.lifetime_milestone_total}"
+    )
+    inspector = window.career_inspector_pages[0]
+    assert strip.parentWidget() is not inspector
+    window.close()
+    app.processEvents()
+
+
+def test_boss_gold_tokens_keep_gold_hue_on_every_theme():
+    from PySide6.QtGui import QColor
+
+    from ui.theme import available_theme_names
+
+    for name in available_theme_names():
+        tokens = resolve_theme_tokens(name)
+        for key in (
+            "BOSS_GOLD",
+            "BOSS_GOLD_BRIGHT",
+            "BOSS_GOLD_DIM",
+            "BOSS_GOLD_BG",
+            "BOSS_GOLD_BORDER",
+        ):
+            assert key in tokens, (name, key)
+        hue = QColor(tokens["BOSS_GOLD"]).hue()
+        assert 25 <= hue <= 70, (name, tokens["BOSS_GOLD"], hue)
+
+    blueprint = resolve_theme_tokens("Blueprint")
+    assert blueprint["BOSS_GOLD"] != blueprint["ACCENT"]
+    assert blueprint["BOSS_GOLD"] != blueprint["GOLD"]
+
+
+def test_rival_bios_are_canon_clean_and_wired_to_the_hero():
+    from core import rival_bios
+
+    assert sorted(rival_bios.RIVAL_BIOS) == list(range(1, 16))
+    for rank, text in rival_bios.RIVAL_BIOS.items():
+        assert text.strip() == text and text
+        assert not any(ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F for c in text), rank
+        first = rival_bios.tagline(rank)
+        assert first and text.startswith(first)
+    assert rival_bios.tagline(5).startswith("Webster")
+    assert "Toru" in rival_bios.bio(2)
+
+    app = _app()
+    window = MainWindow()
+    window.resize(1180, 780)
+    assert window.career_hero_tagline.isHidden()
+
+    window.savefile = SimpleNamespace(data=_synthetic_career(8))
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+    assert not window.career_hero_tagline.isHidden()
+    assert window.career_hero_tagline.text() == rival_bios.tagline(8)
+    assert window.career_hero_tagline.toolTip() == rival_bios.bio(8)
+
+    window._on_career_timeline_selected(14)
+    QTest.qWait(180)
+    assert window.career_hero_tagline.text() == rival_bios.tagline(14)
+    window.close()
+    app.processEvents()
+
+
+def _float_bits(value: float) -> int:
+    return struct.unpack("<I", struct.pack("<f", value))[0]
+
+
+def test_race_rows_use_canon_track_names_types_and_boss_kind():
+    done = career_progress.RaceRecord(
+        index=0,
+        race_hash=1,
+        event_id="5.1.1",
+        flags=career_progress.RACE_DONE_MASK,
+        high_score=_float_bits(87.5),
+        top_speed=142.4,
+        average_speed=120.0,
+    )
+    row = _race_row(done, boss=False)
+    assert row.state == "done"
+    assert row.kind == "race"
+    assert row.title == "Ironhorse"
+    assert row.detail == "WON · 1:27.50"
+    assert "best 1:27.50" in row.tooltip
+    assert row.tag == ""
+    assert row.icon_path is not None and row.icon_path.name == "circuit.png"
+    assert "Circuit · 5.1.1" in row.tooltip
+
+    trap_won = career_progress.RaceRecord(
+        index=9,
+        race_hash=9,
+        event_id="5.5.1",
+        flags=career_progress.RACE_DONE_MASK,
+        high_score=_float_bits(1011.4),
+        top_speed=0.0,
+        average_speed=0.0,
+    )
+    row = _race_row(trap_won, boss=False)
+    assert row.detail == "WON · SCORE 1,011"
+
+    drag_won = career_progress.RaceRecord(
+        index=10,
+        race_hash=10,
+        event_id="1.7.3",
+        flags=career_progress.RACE_DONE_MASK,
+        high_score=_float_bits(19.51),
+        top_speed=0.0,
+        average_speed=0.0,
+    )
+    row = _race_row(drag_won, boss=False)
+    assert row.detail == "WON · 19.51"
+
+    reversed_open = career_progress.RaceRecord(
+        index=1,
+        race_hash=2,
+        event_id="5.5.2.r",
+        flags=0x10,
+        high_score=0,
+        top_speed=0.0,
+        average_speed=0.0,
+    )
+    row = _race_row(reversed_open, boss=False)
+    assert row.state == "open"
+    assert row.title == "Green & Fairmont"
+    assert row.tag == "REVERSED"
+    assert row.detail == "AVAILABLE"
+    assert row.icon_path is not None and row.icon_path.name == "speedtrap.png"
+
+    boss_locked = career_progress.RaceRecord(
+        index=2,
+        race_hash=3,
+        event_id="5.2.2",
+        flags=0,
+        high_score=0,
+        top_speed=0.0,
+        average_speed=0.0,
+        is_boss_race=True,
+    )
+    boss_row = _race_row(boss_locked, boss=True)
+    assert boss_row.state == "locked"
+    assert boss_row.kind == "boss"
+    assert boss_row.detail == "LOCKED"
+    assert boss_row.title == "Beach & Chancellor"
+    assert boss_row.icon_path is not None
+    assert boss_row.icon_path.name == "boss_race_key_2.png"
+    assert "boss race" in boss_row.tooltip
+
+    final_pursuit = career_progress.RaceRecord(
+        index=3,
+        race_hash=4,
+        event_id="1.8.1",
+        flags=0,
+        high_score=0,
+        top_speed=0.0,
+        average_speed=0.0,
+    )
+    row = _race_row(final_pursuit, boss=True)
+    assert row.title == "Final Pursuit"
+    assert "Pursuit · 1.8.1" in row.tooltip
+
+    unnamed = career_progress.RaceRecord(
+        index=4,
+        race_hash=5,
+        event_id="16.1.0",
+        flags=0,
+        high_score=0,
+        top_speed=0.0,
+        average_speed=0.0,
+    )
+    row = _race_row(unnamed, boss=False)
+    assert row.title == "Event 16.1.0"
+
+    row_list = _ProgressRowList("RACE SCHEDULE")
+    row_list.set_items("subtitle", (_race_row(done, boss=False),), (boss_row,))
+    assert row_list._boss_rows[0].kind == "boss"
+    tall = row_list._content_height()
+    row_list.set_items("subtitle", (), ())
+    assert row_list._content_height() < tall
+
+
+def test_rival_challenge_series_is_canon_ordered_with_synthetic_warrent():
+    from core import rival_challenge
+    from ui.pages.career_mixin import _boss_series_rows, _untracked_boss_row
+
+    assert rival_challenge.BOSS_SERIES[1] == (
+        "1.5.2", "1.7.3", "4.2.1", "1.1.2", "1.2.3", "1.8.1"
+    )
+    assert rival_challenge.ROUTE_REMAP == {"8.3.2": "13.3.1.r"}
+    for stage in range(1, 16):
+        assert rival_challenge.BOSS_SERIES[stage]
+        assert rival_challenge.WORLD_ORDER[stage]
+
+    def record(event_id, flags=0x10):
+        return career_progress.RaceRecord(
+            index=0, race_hash=1, event_id=event_id, flags=flags,
+            high_score=0, top_speed=0.0, average_speed=0.0, is_boss_race=True,
+        )
+
+    shuffled = [record(e) for e in ("1.2.3", "1.8.1", "1.1.2", "1.7.3", "4.2.1")]
+    rows = _boss_series_rows(1, shuffled)
+    assert [row.title for row in rows] == [
+        "Warrent", "Terrace & Riverside", "Forest Green",
+        "Clubhouse", "Clubhouse & Lennox", "Final Pursuit",
+    ]
+    assert rows[0].detail == "AVAILABLE"
+    assert "no record" in rows[0].tooltip
+    assert _boss_series_rows(1, ()) == []
+
+    def sibling(flags):
+        return career_progress.RaceRecord(
+            index=0, race_hash=1, event_id="1.1.2", flags=flags,
+            high_score=0, top_speed=0.0, average_speed=0.0,
+        )
+
+    row = _untracked_boss_row("1.5.2", (sibling(career_progress.RACE_DONE_MASK),))
+    assert row.title == "Warrent"
+    assert row.state == "done"
+    assert row.detail == "SERIES COMPLETE"
+    row = _untracked_boss_row("1.5.2", (sibling(0x00),))
+    assert row.state == "locked"
+
+
+def test_remapped_slot_displays_the_driven_route():
+    record = career_progress.RaceRecord(
+        index=0, race_hash=1, event_id="8.3.2", flags=0x10,
+        high_score=0, top_speed=0.0, average_speed=0.0,
+    )
+    row = _race_row(record, boss=False)
+    assert row.title == "Stadium"
+    assert row.tag == "REVERSED"
+    assert row.icon_path is not None and row.icon_path.name == "lap_knockout.png"
+    assert "Lap Knockout · 8.3.2 · route 13.3.1.r" in row.tooltip
+
+
+def test_race_display_names_cover_every_career_event():
+    from core import race_display_names, race_names
+
+    assert len(race_display_names.RACE_DISPLAY_NAMES) == 210
+    known_unnamed = {"1.8.1", "16.1.0"}
+    for event_id in race_names.RACE_EVENT_IDS.values():
+        chapter = int(event_id.split(".", 1)[0])
+        if not 1 <= chapter <= 16 or event_id in known_unnamed:
+            continue
+        assert race_display_names.display_name(event_id), event_id
+
+    assert race_display_names.RACE_TYPE_LABELS[3] == "Lap Knockout"
+    assert race_display_names.RACE_TYPE_LABELS[4] == "Tollbooth"
+    assert race_display_names.RACE_TYPE_LABELS[5] == "Speedtrap"
+    assert race_display_names.RACE_TYPE_LABELS[7] == "Drag"
+    assert race_display_names.display_name("5.5.2") == "Fairmont & Clubhouse"
+    assert race_display_names.display_name("5.5.2.r") == "Green & Fairmont"
+    for icon_name in ("race_circuit", "race_sprint", "race_lap_knockout",
+                      "milestone_tollbooth", "trap", "race_drag"):
+        path = game_icon_path(icon_name)
+        assert path is not None and path.is_file(), icon_name
