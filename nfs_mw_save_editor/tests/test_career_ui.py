@@ -12,7 +12,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from PySide6.QtCore import QRectF, QSize, Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -26,7 +26,13 @@ from PySide6.QtWidgets import (
 from core import career_progress, career_transplant
 from ui.icon_map import game_icon_path, nav_icon_path, rival_asset_path
 from ui.main_window import MainWindow
-from ui.pages.career_mixin import _CareerHero, _ProgressRowList, _race_row
+from ui.pages import career_mixin as career_module
+from ui.pages.career_mixin import (
+    _BlacklistTimeline,
+    _CareerHero,
+    _ProgressRowList,
+    _race_row,
+)
 from ui.theme import apply_theme_palette, resolve_theme_tokens
 from ui.widgets import AnimatedSegmentedControl, AnimatedStackedWidget, ShellActionButton
 
@@ -491,6 +497,164 @@ def test_endgame_summary_selects_razor_and_defeats_entire_timeline():
     assert all(summary.stage_state(stage) == "defeated" for stage in range(1, 16))
 
 
+def test_timeline_selection_ring_glides_to_the_new_stage():
+    app = _app()
+    summary = career_progress.build_career_progress(bytes(_synthetic_career(8)))
+    assert summary is not None
+    timeline = _BlacklistTimeline()
+    timeline.resize(1180, 88)
+    timeline.set_progress(summary, 8)
+    timeline.show()
+    QTest.qWait(20)
+
+    timeline.set_selected_stage(7)
+    assert timeline._selection_animation.state().name == "Running"
+    QTest.qWait(55)
+    app.processEvents()
+    assert 7.0 < timeline._selection_position < 8.0
+    QTest.qWait(170)
+    assert timeline._selection_position == 8.0
+    timeline.close()
+    app.processEvents()
+
+
+def test_progress_hero_and_cards_crossfade_without_covering_the_timeline():
+    app = _app()
+    window = MainWindow()
+    window.resize(1665, 937)
+    window.savefile = SimpleNamespace(data=_synthetic_career(8))
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+    snapshot = QPixmap(320, 180)
+    snapshot.fill(Qt.GlobalColor.black)
+    window._career_crossfade_snapshot = lambda *_args: snapshot
+    hero_geometry = window.career_hero.geometry()
+    inspector_geometry = window.career_inspector_stack.geometry()
+    previous_page = window.career_inspector_stack.currentIndex()
+
+    window._on_career_timeline_selected(7)
+    hero_overlay = window._career_hero_transition
+    inspector_overlay = window._career_inspector_transition
+    assert hero_overlay is not None
+    assert inspector_overlay is not None
+    assert hero_overlay.objectName() == "careerHeroTransitionOverlay"
+    assert inspector_overlay.objectName() == "careerInspectorTransitionOverlay"
+    assert hero_overlay.parentWidget() is window.career_hero
+    assert inspector_overlay.parentWidget() is window.career_inspector_stack
+    assert window.career_inspector_stack.currentIndex() != previous_page
+    assert window.career_hero.geometry() == hero_geometry
+    assert window.career_inspector_stack.geometry() == inspector_geometry
+    for overlay in (hero_overlay, inspector_overlay):
+        assert overlay.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    QTest.qWait(45)
+    assert 0.0 < hero_overlay._opacity.opacity() < 1.0
+    assert 0.0 < inspector_overlay._opacity.opacity() < 1.0
+    QTest.qWait(130)
+    app.processEvents()
+    assert window._career_hero_transition is None
+    assert window._career_inspector_transition is None
+    window.close()
+    app.processEvents()
+
+
+def test_progress_to_change_rival_crossfades_the_work_area():
+    app = _app()
+    window = MainWindow()
+    window.resize(1665, 937)
+    window.savefile = SimpleNamespace(data=_synthetic_career(8))
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+    snapshot = QPixmap(320, 180)
+    snapshot.fill(Qt.GlobalColor.black)
+    window._career_crossfade_snapshot = lambda *_args: snapshot
+    previous_geometry = window.career_view_stack.geometry()
+
+    window.career_view_switch.setCurrentIndex(1)
+    overlay = window._career_view_transition
+    assert window.career_view_stack.currentIndex() == 0
+    assert overlay is not None
+    assert overlay.objectName() == "careerViewTransitionOverlay"
+    assert overlay.parentWidget() is window.career_view_stack
+    assert overlay.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    assert window.career_view_stack.geometry() == previous_geometry
+    QTest.qWait(45)
+    assert 0.0 < overlay._opacity.opacity() < 1.0
+    QTest.qWait(130)
+    app.processEvents()
+    assert window._career_view_transition is None
+    window.close()
+    app.processEvents()
+
+
+def test_apply_rival_change_crossfades_the_refreshed_hero(tmp_path, monkeypatch):
+    app = _app()
+    window = MainWindow()
+    window.resize(1665, 937)
+    donor_path = tmp_path / "stage_07.bin"
+    donor_path.write_bytes(b"test donor")
+    data = _synthetic_career(8)
+    plan = SimpleNamespace(
+        refusal_reason=None,
+        warnings=(),
+        bounty_compensation=0,
+        donor_bin=7,
+    )
+
+    def apply_transplant(_donor_data):
+        data[career_transplant.CURRENT_BIN_OFFSET] = 7
+
+    window.savefile = SimpleNamespace(
+        data=data,
+        plan_career_transplant=lambda _donor_data: plan,
+        apply_career_transplant=apply_transplant,
+    )
+    window.career_donor_library = (
+        SimpleNamespace(
+            stage_bin=7,
+            variant="chapter_start",
+            is_loadable=True,
+            save_path=donor_path,
+            display_name="Stage 7",
+        ),
+    )
+    window._reload_career_donor_library = lambda **_kwargs: None
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+    snapshot = QPixmap(320, 180)
+    snapshot.fill(Qt.GlobalColor.black)
+    window._career_crossfade_snapshot = lambda *_args: snapshot
+    window.refresh_state = window._refresh_career_page
+    monkeypatch.setattr(
+        career_module.QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: career_module.QMessageBox.Yes,
+    )
+    monkeypatch.setattr(
+        career_module.ToastNotification,
+        "show_toast",
+        lambda *_args, **_kwargs: None,
+    )
+
+    window._on_career_transplant_clicked()
+    overlay = window._career_hero_transition
+    assert career_transplant.read_current_bin(bytes(data)) == 7
+    assert window.career_stage_value.text() == "#7"
+    assert overlay is not None
+    assert overlay.objectName() == "careerHeroTransitionOverlay"
+    assert overlay.parentWidget() is window.career_hero
+    assert overlay.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    QTest.qWait(45)
+    assert 0.0 < overlay._opacity.opacity() < 1.0
+    QTest.qWait(130)
+    app.processEvents()
+    assert window._career_hero_transition is None
+    window.close()
+    app.processEvents()
+
+
 def test_fullscreen_career_canvas_is_centered_and_capped():
     app = _app()
     window = MainWindow()
@@ -597,6 +761,46 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     assert inspector.findChild(QLabel, "careerInspectorStatus") is None
     assert inspector.race_list._title == "RACE SCHEDULE"
     assert inspector.milestone_list._title == "MILESTONES"
+    window.close()
+    app.processEvents()
+
+
+def test_change_rival_review_crossfades_without_geometry_or_input_changes():
+    app = _app()
+    window = MainWindow()
+    window.resize(1665, 937)
+    window.career_donor_library = tuple(
+        SimpleNamespace(
+            stage_bin=stage,
+            variant="chapter_start",
+            is_loadable=True,
+            save_path=Path("missing-test-donor"),
+            display_name=f"Stage {stage}",
+        )
+        for stage in (8, 15)
+    )
+    window._reload_career_donor_library = lambda **_kwargs: None
+    window.savefile = SimpleNamespace(data=_synthetic_career(8))
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+
+    review_geometry = window.career_review_panel.geometry()
+    snapshot = QPixmap(320, 180)
+    snapshot.fill(Qt.GlobalColor.black)
+    window._career_crossfade_snapshot = lambda *_args: snapshot
+    window.career_stage_buttons[15].setChecked(True)
+    overlay = window._career_review_transition
+    assert overlay is not None
+    assert overlay.objectName() == "careerReviewTransitionOverlay"
+    assert overlay.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    assert window.career_review_panel.geometry() == review_geometry
+    QTest.qWait(45)
+    assert 0.0 < overlay._opacity.opacity() < 1.0
+    QTest.qWait(130)
+    app.processEvents()
+    assert window._career_review_transition is None
+    assert window.career_review_panel.geometry() == review_geometry
     window.close()
     app.processEvents()
 

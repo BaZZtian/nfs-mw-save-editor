@@ -671,6 +671,7 @@ class ThemeTransitionOverlay(QWidget):
         super().__init__(parent)
         self._snapshot = snapshot
         self._animation_finished = False
+        parent.installEventFilter(self)
 
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
@@ -687,6 +688,9 @@ class ThemeTransitionOverlay(QWidget):
         self._fade.setEndValue(0.0)
         self._fade.setEasingCurve(QEasingCurve.OutCubic)
         self._fade.finished.connect(self._cleanup_after_animation)
+        self._geometry_sync = QTimer(self)
+        self._geometry_sync.setInterval(16)
+        self._geometry_sync.timeout.connect(self.sync_to_parent)
 
     def sync_to_parent(self) -> None:
         parent = self.parentWidget()
@@ -699,6 +703,7 @@ class ThemeTransitionOverlay(QWidget):
         self.sync_to_parent()
         self.show()
         self.raise_()
+        self._geometry_sync.start()
         self._fade.start()
 
     def finish_immediately(self) -> None:
@@ -707,10 +712,19 @@ class ThemeTransitionOverlay(QWidget):
         self._fade.stop()
         self._cleanup_after_animation()
 
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if watched is self.parentWidget() and event.type() == QEvent.Resize:
+            self.sync_to_parent()
+        return super().eventFilter(watched, event)
+
     def _cleanup_after_animation(self) -> None:
         if self._animation_finished:
             return
         self._animation_finished = True
+        self._geometry_sync.stop()
+        parent = self.parentWidget()
+        if parent is not None:
+            parent.removeEventFilter(self)
         self.hide()
         self.deleteLater()
 

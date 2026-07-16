@@ -24,7 +24,17 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPoint,
+    QPointF,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QVariantAnimation,
+    Signal,
+)
 from PySide6.QtGui import (
     QBitmap,
     QColor,
@@ -74,6 +84,7 @@ from ui.theme import resolve_theme_tokens
 from ui.widgets import (
     AnimatedSegmentedControl,
     AnimatedStackedWidget,
+    ThemeTransitionOverlay,
     ToastNotification,
 )
 
@@ -88,6 +99,7 @@ _BOUNTY_CAVEAT_TEXT = (
 
 _BOSS_GRID_COLUMNS = 5
 _RAP_DOT_SIZE = 17
+_CAREER_CROSSFADE_MS = 140
 _RAP_BOSS_DOT_SIZE = 17
 _RAP_TRAP_DOT_SIZE = 17
 
@@ -522,6 +534,7 @@ class _BlacklistTimeline(QWidget):
 
     stageSelected = Signal(int)
     _glyph_cache: "OrderedDict[tuple[str, int], QPixmap]" = OrderedDict()
+    _SELECTION_DURATION_MS = 190
 
     def __init__(self) -> None:
         super().__init__()
@@ -533,6 +546,11 @@ class _BlacklistTimeline(QWidget):
         self.setMinimumHeight(82)
         self._summary: Optional[career_progress.CareerProgressSummary] = None
         self._selected_stage: Optional[int] = None
+        self._selection_position: Optional[float] = None
+        self._selection_animation = QVariantAnimation(self)
+        self._selection_animation.setDuration(self._SELECTION_DURATION_MS)
+        self._selection_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._selection_animation.valueChanged.connect(self._set_selection_position)
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
         return QSize(1000, 88)
@@ -542,14 +560,37 @@ class _BlacklistTimeline(QWidget):
         summary: Optional[career_progress.CareerProgressSummary],
         selected_stage: Optional[int],
     ) -> None:
+        self._selection_animation.stop()
         self._summary = summary
         self._selected_stage = selected_stage
+        self._selection_position = self._stage_position(selected_stage)
         self.update()
 
     def set_selected_stage(self, stage: int) -> None:
         if stage != self._selected_stage:
+            start = self._selection_position
+            if start is None:
+                start = self._stage_position(self._selected_stage)
+            end = self._stage_position(stage)
             self._selected_stage = stage
-            self.update()
+            self._selection_animation.stop()
+            if self.isVisible() and start is not None and end is not None:
+                self._selection_animation.setStartValue(start)
+                self._selection_animation.setEndValue(end)
+                self._selection_animation.start()
+            else:
+                self._selection_position = end
+                self.update()
+
+    @staticmethod
+    def _stage_position(stage: Optional[int]) -> Optional[float]:
+        if stage is None or not 1 <= stage <= 15:
+            return None
+        return float(15 - stage)
+
+    def _set_selection_position(self, value) -> None:
+        self._selection_position = float(value)
+        self.update()
 
     def _nodes(self) -> list[tuple[int, QPointF]]:
         left = 26.0
@@ -611,6 +652,14 @@ class _BlacklistTimeline(QWidget):
         wide = self.width() >= 1180
         node_radius = 12.5 if wide else 11.5
         selected_radius = node_radius + 5.5
+        if self._selection_position is not None:
+            position = max(0.0, min(14.0, self._selection_position))
+            selection_x = nodes[0][1].x() + position * (
+                nodes[-1][1].x() - nodes[0][1].x()
+            ) / 14.0
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(QColor(tokens["ACCENT_BRIGHT"]), 2.0))
+            painter.drawEllipse(QPointF(selection_x, 30.0), selected_radius, selected_radius)
         for stage, point in nodes:
             state = self._state(stage)
             selected = stage == self._selected_stage
@@ -627,10 +676,6 @@ class _BlacklistTimeline(QWidget):
                 fill = QColor(tokens["BG_DISABLED"])
                 border = QColor(tokens["BORDER"])
 
-            if selected:
-                painter.setBrush(Qt.NoBrush)
-                painter.setPen(QPen(QColor(tokens["ACCENT_BRIGHT"]), 2.0))
-                painter.drawEllipse(point, selected_radius, selected_radius)
             painter.setBrush(fill)
             painter.setPen(QPen(border, 2.0 if state in {"current", "boss_ready"} else 1.3))
             painter.drawEllipse(point, node_radius, node_radius)
@@ -1224,6 +1269,7 @@ class CareerMixin:
 
         # ── Current target hero + compact progression summary ──
         self.career_hero = _CareerHero()
+        self._career_hero_transition: Optional[ThemeTransitionOverlay] = None
         hero_layout = QHBoxLayout(self.career_hero)
         hero_layout.setContentsMargins(28, 18, 20, 16)
         hero_layout.setSpacing(14)
@@ -1300,6 +1346,7 @@ class CareerMixin:
         layout.addWidget(self.career_hero)
 
         self.career_view_stack = AnimatedStackedWidget(duration_ms=180)
+        self._career_view_transition: Optional[ThemeTransitionOverlay] = None
         self.career_view_stack.addWidget(self._build_career_transplant_view())
         self.career_view_stack.addWidget(self._build_career_progress_view())
         self.career_view_stack.setCurrentIndex(1)
@@ -1422,6 +1469,7 @@ class CareerMixin:
         review_layout.setContentsMargins(18, 16, 18, 16)
         review_layout.setSpacing(9)
         self.career_review_panel = review_card
+        self._career_review_transition: Optional[ThemeTransitionOverlay] = None
         step = QLabel("STEP 02")
         step.setObjectName("careerStepLabel")
         review_layout.addWidget(step)
@@ -1538,7 +1586,10 @@ class CareerMixin:
         self.career_timeline.stageSelected.connect(self._on_career_timeline_selected)
         host_layout.addWidget(self.career_timeline)
 
-        self.career_inspector_stack = AnimatedStackedWidget(duration_ms=150)
+        self.career_inspector_stack = AnimatedStackedWidget(
+            duration_ms=_BlacklistTimeline._SELECTION_DURATION_MS
+        )
+        self._career_inspector_transition: Optional[ThemeTransitionOverlay] = None
         self.career_inspector_stack.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
@@ -1603,6 +1654,9 @@ class CareerMixin:
         return strip
 
     def _on_career_view_changed(self, index: int) -> None:
+        view_snapshot = self._career_crossfade_snapshot(
+            self.career_view_stack, "_career_view_transition"
+        )
         target = 1 if index == 0 else 0
         summary = self._career_summary_cache
         if summary is not None:
@@ -1615,23 +1669,44 @@ class CareerMixin:
                 preferred_stage=summary.current_stage if summary is not None else None
             )
             self._refresh_career_preview()
-        self.career_view_stack.setCurrentIndexAnimated(
-            target, direction=-1 if target == 0 else 1
+        self.career_view_stack.setCurrentIndex(target)
+        self.career_view_stack.updateGeometry()
+        self._start_career_crossfade(
+            self.career_view_stack,
+            view_snapshot,
+            "_career_view_transition",
+            "careerViewTransitionOverlay",
         )
 
     def _on_career_timeline_selected(self, stage: int) -> None:
         summary = self._career_summary_cache
         if summary is None or stage == self._career_selected_stage:
             return
-        previous = self._career_selected_stage or summary.default_stage
+        hero_snapshot = self._career_crossfade_snapshot(
+            self.career_hero, "_career_hero_transition"
+        )
+        inspector_snapshot = self._career_crossfade_snapshot(
+            self.career_inspector_stack, "_career_inspector_transition"
+        )
         self._career_selected_stage = stage
         self.career_timeline.set_selected_stage(stage)
         self._update_career_hero(summary, stage)
         target_index = 1 - self.career_inspector_stack.currentIndex()
         self.career_inspector_pages[target_index].set_progress(summary, stage)
         self.career_inspector_pages[target_index].updateGeometry()
-        self.career_inspector_stack.setCurrentIndexAnimated(
-            target_index, direction=1 if stage < previous else -1
+        self.career_inspector_stack.setCurrentIndex(target_index)
+        self.career_inspector_stack.updateGeometry()
+        self._start_career_crossfade(
+            self.career_hero,
+            hero_snapshot,
+            "_career_hero_transition",
+            "careerHeroTransitionOverlay",
+        )
+        self._start_career_crossfade(
+            self.career_inspector_stack,
+            inspector_snapshot,
+            "_career_inspector_transition",
+            "careerInspectorTransitionOverlay",
         )
 
     def _refresh_career_progress(
@@ -2316,7 +2391,56 @@ class CareerMixin:
 
     def _on_career_stage_toggled(self, _stage: int, checked: bool) -> None:
         if checked:
+            snapshot = self._career_crossfade_snapshot(
+                self.career_review_panel, "_career_review_transition"
+            )
             self._refresh_career_preview()
+            self._start_career_crossfade(
+                self.career_review_panel,
+                snapshot,
+                "_career_review_transition",
+                "careerReviewTransitionOverlay",
+            )
+
+    def _clear_career_crossfade(self, transition_attribute: str) -> None:
+        overlay = getattr(self, transition_attribute, None)
+        setattr(self, transition_attribute, None)
+        if overlay is not None:
+            overlay.finish_immediately()
+
+    def _career_crossfade_snapshot(
+        self, widget: QWidget, transition_attribute: str
+    ) -> QPixmap:
+        self._clear_career_crossfade(transition_attribute)
+        if not widget.isVisible() or widget.size().isEmpty():
+            return QPixmap()
+        return widget.grab()
+
+    def _start_career_crossfade(
+        self,
+        widget: QWidget,
+        snapshot: QPixmap,
+        transition_attribute: str,
+        object_name: str,
+    ) -> None:
+        if snapshot.isNull() or snapshot.size().isEmpty():
+            return
+        overlay = ThemeTransitionOverlay(
+            widget,
+            snapshot,
+            duration_ms=_CAREER_CROSSFADE_MS,
+        )
+        overlay.setObjectName(object_name)
+        overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        overlay.destroyed.connect(
+            lambda _obj=None, overlay=overlay, attr=transition_attribute: (
+                setattr(self, attr, None)
+                if getattr(self, attr, None) is overlay
+                else None
+            )
+        )
+        setattr(self, transition_attribute, overlay)
+        overlay.start()
 
     # ── Refresh / preview ──────────────────────────────────────
 
@@ -2531,6 +2655,9 @@ class CareerMixin:
         if answer != QMessageBox.Yes:
             return
 
+        hero_snapshot = self._career_crossfade_snapshot(
+            self.career_hero, "_career_hero_transition"
+        )
         try:
             self.savefile.apply_career_transplant(donor_data)
         except Exception as exc:
@@ -2539,6 +2666,12 @@ class CareerMixin:
 
         self._reset_want_edit_state()
         self.refresh_state()
+        self._start_career_crossfade(
+            self.career_hero,
+            hero_snapshot,
+            "_career_hero_transition",
+            "careerHeroTransitionOverlay",
+        )
         ToastNotification.show_toast(
             self, "Career stage changed in memory. Save + backup to write"
         )
