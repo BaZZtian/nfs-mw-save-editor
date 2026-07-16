@@ -62,4 +62,3 @@ Verified IDs by:
 1) setting Want=1 for a single ID
 2) Apply → Save+backup
 3) checking in-game behavior
-(if there's a better and easier way reach out)

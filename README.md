@@ -111,8 +111,8 @@ Keep a known-good copy of important saves even though the editor creates backups
 
 Download the latest stable build from [GitHub Releases](https://github.com/sprintstate/nfs-mw-save-editor/releases/latest):
 
-- **`NFS_MW_Junkman_Editor-onedir.zip`** - recommended portable build; extract the full archive and run the executable inside
-- **`NFS_MW_Junkman_Editor.exe`** - standalone single-file build
+- **`NFS_MW_Junkman_Editor.exe`** - recommended standalone single-file build
+- **`NFS_MW_Junkman_Editor_onedir.zip`** - portable folder build; extract the full archive and run the executable inside
 
 Both builds are intended for Windows 10/11 and do not require a separate Python installation.
 
