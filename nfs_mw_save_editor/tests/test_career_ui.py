@@ -512,6 +512,19 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     app = _app()
     window = MainWindow()
     window.resize(1180, 780)
+    assert window._selected_career_stage() is None
+    window.career_donor_library = tuple(
+        SimpleNamespace(
+            stage_bin=stage,
+            variant=variant,
+            is_loadable=True,
+            save_path=Path("missing-test-donor"),
+            display_name=f"Stage {stage}",
+        )
+        for variant in ("chapter_start", "boss_ready")
+        for stage in (8, 15)
+    )
+    window._reload_career_donor_library = lambda **_kwargs: None
     data = _synthetic_career(8)
     window.savefile = SimpleNamespace(data=data)
     before = bytes(data)
@@ -519,7 +532,35 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     window._select_page("Career")
     app.processEvents()
 
+    assert window._selected_career_stage() == 8
+    assert window.career_variant_ready.text() == "CHALLENGE RIVAL"
+    window.career_stage_buttons[15].setChecked(True)
+    assert window._selected_career_stage() == 15
     window.career_view_switch.setCurrentIndex(1)
+    app.processEvents()
+    assert window._selected_career_stage() == 8
+    assert window.career_preview_status.minimumHeight() == 96
+    assert window.career_preview_status.maximumHeight() == 96
+    window.career_preview_status.setText("Short preview")
+    window.career_review_panel.layout().activate()
+    short_review_height = window.career_review_panel.sizeHint().height()
+    window.career_preview_status.setText("Line one\nLine two\nLine three\nLine four")
+    window.career_review_panel.layout().activate()
+    assert window.career_review_panel.sizeHint().height() == short_review_height
+    pair = window.career_transplant_pair
+    pair._reflow(True)
+    pair.resize(1300, pair.sizeHint().height())
+    pair.layout().activate()
+    assert pair._wide is True
+    assert window.career_target_panel.height() == window.career_review_panel.height()
+    pair._reflow(False)
+    pair.resize(1000, pair.sizeHint().height())
+    pair.layout().activate()
+    assert pair._wide is False
+    assert (
+        window.career_review_panel.geometry().top()
+        > window.career_target_panel.geometry().bottom()
+    )
     window.career_variant_switch.setCurrentIndex(1)
     app.processEvents()
     assert window.career_stage_grid_host.graphicsEffect() is None

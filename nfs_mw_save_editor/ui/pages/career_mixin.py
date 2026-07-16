@@ -940,11 +940,18 @@ class _ProgressRowList(QFrame):
 
 class _ResponsivePanelPair(QWidget):
     def __init__(
-        self, first: QWidget, second: QWidget, *, breakpoint: int, fill: bool = False
+        self,
+        first: QWidget,
+        second: QWidget,
+        *,
+        breakpoint: int,
+        fill: bool = False,
+        equal_height_wide: bool = False,
     ) -> None:
         super().__init__()
         self.setObjectName("careerResponsivePair")
         self._fill = fill
+        self._equal_height_wide = equal_height_wide
         self.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Expanding if fill else QSizePolicy.Maximum,
@@ -965,7 +972,11 @@ class _ResponsivePanelPair(QWidget):
         self._wide = wide
         self._layout.removeWidget(self._first)
         self._layout.removeWidget(self._second)
-        alignment = Qt.Alignment() if self._fill else Qt.AlignTop
+        alignment = (
+            Qt.Alignment()
+            if self._fill or (wide and self._equal_height_wide)
+            else Qt.AlignTop
+        )
         if wide:
             self._layout.addWidget(self._first, 0, 0, alignment)
             self._layout.addWidget(self._second, 0, 1, alignment)
@@ -1346,8 +1357,9 @@ class CareerMixin:
 
         target_card, target_layout = self._make_card_frame(
             object_name="careerTargetPanel",
-            vertical_policy=QSizePolicy.Maximum,
+            vertical_policy=QSizePolicy.Preferred,
         )
+        self.career_target_panel = target_card
         target_layout.setContentsMargins(18, 16, 18, 16)
         target_layout.setSpacing(9)
         step = QLabel("STEP 01")
@@ -1365,7 +1377,7 @@ class CareerMixin:
         target_layout.addWidget(intro)
 
         self.career_variant_switch = AnimatedSegmentedControl(
-            ("CHAPTER START", "BOSS FIGHT READY"),
+            ("CHAPTER START", "CHALLENGE RIVAL"),
             button_object_name="careerVariantButton",
         )
         self.career_variant_start = self.career_variant_switch.button(0)
@@ -1405,7 +1417,7 @@ class CareerMixin:
 
         review_card, review_layout = self._make_card_frame(
             object_name="careerReviewPanel",
-            vertical_policy=QSizePolicy.Maximum,
+            vertical_policy=QSizePolicy.Preferred,
         )
         review_layout.setContentsMargins(18, 16, 18, 16)
         review_layout.setSpacing(9)
@@ -1439,6 +1451,10 @@ class CareerMixin:
         self.career_preview_status = QLabel("")
         self.career_preview_status.setObjectName("careerPreviewStatus")
         self.career_preview_status.setWordWrap(True)
+        # Normal previews vary between one and four lines (same-stage warning,
+        # bounty compensation, donor warnings). Keep the full four-line slot so
+        # changing targets cannot alter sizeHint and nudge the whole workflow.
+        self.career_preview_status.setFixedHeight(96)
         self.career_preview_status.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         review_layout.addWidget(self.career_preview_status)
 
@@ -1480,11 +1496,13 @@ class CareerMixin:
         disk_note.setAlignment(Qt.AlignCenter)
         review_layout.addWidget(disk_note)
 
-        layout.addWidget(
-            _ResponsivePanelPair(target_card, review_card, breakpoint=1200),
-            0,
-            Qt.AlignTop,
+        self.career_transplant_pair = _ResponsivePanelPair(
+            target_card,
+            review_card,
+            breakpoint=1200,
+            equal_height_wide=True,
         )
+        layout.addWidget(self.career_transplant_pair, 0, Qt.AlignTop)
         scroll = QScrollArea()
         scroll.setObjectName("cardScroll")
         scroll.setWidgetResizable(True)
@@ -1592,6 +1610,11 @@ class CareerMixin:
                 self._career_selected_stage if index == 0 else summary.current_stage
             )
             self._update_career_hero(summary, hero_stage)
+        if index == 1:
+            self._rebuild_career_stage_list(
+                preferred_stage=summary.current_stage if summary is not None else None
+            )
+            self._refresh_career_preview()
         self.career_view_stack.setCurrentIndexAnimated(
             target, direction=-1 if target == 0 else 1
         )
@@ -2243,15 +2266,25 @@ class CareerMixin:
                 donors[entry.stage_bin] = entry
         return donors
 
-    def _rebuild_career_stage_list(self) -> None:
-        selected_stage = self._selected_career_stage()
+    def _rebuild_career_stage_list(
+        self, *, preferred_stage: Optional[int] = None
+    ) -> None:
+        selected_stage = (
+            preferred_stage
+            if preferred_stage is not None
+            else self._selected_career_stage()
+        )
         donors = self._career_donors_for_variant(self._career_selected_variant())
         if selected_stage not in donors:
             current = (
                 career_transplant.read_current_bin(bytes(self.savefile.data))
                 if self.savefile is not None else None
             )
-            selected_stage = current if current in donors else (max(donors) if donors else None)
+            selected_stage = (
+                current
+                if current in donors
+                else (max(donors) if donors and self.savefile is not None else None)
+            )
         for stage, button in self.career_stage_buttons.items():
             button.blockSignals(True)
             available = stage in donors
@@ -2353,7 +2386,8 @@ class CareerMixin:
     def _refresh_career_page(self) -> None:
         data = bytes(self.savefile.data) if self.savefile is not None else b""
         previous = self._career_summary_cache
-        if data != self._career_snapshot_cache:
+        snapshot_changed = data != self._career_snapshot_cache
+        if snapshot_changed:
             self._career_snapshot_cache = data
             self._career_summary_cache = career_progress.build_career_progress(data)
         summary = self._career_summary_cache
@@ -2369,8 +2403,10 @@ class CareerMixin:
 
         self._refresh_career_progress(summary, animate=False)
         self._reload_career_donor_library()
-        self._rebuild_career_stage_list()
         current_bin = summary.current_stage if summary is not None else None
+        self._rebuild_career_stage_list(
+            preferred_stage=current_bin if snapshot_changed else None
+        )
         for stage, button in self.career_stage_buttons.items():
             is_current = current_bin is not None and stage == current_bin
             if button.property("current") != is_current:
