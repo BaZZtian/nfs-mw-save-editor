@@ -343,6 +343,63 @@ def test_build_career_progress_groups_chapter_and_lifetime_state():
     assert summary.stage_state(14) == "locked"
 
 
+def test_requirement_progress_equally_weights_and_clamps_all_gate_parts():
+    def build_summary(race_wins: int, milestone_wins: int, bounty: int):
+        chapters = []
+        for stage in range(15, 0, -1):
+            requirement = career_progress.BLACKLIST_REQUIREMENTS[stage]
+            races = tuple(
+                career_progress.RaceRecord(
+                    index=index,
+                    race_hash=index,
+                    event_id=None,
+                    flags=career_transplant.RACE_DONE_MASK,
+                    high_score=0,
+                    top_speed=0.0,
+                    average_speed=0.0,
+                )
+                for index in range(race_wins if stage == 15 else 0)
+            )
+            milestones = tuple(
+                career_progress.MilestoneRecord(
+                    index=index,
+                    type_key=0,
+                    challenge_key=0,
+                    state=career_progress.MILESTONE_STATE_AWARDED,
+                    flags=0,
+                    bin_number=stage,
+                    required_value=1.0,
+                    recorded_value=1.0,
+                )
+                for index in range(milestone_wins if stage == 15 else 0)
+            )
+            chapters.append(career_progress.ChapterProgress(
+                stage=stage,
+                requirement=requirement,
+                races=races,
+                boss_races=(),
+                milestones=milestones,
+                speedtraps=(),
+            ))
+        return career_progress.CareerProgressSummary(
+            current_stage=15,
+            endgame=False,
+            chapters=tuple(chapters),
+            prologue_races=(),
+            lifetime_race_wins=race_wins,
+            lifetime_race_total=race_wins,
+            lifetime_milestone_wins=milestone_wins,
+            lifetime_milestone_total=milestone_wins,
+            total_bounty=bounty,
+        )
+
+    assert build_summary(0, 0, 0).requirement_progress(15) == 0.0
+    mixed = build_summary(1, 1, 10_000).requirement_progress(15)
+    assert abs(mixed - ((1 / 3 + 1 / 3 + 1 / 2) / 3)) < 1e-12
+    assert build_summary(3, 3, 20_000).requirement_progress(15) == 1.0
+    assert build_summary(8, 9, 200_000).requirement_progress(15) == 1.0
+
+
 def test_build_career_progress_marks_endgame_ladder_defeated():
     data = _progress_buffer(milestones=(_pack_milestone(1, 2, 1, 0, 1, 1.0, 0.0),))
     data[career_transplant.CURRENT_BIN_OFFSET] = 1

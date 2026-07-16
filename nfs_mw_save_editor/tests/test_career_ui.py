@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -497,12 +497,19 @@ def test_endgame_summary_selects_razor_and_defeats_entire_timeline():
     assert all(summary.stage_state(stage) == "defeated" for stage in range(1, 16))
 
 
-def test_timeline_selection_ring_glides_to_the_new_stage():
+def test_timeline_selection_brackets_are_open_and_glide_to_the_new_stage():
     app = _app()
     summary = career_progress.build_career_progress(bytes(_synthetic_career(8)))
     assert summary is not None
     timeline = _BlacklistTimeline()
     timeline.resize(1180, 88)
+    center = QPointF(40.0, 30.0)
+    bracket_path = timeline._selection_bracket_path(center, 18.0, 5.5)
+    subpaths = bracket_path.toSubpathPolygons()
+    assert bracket_path.boundingRect() == QRectF(22.0, 12.0, 36.0, 36.0)
+    assert len(subpaths) == 4
+    assert all(len(polygon) == 3 for polygon in subpaths)
+    assert all(not polygon.boundingRect().contains(center) for polygon in subpaths)
     timeline.set_progress(summary, 8)
     timeline.show()
     QTest.qWait(20)
@@ -516,6 +523,59 @@ def test_timeline_selection_ring_glides_to_the_new_stage():
     assert timeline._selection_position == 8.0
     timeline.close()
     app.processEvents()
+
+
+def test_timeline_partial_line_tracks_real_gate_progress_and_edge_states():
+    def summary(stage: int, fraction: float, *, endgame: bool = False):
+        return SimpleNamespace(
+            current_stage=stage,
+            endgame=endgame,
+            requirement_progress=lambda requested: (
+                fraction if requested == stage else 0.0
+            ),
+            stage_state=lambda requested: (
+                "defeated"
+                if endgame or requested > stage
+                else "boss_ready"
+                if requested == stage and fraction >= 1.0
+                else "current"
+                if requested == stage
+                else "locked"
+            ),
+        )
+
+    timeline = _BlacklistTimeline()
+    timeline.resize(1400, 88)
+    timeline.set_progress(summary(5, 0.3), 5)
+    nodes = timeline._nodes()
+    points = dict(nodes)
+    line = timeline._current_progress_line(nodes)
+    assert line is not None
+    start, end = line
+    assert start == points[5]
+    assert abs(
+        (end.x() - start.x()) / (points[4].x() - start.x()) - 0.3
+    ) < 1e-12
+
+    timeline.set_selected_stage(12)
+    selected_line = timeline._current_progress_line(timeline._nodes())
+    assert selected_line is not None
+    assert selected_line[0] == start
+    assert selected_line[1] == end
+
+    timeline.set_progress(summary(5, 1.0), 5)
+    full_line = timeline._current_progress_line(timeline._nodes())
+    assert full_line is not None and full_line[1] == dict(timeline._nodes())[4]
+    assert timeline._state(4) == "locked"
+
+    timeline.set_progress(summary(5, 0.0), 5)
+    assert timeline._current_progress_line(timeline._nodes()) is None
+    timeline.set_progress(summary(1, 0.8), 1)
+    assert timeline._current_progress_line(timeline._nodes()) is None
+    timeline.set_progress(summary(1, 1.0, endgame=True), 1)
+    assert timeline._current_progress_line(timeline._nodes()) is None
+    timeline.set_progress(None, None)
+    assert timeline._current_progress_line(timeline._nodes()) is None
 
 
 def test_progress_hero_and_cards_crossfade_without_covering_the_timeline():
@@ -968,7 +1028,7 @@ def test_race_rows_use_canon_track_names_types_and_boss_kind():
     assert boss_row.detail == "LOCKED"
     assert boss_row.title == "Beach & Chancellor"
     assert boss_row.icon_path is not None
-    assert boss_row.icon_path.name == "boss_race_key_2.png"
+    assert boss_row.icon_path.name == "sprint.png"
     assert "boss race" in boss_row.tooltip
 
     final_pursuit = career_progress.RaceRecord(
@@ -982,6 +1042,7 @@ def test_race_rows_use_canon_track_names_types_and_boss_kind():
     )
     row = _race_row(final_pursuit, boss=True)
     assert row.title == "Final Pursuit"
+    assert row.icon_path is not None and row.icon_path.name == "heat.png"
     assert "Pursuit · 1.8.1" in row.tooltip
 
     unnamed = career_progress.RaceRecord(
@@ -1027,6 +1088,10 @@ def test_rival_challenge_series_is_canon_ordered_with_synthetic_warrent():
     assert [row.title for row in rows] == [
         "Warrent", "Terrace & Riverside", "Forest Green",
         "Clubhouse", "Clubhouse & Lennox", "Final Pursuit",
+    ]
+    assert [row.icon_path.name for row in rows if row.icon_path is not None] == [
+        "speedtrap.png", "drag.png", "sprint.png",
+        "circuit.png", "sprint.png", "heat.png",
     ]
     assert rows[0].detail == "AVAILABLE"
     assert "no record" in rows[0].tooltip

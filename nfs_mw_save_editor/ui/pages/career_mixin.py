@@ -164,7 +164,7 @@ def _untracked_boss_row(
         tag="",
         state=state,
         kind="boss",
-        icon_path=game_icon_path("boss_race"),
+        icon_path=game_icon_path(_race_type_icon(event_id)),
         detail=detail,
         fraction=None,
         tooltip=(
@@ -592,6 +592,29 @@ class _BlacklistTimeline(QWidget):
         self._selection_position = float(value)
         self.update()
 
+    @staticmethod
+    def _selection_bracket_path(
+        center: QPointF, radius: float, arm: float
+    ) -> QPainterPath:
+        left = center.x() - radius
+        right = center.x() + radius
+        top = center.y() - radius
+        bottom = center.y() + radius
+        path = QPainterPath()
+        path.moveTo(left + arm, top)
+        path.lineTo(left, top)
+        path.lineTo(left, top + arm)
+        path.moveTo(right - arm, top)
+        path.lineTo(right, top)
+        path.lineTo(right, top + arm)
+        path.moveTo(left, bottom - arm)
+        path.lineTo(left, bottom)
+        path.lineTo(left + arm, bottom)
+        path.moveTo(right, bottom - arm)
+        path.lineTo(right, bottom)
+        path.lineTo(right - arm, bottom)
+        return path
+
     def _nodes(self) -> list[tuple[int, QPointF]]:
         left = 26.0
         right = max(left, self.width() - 26.0)
@@ -605,6 +628,26 @@ class _BlacklistTimeline(QWidget):
         if self._summary is None:
             return "locked"
         return self._summary.stage_state(stage)
+
+    def _current_progress_line(
+        self, nodes: Sequence[tuple[int, QPointF]]
+    ) -> Optional[tuple[QPointF, QPointF]]:
+        summary = self._summary
+        if summary is None or summary.endgame or summary.current_stage <= 1:
+            return None
+        fraction = summary.requirement_progress(summary.current_stage)
+        if fraction <= 0.0:
+            return None
+        points = dict(nodes)
+        start = points.get(summary.current_stage)
+        target = points.get(summary.current_stage - 1)
+        if start is None or target is None:
+            return None
+        end = QPointF(
+            start.x() + (target.x() - start.x()) * fraction,
+            start.y() + (target.y() - start.y()) * fraction,
+        )
+        return start, end
 
     @classmethod
     def _glyph(cls, icon_name: str, size: int) -> QPixmap:
@@ -648,18 +691,30 @@ class _BlacklistTimeline(QWidget):
             }:
                 painter.setPen(QPen(QColor(tokens["ACCENT"]), 3.0))
                 painter.drawLine(point, next_point)
+        current_progress = self._current_progress_line(nodes)
+        if current_progress is not None:
+            progress_pen = QPen(QColor(tokens["ACCENT"]), 3.0)
+            progress_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(progress_pen)
+            painter.drawLine(*current_progress)
 
         wide = self.width() >= 1180
         node_radius = 12.5 if wide else 11.5
         selected_radius = node_radius + 5.5
+        bracket_arm = 5.5 if wide else 5.0
         if self._selection_position is not None:
             position = max(0.0, min(14.0, self._selection_position))
             selection_x = nodes[0][1].x() + position * (
                 nodes[-1][1].x() - nodes[0][1].x()
             ) / 14.0
             painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(QColor(tokens["ACCENT_BRIGHT"]), 2.0))
-            painter.drawEllipse(QPointF(selection_x, 30.0), selected_radius, selected_radius)
+            selection_pen = QPen(QColor(tokens["ACCENT_BRIGHT"]), 2.0)
+            selection_pen.setCapStyle(Qt.PenCapStyle.SquareCap)
+            selection_pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+            painter.setPen(selection_pen)
+            painter.drawPath(self._selection_bracket_path(
+                QPointF(selection_x, 30.0), selected_radius, bracket_arm
+            ))
         for stage, point in nodes:
             state = self._state(stage)
             selected = stage == self._selected_stage
@@ -1233,9 +1288,7 @@ def _race_row(record: career_progress.RaceRecord, *, boss: bool) -> _InspectorRo
         tag="REVERSED" if reversed_route else "",
         state=state,
         kind="boss" if boss else "race",
-        icon_path=game_icon_path(
-            "boss_race" if boss else _race_type_icon(route_id)
-        ),
+        icon_path=game_icon_path(_race_type_icon(route_id)),
         detail=detail,
         fraction=None,
         tooltip=f"{title} — {tooltip_detail}\n{kind_line}",

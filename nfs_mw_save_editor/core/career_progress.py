@@ -245,6 +245,23 @@ class CareerProgressSummary:
             and self.total_bounty >= requirement.bounty
         )
 
+    def requirement_progress(self, stage: int) -> float:
+        """Return the equally weighted 0..1 progress toward a rival gate."""
+
+        chapter = self.chapter(stage)
+        requirement = chapter.requirement
+
+        def fraction(value: int, target: int) -> float:
+            if target <= 0:
+                return 1.0
+            return max(0.0, min(1.0, value / target))
+
+        return sum((
+            fraction(chapter.race_wins, requirement.races),
+            fraction(chapter.milestone_wins, requirement.milestones),
+            fraction(self.total_bounty, requirement.bounty),
+        )) / 3.0
+
     def stage_state(self, stage: int) -> str:
         """Return one of defeated/current/boss_ready/locked for timeline UI."""
 
