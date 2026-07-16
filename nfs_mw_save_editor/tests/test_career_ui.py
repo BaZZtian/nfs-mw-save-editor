@@ -384,11 +384,15 @@ def test_theme_refresh_snaps_live_animations_without_raster_overlay():
 def test_all_hero_busts_stay_inside_compact_and_fullscreen_banners():
     app = _app()
     hero = _CareerHero()
+    stamp = QPixmap(180, 56)
+    stamp.fill(Qt.GlobalColor.red)
+    hero.set_defeated_stamp(stamp)
     hero.show()
     for width, expected_height in ((790, 320), (1180, 320), (1640, 340)):
         hero.resize(width, expected_height)
         app.processEvents()
         assert hero.height() == expected_height
+        expected_stamp_width = 210.0 if width >= 1450 else 175.0
         for stage in range(1, 16):
             hero.set_stage(stage)
             safe = hero.bustSafeRect(stage, width, expected_height)
@@ -400,6 +404,10 @@ def test_all_hero_busts_stay_inside_compact_and_fullscreen_banners():
             assert source.top() >= 0
             assert source.bottom() <= hero._portrait.height()
             assert source.height() >= hero._portrait.height() * 0.9
+            stamp_rect = hero.defeatedStampRect(stage, width, expected_height)
+            assert stamp_rect.width() == expected_stamp_width
+            assert QRectF(0, 0, width, expected_height).contains(stamp_rect)
+            assert stamp_rect.intersects(safe)
     hero.close()
     app.processEvents()
 
@@ -440,12 +448,24 @@ def test_defeated_hero_uses_the_game_stamp_and_other_states_keep_text():
 
     window._on_career_timeline_selected(9)
     QTest.qWait(180)
-    stamp = window.career_hero_status.pixmap()
-    assert window.career_hero_status.property("stamp") is True
+    stamp = window.career_hero._defeated_stamp
+    assert window.career_hero_status.property("stamp") is False
+    assert window.career_hero_status.isHidden()
     assert window.career_hero_status.text() == ""
-    assert stamp is not None and not stamp.isNull()
-    assert stamp.size() == QSize(180, 56)
+    assert not stamp.isNull()
+    assert stamp.width() > window.career_hero._WIDE_STAMP_WIDTH
+    assert stamp.height() > 56
+    assert abs(stamp.width() / stamp.height() - 180 / 56) < 0.02
     assert window.career_hero_status.accessibleName() == "DEFEATED"
+    assert window.career_hero.accessibleDescription() == "DEFEATED"
+    stamp_rect = window.career_hero.defeatedStampRect(
+        9, window.career_hero.width(), window.career_hero.height()
+    )
+    portrait_rect = window.career_hero.portraitRect(
+        9, window.career_hero.width(), window.career_hero.height()
+    )
+    assert stamp_rect.intersects(portrait_rect)
+    assert QRectF(window.career_hero.rect()).contains(stamp_rect)
 
     image = stamp.toImage()
     visible = [
@@ -455,8 +475,8 @@ def test_defeated_hero_uses_the_game_stamp_and_other_states_keep_text():
         if image.pixelColor(x, y).alpha() > 0
     ]
     assert visible
-    assert min(x for x, _color in visible) >= 10
-    assert max(x for x, _color in visible) <= image.width() - 11
+    assert min(x for x, _color in visible) >= image.width() * 0.05
+    assert max(x for x, _color in visible) <= image.width() * 0.95
     solid = [color for _x, color in visible if color.alpha() >= 250]
     assert solid
     assert max(color.red() for color in solid) == 147
@@ -479,6 +499,7 @@ def test_defeated_hero_uses_the_game_stamp_and_other_states_keep_text():
     QTest.qWait(180)
     assert window.career_hero_status.isHidden()
     assert window.career_hero_status.text() == ""
+    assert window.career_hero._defeated_stamp.isNull()
 
     window._on_career_timeline_selected(7)
     QTest.qWait(180)
@@ -486,6 +507,7 @@ def test_defeated_hero_uses_the_game_stamp_and_other_states_keep_text():
     assert window.career_hero_status.property("stamp") is False
     assert window.career_hero_status.text() == "LOCKED"
     assert window.career_hero_status.pixmap().isNull()
+    assert window.career_hero._defeated_stamp.isNull()
     window.close()
     app.processEvents()
 

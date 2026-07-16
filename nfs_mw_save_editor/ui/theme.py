@@ -1614,12 +1614,6 @@ QLabel#careerHeroStatus[state="defeated"] {{
     border-color: {BORDER};
     color: {MUTED};
 }}
-QLabel#careerHeroStatus[stamp="true"] {{
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    padding: 0;
-}}
 QWidget#careerTimeline {{
     background: {BG_CARD};
     border: 1px solid {BORDER};

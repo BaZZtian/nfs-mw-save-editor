@@ -227,6 +227,8 @@ class _CareerHero(QFrame):
     _COMPACT_HEIGHT = 320
     _WIDE_HEIGHT = 340
     _WIDE_BREAKPOINT = 1450
+    _COMPACT_STAMP_WIDTH = 175.0
+    _WIDE_STAMP_WIDTH = 210.0
     _art_cache: "OrderedDict[int, tuple[QPixmap, QPixmap]]" = OrderedDict()
 
     def __init__(self) -> None:
@@ -237,6 +239,7 @@ class _CareerHero(QFrame):
         self._stage: Optional[int] = None
         self._graffiti = QPixmap()
         self._portrait = QPixmap()
+        self._defeated_stamp = QPixmap()
 
     def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
         return True
@@ -274,6 +277,10 @@ class _CareerHero(QFrame):
         self._art_cache[stage] = (graffiti, portrait)
         while len(self._art_cache) > 3:
             self._art_cache.popitem(last=False)
+        self.update()
+
+    def set_defeated_stamp(self, stamp: QPixmap) -> None:
+        self._defeated_stamp = QPixmap(stamp)
         self.update()
 
     @staticmethod
@@ -314,6 +321,27 @@ class _CareerHero(QFrame):
 
     def bustSafeRect(self, stage: int, width: int, height: int) -> QRectF:  # noqa: N802
         return self.portraitRect(stage, width, height)
+
+    def defeatedStampRect(self, stage: int, width: int, height: int) -> QRectF:  # noqa: N802
+        if self._defeated_stamp.isNull():
+            return QRectF()
+        portrait = self.portraitRect(stage, width, height)
+        if portrait.isNull():
+            return QRectF()
+        stamp_width = (
+            self._WIDE_STAMP_WIDTH
+            if width >= self._WIDE_BREAKPOINT
+            else self._COMPACT_STAMP_WIDTH
+        )
+        stamp_height = stamp_width * (
+            self._defeated_stamp.height() / self._defeated_stamp.width()
+        )
+        return QRectF(
+            portrait.center().x() - stamp_width * 0.55,
+            portrait.top() + portrait.height() * 0.66,
+            stamp_width,
+            stamp_height,
+        )
 
     def _paint_theme_background(self, painter: QPainter, tokens: Mapping[str, str]) -> None:
         width = self.width()
@@ -415,6 +443,12 @@ class _CareerHero(QFrame):
                 self._stage, self.width(), self.height()
             ), self._portrait, self.portraitSourceRect(self._stage))
             painter.setOpacity(1.0)
+            if not self._defeated_stamp.isNull():
+                painter.drawPixmap(
+                    self.defeatedStampRect(self._stage, self.width(), self.height()),
+                    self._defeated_stamp,
+                    QRectF(self._defeated_stamp.rect()),
+                )
 
         painter.setClipping(False)
         painter.setPen(QPen(QColor(tokens["BORDER"]), 1.0))
@@ -1888,25 +1922,24 @@ class CareerMixin:
         label.setProperty("state", state)
         label.setAccessibleName(text)
         label.setToolTip(text if state == "defeated" else "")
-        label.setHidden(state == "current")
+        stamp = self._defeated_stamp_pixmap() if state == "defeated" else QPixmap()
+        self.career_hero.set_defeated_stamp(stamp)
+        show_portrait_stamp = state == "defeated" and not stamp.isNull()
+        self.career_hero.setAccessibleDescription(
+            "DEFEATED" if state == "defeated" else ""
+        )
+        label.setProperty("stamp", False)
+        label.setHidden(state == "current" or show_portrait_stamp)
 
-        if state == "current":
-            label.setProperty("stamp", False)
+        if state == "current" or show_portrait_stamp:
             label.setMinimumSize(0, 0)
             label.setMaximumSize(QSize(16777215, 16777215))
             label.updateGeometry()
             return
 
-        stamp = self._defeated_stamp_pixmap() if state == "defeated" else QPixmap()
-        if not stamp.isNull():
-            label.setProperty("stamp", True)
-            label.setPixmap(stamp)
-            label.setFixedSize(stamp.size())
-        else:
-            label.setProperty("stamp", False)
-            label.setMinimumSize(0, 0)
-            label.setMaximumSize(QSize(16777215, 16777215))
-            label.setText(text)
+        label.setMinimumSize(0, 0)
+        label.setMaximumSize(QSize(16777215, 16777215))
+        label.setText(text)
         label.updateGeometry()
 
     def _defeated_stamp_pixmap(self) -> QPixmap:
@@ -1918,10 +1951,30 @@ class CareerMixin:
             self._career_defeated_stamp = QPixmap()
             return self._career_defeated_stamp
 
-        # The rotated artwork needs a generous transparent gutter.  Keeping the
-        # source a little smaller than the label also prevents the ragged stamp
-        # border from reading as clipped against the following empty space.
-        source = self._tight_icon(path, QSize(146, 36)).pixmap(146, 36)
+        # Keep the game texture at native resolution through tinting and rotation.
+        # The previous 146x36 intermediate was later enlarged to 175/210 px in the
+        # Hero, so its already-antialiased edges became visibly soft.  These
+        # reference dimensions now define composition only; all raster work stays
+        # at the source texture's substantially larger native scale.
+        source_texture = QPixmap(str(path))
+        if source_texture.isNull():
+            self._career_defeated_stamp = QPixmap()
+            return self._career_defeated_stamp
+
+        reference_source = QSize(146, 36)
+        render_scale = source_texture.height() / reference_source.height()
+        source = QPixmap(
+            round(reference_source.width() * render_scale),
+            source_texture.height(),
+        )
+        source.fill(Qt.transparent)
+        source_painter = QPainter(source)
+        source_painter.drawPixmap(
+            (source.width() - source_texture.width()) // 2,
+            0,
+            source_texture,
+        )
+        source_painter.end()
         if source.isNull():
             self._career_defeated_stamp = QPixmap()
             return self._career_defeated_stamp
@@ -1953,7 +2006,10 @@ class CareerMixin:
         backing.lineTo(7.0, 35.0)
         backing.lineTo(1.0, 30.0)
         backing.closeSubpath()
+        painter.save()
+        painter.scale(render_scale, render_scale)
         painter.fillPath(backing, QColor(7, 8, 9, 234))
+        painter.restore()
         painter.drawPixmap(0, 0, dark_ink)
         painter.drawPixmap(0, 0, bright_ink)
         painter.end()
@@ -1961,7 +2017,7 @@ class CareerMixin:
         rotated = inked.transformed(
             QTransform().rotate(-4.0), Qt.SmoothTransformation
         )
-        canvas = QPixmap(180, 56)
+        canvas = QPixmap(round(180 * render_scale), round(56 * render_scale))
         canvas.fill(Qt.transparent)
         painter = QPainter(canvas)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
