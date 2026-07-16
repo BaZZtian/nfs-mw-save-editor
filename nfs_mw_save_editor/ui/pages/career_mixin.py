@@ -153,7 +153,10 @@ def _untracked_boss_row(
 ) -> _InspectorRow:
     if siblings and all(record.is_completed for record in siblings):
         state, detail = "done", "SERIES COMPLETE"
-    elif any(record.flags & 0x10 for record in siblings):
+    elif any(
+        record.flags & career_progress.RACE_FLAG_UNLOCKED_CAREER
+        for record in siblings
+    ):
         state, detail = "open", "AVAILABLE"
     else:
         state, detail = "locked", "LOCKED"
@@ -1308,7 +1311,7 @@ def _race_row(record: career_progress.RaceRecord, *, boss: bool) -> _InspectorRo
             f"completed{f' · best {best}' if best else ''}\n"
             f"top {record.top_speed:.1f} · avg {record.average_speed:.1f}"
         )
-    elif record.flags & 0x10:
+    elif record.flags & career_progress.RACE_FLAG_UNLOCKED_CAREER:
         state = "open"
         detail = "AVAILABLE"
         tooltip_detail = "available"
@@ -2403,7 +2406,7 @@ class CareerMixin:
                 f"top {record.top_speed:.1f} · avg {record.average_speed:.1f}"
                 f"{kind_line}"
             )
-        elif record.flags & 0x10:
+        elif record.flags & career_progress.RACE_FLAG_UNLOCKED_CAREER:
             state = "open"
             tooltip = f"{title} — available{kind_line}"
         else:

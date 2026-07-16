@@ -1022,7 +1022,7 @@ def test_race_rows_use_canon_track_names_types_and_boss_kind():
         index=1,
         race_hash=2,
         event_id="5.5.2.r",
-        flags=0x10,
+        flags=career_progress.RACE_FLAG_UNLOCKED_CAREER,
         high_score=0,
         top_speed=0.0,
         average_speed=0.0,
@@ -1033,6 +1033,19 @@ def test_race_rows_use_canon_track_names_types_and_boss_kind():
     assert row.tag == "REVERSED"
     assert row.detail == "AVAILABLE"
     assert row.icon_path is not None and row.icon_path.name == "speedtrap.png"
+
+    # kUnlocked_Online alone (engine ScoreFlags 0x10) says nothing about
+    # career availability — the pre-2026-07-16 UI mistook it for AVAILABLE.
+    online_only = career_progress.RaceRecord(
+        index=1,
+        race_hash=2,
+        event_id="5.5.2.r",
+        flags=0x10,
+        high_score=0,
+        top_speed=0.0,
+        average_speed=0.0,
+    )
+    assert _race_row(online_only, boss=False).state == "locked"
 
     boss_locked = career_progress.RaceRecord(
         index=2,
@@ -1099,7 +1112,7 @@ def test_rival_challenge_series_is_canon_ordered_with_synthetic_warrent():
         assert rival_challenge.BOSS_SERIES[stage]
         assert rival_challenge.WORLD_ORDER[stage]
 
-    def record(event_id, flags=0x10):
+    def record(event_id, flags=career_progress.RACE_FLAG_UNLOCKED_CAREER):
         return career_progress.RaceRecord(
             index=0, race_hash=1, event_id=event_id, flags=flags,
             high_score=0, top_speed=0.0, average_speed=0.0, is_boss_race=True,
@@ -1135,7 +1148,8 @@ def test_rival_challenge_series_is_canon_ordered_with_synthetic_warrent():
 
 def test_remapped_slot_displays_the_driven_route():
     record = career_progress.RaceRecord(
-        index=0, race_hash=1, event_id="8.3.2", flags=0x10,
+        index=0, race_hash=1, event_id="8.3.2",
+        flags=career_progress.RACE_FLAG_UNLOCKED_CAREER,
         high_score=0, top_speed=0.0, average_speed=0.0,
     )
     row = _race_row(record, boss=False)

@@ -71,10 +71,16 @@ SPEEDTRAP_COMPLETE_COUNT = 5
 # principle; only 4 is treated as awarded.
 MILESTONE_STATE_AWARDED = 4
 
-# Race-table flag semantics from ladder transitions: base 0x04/0x10/0x14,
-# completion sets 0x02|0x08 (career events end 0x1E, prologue events 0x02 —
-# hence the completion test uses only bit 0x02 for chapter 16).
+# GRaceSaveInfo.mFlags is the engine's ScoreFlags enum (PS2 decomp,
+# PS2_types.nothpp): 0x01 kCompleted_ContextQuickRace, 0x02
+# kCompleted_ContextCareer, 0x04 kUnlocked_QuickRace, 0x08 kUnlocked_Career,
+# 0x10 kUnlocked_Online. Ladder-verified (2026-07-16): a chapter's world
+# races gain Career|QuickRace together the moment the chapter opens, boss-
+# series races only once the rival gate is met, and Online is a static
+# roster fixed at START GAME — it says nothing about career availability.
+# Prologue events (chapter 16) end 0x02 only — hence their completion test.
 RACE_FLAG_PROLOGUE_DONE = 0x02
+RACE_FLAG_UNLOCKED_CAREER = 0x08
 
 PROLOGUE_CHAPTER = 16
 CHALLENGE_CHAPTER = 19
