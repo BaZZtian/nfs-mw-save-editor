@@ -1198,18 +1198,16 @@ class _ChapterInspectorPage(QFrame):
             title = type_info[0] if type_info is not None else f"Milestone {index}"
             required = _milestone_display(record.type_key, record.required_value)
             recorded = _milestone_display(record.type_key, record.recorded_value)
+            # No progress bar: GMilestone.recorded stays zero while active
+            # (the game writes it only at award time), so a bar could never
+            # show anything but 0%. Speedtrap rows below keep theirs —
+            # best_speed is live data.
             if record.is_awarded:
                 state = "done"
                 detail = f"AWARDED · {recorded}"
-                fraction: Optional[float] = None
             else:
                 state = "open"
                 detail = f"{recorded} / {required}"
-                fraction = (
-                    record.recorded_value / record.required_value
-                    if record.required_value > 0
-                    else None
-                )
             status = "awarded" if record.is_awarded else f"state {record.state}"
             milestone_rows.append(_InspectorRow(
                 title=title,
@@ -1218,7 +1216,7 @@ class _ChapterInspectorPage(QFrame):
                 kind="milestone",
                 icon_path=_milestone_icon(record.type_key),
                 detail=detail,
-                fraction=fraction,
+                fraction=None,
                 tooltip=(
                     f"{title} — {status}\n"
                     f"Required {required} · recorded {recorded}"
