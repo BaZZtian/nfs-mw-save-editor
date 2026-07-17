@@ -1273,13 +1273,13 @@ QLabel#careerHeroEyebrow {{
 QLabel#careerHeroRank {{
     color: {ACCENT_BRIGHT};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 46px;
+    font-size: 54px;
     font-weight: 700;
 }}
 QLabel#careerHeroBoss {{
     color: {TEXT};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 42px;
+    font-size: 48px;
     font-weight: 700;
     letter-spacing: 1.2px;
 }}
@@ -1314,10 +1314,10 @@ QPushButton#careerViewTab {{
     background: transparent;
     border: none;
     border-radius: {RADIUS_MD};
-    padding: 7px 16px;
+    padding: 6px 16px;
     color: {MUTED};
     font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.9px;
 }}

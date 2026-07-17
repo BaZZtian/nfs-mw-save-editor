@@ -1363,7 +1363,7 @@ class CareerMixin:
         hero_layout.setSpacing(14)
 
         hero_copy = QVBoxLayout()
-        hero_copy.setContentsMargins(0, 34, 0, 0)
+        hero_copy.setContentsMargins(0, 6, 0, 0)
         hero_copy.setSpacing(3)
         eyebrow = QLabel("BLACKLIST")
         eyebrow.setObjectName("careerHeroEyebrow")
@@ -1371,7 +1371,7 @@ class CareerMixin:
         hero_copy.addWidget(eyebrow)
 
         headline = QHBoxLayout()
-        headline.setSpacing(10)
+        headline.setSpacing(12)
         self.career_stage_value = QLabel("-")
         self.career_stage_value.setObjectName("careerHeroRank")
         self.career_stage_value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
@@ -1393,10 +1393,10 @@ class CareerMixin:
         self.career_hero_tagline.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.career_hero_tagline.setVisible(False)
         hero_copy.addWidget(self.career_hero_tagline)
-        hero_copy.addStretch(1)
+        hero_copy.addSpacing(16)
 
         metrics = QHBoxLayout()
-        metrics.setSpacing(8)
+        metrics.setSpacing(12)
         self.career_races_value = QLabel("-")
         self.career_races_metric = self._build_career_hero_metric(
             "RACE WINS", self.career_races_value, "race"
@@ -1414,20 +1414,22 @@ class CareerMixin:
         metrics.addWidget(self.career_bounty_metric)
         metrics.addStretch(1)
         hero_copy.addLayout(metrics)
-        hero_copy.addSpacing(12)
+        hero_copy.addSpacing(16)
 
         # ── View switch: safe progress overview | stage change ──
         self.career_view_switch = AnimatedSegmentedControl(
             ("PROGRESS", "CHANGE RIVAL"),
             button_object_name="careerViewTab",
-            fixed_height=44,
+            fixed_height=42,
         )
+        self.career_view_switch.setFixedWidth(268)
         self.career_view_rapsheet_btn = self.career_view_switch.button(0)
         self.career_view_transplant_btn = self.career_view_switch.button(1)
         hero_switch_row = QHBoxLayout()
         hero_switch_row.addWidget(self.career_view_switch)
         hero_switch_row.addStretch(1)
         hero_copy.addLayout(hero_switch_row)
+        hero_copy.addStretch(1)
 
         hero_layout.addLayout(hero_copy, 3)
         hero_layout.addStretch(2)
@@ -1453,7 +1455,7 @@ class CareerMixin:
         frame = QFrame()
         frame.setObjectName("careerHeroMetric")
         frame.setProperty("met", False)
-        frame.setFixedSize(188, 72)
+        frame.setFixedSize(204, 72)
         metric_layout = QHBoxLayout(frame)
         metric_layout.setContentsMargins(12, 9, 14, 9)
         metric_layout.setSpacing(10)

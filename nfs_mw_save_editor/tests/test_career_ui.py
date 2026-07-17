@@ -125,7 +125,7 @@ def test_game_icons_are_wired_to_hero_actions_and_tuning_nav():
         icon = metric.findChild(QLabel, "careerHeroMetricIcon")
         assert icon is not None
         assert icon.pixmap() is not None and not icon.pixmap().isNull()
-        assert metric.size() == QSize(188, 72)
+        assert metric.size() == QSize(204, 72)
         assert metric.findChild(QWidget, "careerHeroMetricProgress") is None
 
     captions = [
@@ -822,7 +822,16 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
         - window.career_races_metric.geometry().bottom()
         - 1
     )
-    assert metric_gap >= 12
+    copy_gap = (
+        window.career_races_metric.geometry().top()
+        - window.career_hero_tagline.geometry().bottom()
+        - 1
+    )
+    assert metric_gap >= 16
+    assert abs(copy_gap - metric_gap) <= 1
+    assert window.career_view_switch.width() == 268
+    assert window.career_view_switch.height() == 42
+    assert window.career_view_rapsheet_btn.font().pixelSize() == 11
     assert window.career_hero_status.isHidden()
     assert not hasattr(window, "career_stage_sub")
     assert window.findChild(QLabel, "careerHeroSub") is None
@@ -831,8 +840,8 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     assert eyebrow.text() == "BLACKLIST"
     headline_gap = window.career_stage_value.geometry().top() - eyebrow.geometry().bottom() - 1
     assert 0 <= headline_gap <= 8
-    assert window.career_stage_value.font().pixelSize() == 46
-    assert window.career_boss_value.font().pixelSize() == 42
+    assert window.career_stage_value.font().pixelSize() == 54
+    assert window.career_boss_value.font().pixelSize() == 48
     assert not hasattr(window.career_stage_grid_host, "_refresh_transition_overlay")
     inspector = window.career_inspector_pages[window.career_inspector_stack.currentIndex()]
     assert not hasattr(inspector, "title")
