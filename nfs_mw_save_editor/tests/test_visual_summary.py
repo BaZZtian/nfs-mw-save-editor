@@ -20,15 +20,16 @@ from core.visual_parts import (
 from ui.pages.visual_summary import (
     build_visual_summary,
     paint_label,
+    part_label,
     rival_livery,
     wheel_label,
 )
 
 
-def _part(name: str, category: str = "X", rgb=None) -> PartInfo:
+def _part(name: str, category: str = "X", rgb=None, display=None) -> PartInfo:
     return PartInfo(
         index=0, category_id=0, category=category, owner="X",
-        name=name, raw_group_upgrade=0, rgb=rgb,
+        name=name, raw_group_upgrade=0, rgb=rgb, display_name=display,
     )
 
 
@@ -102,3 +103,44 @@ def test_summary_plain_vinyl_and_empty():
     assert vm.livery_text is None
 
     assert build_visual_summary({}) is None
+
+
+def test_part_label_prefers_canon_and_marks_carbon():
+    assert part_label(_part("HOOD 6", "HOOD", display="Overdial")) == "Overdial"
+    assert part_label(_part("HOOD 6 CARBON", "HOOD", display="Overdial")) == "Overdial (Carbon)"
+    assert part_label(_part("TEMPEST CF", "ROOF", display="Tempest")) == "Tempest (Carbon)"
+    # no canon label -> pretty engine words (unchanged behaviour)
+    assert part_label(_part("SPOILER 36 CF", "SPOILER")) == "Spoiler 36 CF"
+
+
+def test_summary_uses_canon_names():
+    build = {
+        SLOT_BODY: _part("BODY_03", "BODY", display="Body 3"),
+        SLOT_HOOD: _part("HOOD 7 CARBON", "HOOD", display="Trident"),
+        SLOT_WINDOW_TINT: _part("MEDIUM RED", "WINDOW_TINT", display="Medium Red"),
+        SLOT_VINYL_LAYER0: _part("FLAME01", "VINYL", display="Flame 1"),
+    }
+    vm = build_visual_summary(build)
+    assert vm is not None
+    assert "Body 3" in vm.text and "Kit 03" not in vm.text
+    assert "Trident (Carbon)" in vm.text
+    assert "Tint: Medium Red" in vm.text
+    assert "Vinyl: Flame 1" in vm.text
+    # tooltip: canon first, engine name kept for traceability
+    assert "HOOD: Trident (HOOD 7 CARBON)" in vm.tooltip
+    # canon == engine (case-insensitively) collapses to canon alone
+    assert "WINDOW_TINT: Medium Red" in vm.tooltip
+    assert "Medium Red (MEDIUM RED)" not in vm.tooltip
+
+
+def test_canon_stock_names_still_filtered():
+    # stock detection stays engine-name based even when canon says "Stock"
+    build = {
+        SLOT_BASE_PAINT: _part("GLOSS_L1_COLOR24", "PAINT", rgb=(191, 38, 38)),
+        SLOT_HOOD: _part("STOCK", "HOOD", display="Stock"),
+        SLOT_WINDOW_TINT: _part("STOCK WINDOW TINT", "WINDOW_TINT",
+                                display="No Window Tint"),
+    }
+    vm = build_visual_summary(build)
+    assert vm is not None
+    assert vm.text == "Gloss #24"

@@ -85,6 +85,33 @@ def test_paint_swatches_and_label_hashes():
     assert part_at(FORD_GT_TINT_STOCK + 1).name == "LIGHT BLACK"
 
 
+def test_canon_display_names_resolve():
+    # LANGUAGEHASH -> English.bin resolution, generated into the catalog
+    # (gen_visual_parts.py name anchors, probe session 2026-07-16).
+    assert part_at(126).name == "HOOD 6"
+    assert part_at(126).display_name == "Overdial"
+    assert part_at(FORD_GT_BODY_VINYL).display_name == "Body 2"
+    assert part_at(FORD_GT_TINT_STOCK).display_name == "No Window Tint"
+    assert part_at(FORD_GT_TINT_STOCK + 1).display_name == "Light Black"
+    # paints and wheels carry no LANGUAGEHASH by design
+    assert part_at(FORD_GT_GLOSS_A).display_name is None
+
+
+def test_display_name_coverage_and_placeholder_filter():
+    named = unlocalized = 0
+    for index in range(num_parts()):
+        info = part_at(index)
+        if info.display_name is not None:
+            named += 1
+            assert "Localization" not in info.display_name
+        if info.language_hash is not None and info.display_name is None:
+            unlocalized += 1
+    assert named == 2689
+    # 5 CUSTOM_HUD_PAINT colours missing from English.bin + PSRTEST/COPGTO
+    # placeholder vinyls fall back to engine names
+    assert unlocalized == 7
+
+
 def test_part_at_rejects_empty_and_out_of_range():
     assert part_at(EMPTY_SLOT) is None
     assert part_at(-1) is None

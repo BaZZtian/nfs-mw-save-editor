@@ -5,6 +5,11 @@ core.visual_parts.installed_parts) into one compact display line: paint swatch
 RGB, a few notable parts, and a rival-livery callout when the vinyl layer is a
 Blacklist boss vinyl (pink-slip cars keep their previous owner's colours).
 
+Part naming: canon in-game labels (PartInfo.display_name, e.g. "Overdial")
+are preferred wherever the catalog carries them; engine names remain the
+fallback and stay visible in the hover tooltip for RE traceability. Carbon
+variants share the base label, so the material is appended as "(Carbon)".
+
 No Qt imports here on purpose: everything is testable headless. Rendering
 lives in parts_mixin.
 """
@@ -89,6 +94,20 @@ def _pretty_words(name: str) -> str:
     return " ".join(words)
 
 
+# Carbon-fibre variants share their base part's canon label; the material is
+# only visible in the engine name (HOOD 6 CARBON / TEMPEST CF).
+_CARBON_TOKENS = {"CARBON", "CF"}
+
+
+def part_label(part: PartInfo) -> str:
+    """Canon in-game name when the catalog has one, pretty engine name else."""
+    if part.display_name:
+        if _CARBON_TOKENS & set(part.name.split()):
+            return f"{part.display_name} (Carbon)"
+        return part.display_name
+    return _pretty_words(part.name)
+
+
 def _split_trailing_digits(name: str) -> Tuple[str, Optional[str]]:
     match = re.match(r"^(.*?)(\d+)$", name)
     if match and match.group(1):
@@ -145,23 +164,26 @@ def build_visual_summary(build: Mapping[int, PartInfo]) -> Optional[VisualSummar
 
     body = build.get(SLOT_BODY)
     if not _is_stock(SLOT_BODY, body):
-        _base, digits = _split_trailing_digits(body.name)
-        items.append(f"Kit {digits}" if digits else _pretty_words(body.name))
+        if body.display_name:
+            items.append(part_label(body))
+        else:
+            _base, digits = _split_trailing_digits(body.name)
+            items.append(f"Kit {digits}" if digits else _pretty_words(body.name))
     spoiler = build.get(SLOT_SPOILER)
     if not _is_stock(SLOT_SPOILER, spoiler):
-        items.append(_pretty_words(spoiler.name))
+        items.append(part_label(spoiler))
     hood = build.get(SLOT_HOOD)
     if not _is_stock(SLOT_HOOD, hood):
-        items.append(_pretty_words(hood.name))
+        items.append(part_label(hood))
     roof = build.get(SLOT_ROOF)
     if not _is_stock(SLOT_ROOF, roof):
-        items.append(_pretty_words(roof.name))
+        items.append(part_label(roof))
     wheels = build.get(SLOT_FRONT_WHEEL)
     if not _is_stock(SLOT_FRONT_WHEEL, wheels):
         items.append(wheel_label(wheels.name))
     tint = build.get(SLOT_WINDOW_TINT)
     if not _is_stock(SLOT_WINDOW_TINT, tint):
-        items.append(f"Tint: {_pretty_words(tint.name)}")
+        items.append(f"Tint: {part_label(tint)}")
 
     livery_text: Optional[str] = None
     livery_tooltip: Optional[str] = None
@@ -172,9 +194,12 @@ def build_visual_summary(build: Mapping[int, PartInfo]) -> Optional[VisualSummar
         livery_text = f"Rival livery — #{number} {nickname}"
         livery_tooltip = LIVERY_TOOLTIP_TEMPLATE.format(number=number, nickname=nickname)
     elif vinyl is not None:
-        base, digits = _split_trailing_digits(vinyl.name)
-        pretty = _pretty_words(base.replace("_", " "))
-        items.append(f"Vinyl: {pretty} #{digits}" if digits else f"Vinyl: {pretty}")
+        if vinyl.display_name:
+            items.append(f"Vinyl: {vinyl.display_name}")
+        else:
+            base, digits = _split_trailing_digits(vinyl.name)
+            pretty = _pretty_words(base.replace("_", " "))
+            items.append(f"Vinyl: {pretty} #{digits}" if digits else f"Vinyl: {pretty}")
 
     if not items and livery_text is None:
         items.append("stock visuals")
@@ -186,7 +211,12 @@ def build_visual_summary(build: Mapping[int, PartInfo]) -> Optional[VisualSummar
         part = build[slot_id]
         label = slot_name(slot_id) or str(slot_id)
         extra = f"  RGB {part.rgb[0]},{part.rgb[1]},{part.rgb[2]}" if part.rgb else ""
-        tooltip_lines.append(f"{label}: {part.name}{extra}")
+        canon = part.display_name
+        if canon and canon.upper() != part.name.upper():
+            shown = f"{canon} ({part.name})"
+        else:
+            shown = canon or part.name
+        tooltip_lines.append(f"{label}: {shown}{extra}")
 
     return VisualSummaryVm(
         swatch_rgb=swatch,
