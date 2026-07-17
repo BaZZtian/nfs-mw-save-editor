@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -218,27 +219,28 @@ class MainWindow(
         root.setObjectName("appChromeRoot")
         root.setAutoFillBackground(True)
         self.setCentralWidget(root)
-        base = QVBoxLayout(root)
+        base = QGridLayout(root)
         base.setContentsMargins(12, 12, 12, 12)
-        base.setSpacing(10)
+        base.setHorizontalSpacing(12)
+        base.setVerticalSpacing(10)
 
         self.header_chrome = QWidget()
         self.header_chrome.setLayout(self._build_header())
-        base.addWidget(self.header_chrome)
+        base.addWidget(self.header_chrome, 0, 1)
 
-        body = QHBoxLayout()
-        body.setSpacing(12)
-        base.addLayout(body, 1)
-
-        self.nav_chrome = QWidget()
+        self.nav_chrome = QFrame()
+        self.nav_chrome.setObjectName("navChrome")
         self.nav_chrome.setLayout(self._build_nav())
-        self.nav_chrome.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Expanding)
-        body.addWidget(self.nav_chrome, 0)
+        self.nav_chrome.setFixedWidth(150)
+        self.nav_chrome.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        base.addWidget(self.nav_chrome, 0, 0, 2, 1)
 
         self.stack = QStackedWidget()
         self.stack.setObjectName("contentStack")
         self.stack.setAutoFillBackground(True)
-        body.addWidget(self.stack, 1)
+        base.addWidget(self.stack, 1, 1)
+        base.setColumnStretch(1, 1)
+        base.setRowStretch(1, 1)
 
         self.page_junk = self._build_junk_page()
         self.page_profile = self._build_profile_page()
@@ -269,7 +271,7 @@ class MainWindow(
         self._select_page("Junkman")
         self.footer_chrome = QWidget()
         self.footer_chrome.setLayout(self._build_footer())
-        base.addWidget(self.footer_chrome)
+        base.addWidget(self.footer_chrome, 2, 0, 1, 2)
         self._shell_theme_roots.append(self.footer_chrome)
 
         # -- Keyboard shortcuts --
@@ -393,11 +395,24 @@ class MainWindow(
 
     def _build_nav(self):
         layout = QVBoxLayout()
+        layout.setContentsMargins(8, 10, 8, 10)
         layout.setSpacing(6)
         layout.setAlignment(Qt.AlignTop)
         self.nav_buttons: Dict[str, QPushButton] = {}
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
+
+        self.nav_brand_logo = QLabel()
+        self.nav_brand_logo.setObjectName("navBrandLogo")
+        self.nav_brand_logo.setAccessibleName("NFS MW Save Editor")
+        self.nav_brand_logo.setAlignment(Qt.AlignCenter)
+        self.nav_brand_logo.setFixedHeight(92)
+        self.nav_brand_logo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        brand = self._brand_pixmap(68)
+        if not brand.isNull():
+            self.nav_brand_logo.setPixmap(brand)
+        layout.addWidget(self.nav_brand_logo)
+        layout.addSpacing(4)
 
         for name in ["Junkman", "Profile", "Career", "Garage", "Tuning", "Builds", "Settings", "About"]:
             btn = QPushButton(name)

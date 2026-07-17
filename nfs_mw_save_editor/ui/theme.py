@@ -643,6 +643,15 @@ QPushButton#navButton {{
     border-radius: 10px;
     min-height: 36px;
 }}
+QFrame#navChrome {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+}}
+QLabel#navBrandLogo {{
+    background: transparent;
+    border: none;
+}}
 QPushButton#navButton:checked {{
     background: {BG_NAV_ACTIVE};
     border: 1px solid {BORDER_NAV_ACTIVE};

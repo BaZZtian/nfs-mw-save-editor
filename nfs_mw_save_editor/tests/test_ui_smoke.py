@@ -8,18 +8,25 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
 from core.models import OwnedCarTransferPlan, ResolvedTransferCarEntry
 from core.savefile import SaveFile
 from ui.main_window import MainWindow
 from ui.pages.garage_mixin import GarageCardVm
-from ui.theme import available_theme_names, build_page_stylesheet
+from ui.theme import (
+    available_theme_names,
+    build_page_stylesheet,
+    build_shell_stylesheet,
+    resolve_theme_tokens,
+)
 
 
 SMOKE_OBJECT_NAMES = (
     "appChromeRoot",
     "contentStack",
+    "navChrome",
+    "navBrandLogo",
     "navButton",
     "pageControlsRow",
     "pageControlsSection",
@@ -210,6 +217,21 @@ class UiSmokeTests(unittest.TestCase):
         )
         for selector in removed_selectors:
             self.assertNotIn(selector, stylesheet)
+
+    def test_nav_shell_is_carded_and_branded(self) -> None:
+        stylesheet = build_shell_stylesheet(self.window.theme_name)
+        tokens = resolve_theme_tokens(self.window.theme_name)
+        self.assertIn("QFrame#navChrome {", stylesheet)
+        self.assertIn("QLabel#navBrandLogo {", stylesheet)
+        self.assertIn(f"background: {tokens['BG_CARD']};", stylesheet)
+        self.assertIn(f"border: 1px solid {tokens['BORDER']};", stylesheet)
+        self.assertEqual(self.window.nav_chrome.width(), 150)
+        logo = self.window.findChild(QLabel, "navBrandLogo")
+        self.assertIsNotNone(logo)
+        self.assertEqual(logo.height(), 92)
+        self.assertIsNotNone(logo.pixmap())
+        self.assertFalse(logo.pixmap().isNull())
+        self.assertIsNone(logo.graphicsEffect())
 
 
 if __name__ == "__main__":
