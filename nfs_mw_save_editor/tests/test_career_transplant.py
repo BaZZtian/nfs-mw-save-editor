@@ -15,10 +15,9 @@ KEEP_USER_HOLES = (
     (0x42A9, 0x42B9, "case_file_name"),
     (0x5739, 0x5B41, "junkman_inventory_and_alias_region"),
     (0x5B42, 0x5B62, "gap_after_tbd_5b41"),
-    (0x5B64, 0x5C71, "gap_after_tbd_5b62"),
-    (0x5C72, 0x5C73, "gap_after_tbd_5c71"),
-    (0x5C74, 0x793D, "gap_after_tbd_5c73"),
-    (0x795D, career_transplant.EXPECTED_SAVE_SIZE, "property_and_tail_region"),
+    # 0x5B64.. includes the FE car table (0x5BC5) and pending parts blocks:
+    # user property plus Showcase-bug artifact fields dropped 2026-07-18.
+    (0x5B64, career_transplant.EXPECTED_SAVE_SIZE, "fe_table_property_and_tail_region"),
 )
 
 

@@ -17,7 +17,13 @@ a fixed array of 63 12-byte slots at 0x5739..0x5A2D (empirically stable
 across all saves) and is user property — the first cut of the belt leaked
 donor tokens into it (caught during in-game validation). The former "tbd_57b1"/
 "tbd_57b9" singles were that array's slot 10 (type/count bytes) and were
-removed from the copy map for the same reason. Two invariants are fixed here for future tests and review:
+removed from the copy map for the same reason. The former "tbd_5c71"/
+"tbd_5c73" singles and "tbd_793d_block" were removed 2026-07-18: they are
+Ronnie's FECarRecord FilterBits (car table at 0x5BC5) and his pending
+parts-block package, which get zeroed by a stock Showcase duplicate-handle
+bug whenever the rival's car is previewed from the Reputation screen -
+a bug artifact, not career progression, so copying them injected the
+donor's artifact into the user save. Two invariants are fixed here for future tests and review:
 the game-section MD5 at 0x34 travels with the copied game section verbatim, and
 this module never recomputes checksums. The existing editor save path remains
 responsible for the file-tail MD5 when the user writes the modified save.
@@ -81,9 +87,6 @@ TRANSPLANT_SPANS: Tuple[TransplantSpan, ...] = (
     (0x5241, 0x5739, "post_race_belt"),
     (0x5B41, 0x5B42, "tbd_5b41"),
     (0x5B62, 0x5B64, "tbd_5b62"),
-    (0x5C71, 0x5C72, "tbd_5c71"),
-    (0x5C73, 0x5C74, "tbd_5c73"),
-    (0x793D, 0x795D, "tbd_793d_block"),
 )
 
 
