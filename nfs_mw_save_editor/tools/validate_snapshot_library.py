@@ -303,15 +303,12 @@ def build_markdown_report(
     legacy = sum(1 for row in rows if row.naming_kind == "legacy")
     new = sum(1 for row in rows if row.naming_kind == "new")
     sidecar = sum(1 for row in rows if row.has_visual_sidecar)
-    boundary_hits = 0
     blocked = 0
     for row in rows:
         for save_result in row.save_results:
             for plan in (save_result.my_cars, save_result.career):
                 if plan.status != "ok":
                     blocked += 1
-                    if plan.refusal_reason == SaveFile.BOUNDARY_PARTS_SLOT_BLOCKED_REASON:
-                        boundary_hits += 1
     lines: List[str] = []
     lines.append("# Snapshot Library Validation")
     lines.append("")
@@ -324,7 +321,6 @@ def build_markdown_report(
     lines.append(f"- New naming: {new}")
     lines.append(f"- Sidecar snapshots: {sidecar}")
     lines.append(f"- Blocked planner outcomes across all checked saves/modes: {blocked}")
-    lines.append(f"- Boundary-slot-74 planner hits: {boundary_hits}")
     lines.append("")
     lines.append("## Per-save Summary")
     lines.append("")
@@ -391,7 +387,7 @@ def build_markdown_report(
     lines.append("")
     lines.append("- This report is loader/planner validation plus save-backed inject smoke only.")
     lines.append("- It does not claim full in-game visual certification for every snapshot.")
-    lines.append(f"- The reserved boundary rule for parts slot `74` stayed active during validation.")
+    lines.append("- Parts slot `74` is a normal allocatable slot (game-validated 2026-07-19).")
     return "\n".join(lines) + "\n"
 
 

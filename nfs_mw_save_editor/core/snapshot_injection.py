@@ -46,7 +46,6 @@ class SnapshotInjectionFormat(Protocol):
     PARTS_BLOCK_SIZE: int
     PARTS_MARKER_OFFSET: int
     EMPTY_PARTS_BLOCK_MARKER: bytes
-    BOUNDARY_PARTS_SLOT_BLOCKED_REASON: str
 
 
 class SnapshotInjectionSave(SnapshotInjectionFormat, Protocol):
@@ -219,7 +218,7 @@ def plan_snapshot_injection(
                     refusal = (
                         "No adjacent empty parts slot for sidecar"
                         if saw_primary_parts else
-                        _parts_allocation_refusal(save, parts_candidates)
+                        "No validated empty parts slots available"
                     )
                 else:
                     target_parts_slot = primary_parts.parts_slot
@@ -227,7 +226,7 @@ def plan_snapshot_injection(
             else:
                 reusable_parts = [slot for slot in parts_candidates if slot.reusable]
                 if not reusable_parts:
-                    refusal = _parts_allocation_refusal(save, parts_candidates)
+                    refusal = "No validated empty parts slots available"
                 else:
                     target_parts_slot = reusable_parts[0].parts_slot
 
@@ -433,17 +432,3 @@ def _find_adjacent_parts_slot_pair(
         if nxt.reusable and nxt.parts_slot == status.parts_slot + 1:
             return status, nxt, saw_primary
     return None, None, saw_primary
-
-
-def _parts_allocation_refusal(save: SnapshotInjectionSave, statuses: List[PartsSlotStatus]) -> str:
-    """Map parts allocator statuses to the snapshot planner refusal text.
-
-    This belongs with injection because it is not a general allocator query; it
-    converts allocator state into snapshot-specific refusal wording.
-    """
-
-    if any(status.reusable for status in statuses):
-        return "No validated empty parts slots available"
-    if any(status.blocked_reason == save.BOUNDARY_PARTS_SLOT_BLOCKED_REASON for status in statuses):
-        return save.BOUNDARY_PARTS_SLOT_BLOCKED_REASON
-    return "No validated empty parts slots available"

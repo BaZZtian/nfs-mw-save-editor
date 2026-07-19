@@ -128,7 +128,6 @@ class SaveFile:
     EMPTY_PARTS_BLOCK_HEAD_FILL = 0xFF
     EMPTY_PARTS_BLOCK_ZERO_TAIL_OFFSET = 0x190
     EMPTY_PARTS_BLOCK_MARKER = b"\xFF\xCD\xCD\xCD"
-    BOUNDARY_PARTS_SLOT_BLOCKED_REASON = "Boundary parts slot is reserved until validated"
     VISUAL_SIDECAR_PARTS_BLOCKED_REASON = "Referenced by visual sidecar record"
     PRIMARY_VISUAL_FIELDS: Tuple[Tuple[str, int, int], ...] = (
         ("Body Kit", 0x02E, 1),
@@ -790,12 +789,6 @@ class SaveFile:
         count = (self.GARAGE_BASE_OFFSET - self.PARTS_BLOCK_BASE_OFFSET) // self.PARTS_BLOCK_SIZE
         return range(self.PARTS_BLOCK_SLOT_BASE, self.PARTS_BLOCK_SLOT_BASE + count)
 
-    def _boundary_parts_slot(self) -> Optional[int]:
-        slots = self._parts_slot_numbers()
-        if slots.start >= slots.stop:
-            return None
-        return slots.stop - 1
-
     def _is_blank_parts_block(self, raw_block: bytes) -> bool:
         if len(raw_block) != self.PARTS_BLOCK_SIZE:
             return False
@@ -874,7 +867,6 @@ class SaveFile:
         reserved = {int(value) for value in (reserved_parts_slots or set())}
         referenced_slots = {record.parts_slot for record in self.get_owned_car_records()}
         sidecar_placeholder_slots = self._sidecar_placeholder_parts_slots()
-        boundary_slot = self._boundary_parts_slot()
         statuses: List[PartsSlotStatus] = []
         for slot in self._parts_slot_numbers():
             abs_off = self._parts_block_abs_off(slot)
@@ -902,18 +894,12 @@ class SaveFile:
                 status_code = "reserved_by_staged_injector"
                 status_detail = blocked_reason
             elif self._is_blank_parts_block(raw_block) or self._is_native_empty_parts_block(raw_block):
-                if slot == boundary_slot:
-                    blocked_reason = self.BOUNDARY_PARTS_SLOT_BLOCKED_REASON
-                    status_kind = "blocked"
-                    status_code = "boundary_reserved"
-                    status_detail = blocked_reason
-                else:
-                    reusable = True
-                    status_kind = "reusable"
-                    status_code = (
-                        "reusable_blank" if self._is_blank_parts_block(raw_block) else "reusable_native_empty"
-                    )
-                    status_detail = None
+                reusable = True
+                status_kind = "reusable"
+                status_code = (
+                    "reusable_blank" if self._is_blank_parts_block(raw_block) else "reusable_native_empty"
+                )
+                status_detail = None
             else:
                 blocked_reason = "Non-empty parts block"
                 status_kind = "blocked"
