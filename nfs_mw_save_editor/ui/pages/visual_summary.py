@@ -41,6 +41,28 @@ RIVAL_NICKNAMES: Dict[int, str] = {
     11: "Big Lou", 12: "Izzy", 13: "Vic", 14: "Taz", 15: "Sonny",
 }
 
+# Resolver display name (core/cars.py) -> (blacklist number, nickname).
+# Every rival drives a unique model and an organic 0x42 registry row only
+# exists as a claimed pink slip, so for those rows the model alone names the
+# boss — unlike the livery, it survives repaints and vinyl swaps.
+RIVAL_CAR_MODELS: Dict[str, Tuple[int, str]] = {
+    "BMW M3 GTR": (1, "Razor"),
+    "Mercedes SLR McLaren": (2, "Bull"),
+    "Aston Martin DB9": (3, "Ronnie"),
+    "Dodge Viper SRT10": (4, "JV"),
+    "Corvette C6": (5, "Webster"),
+    "Lamborghini Gallardo": (6, "Ming"),
+    "Mercedes CLK 500": (7, "Kaze"),
+    "Ford Mustang GT": (8, "Jewels"),
+    "Mitsubishi Lancer EVO VIII": (9, "Earl"),
+    "Porsche Cayman S": (10, "Baron"),
+    "Mitsubishi Eclipse": (11, "Big Lou"),
+    "Mazda RX-8": (12, "Izzy"),
+    "Toyota Supra": (13, "Vic"),
+    "Lexus IS300": (14, "Taz"),
+    "VW Golf GTI": (15, "Sonny"),
+}
+
 _RIVAL_VINYL_RE = re.compile(r"^(\d{1,2})([A-Z]{4,})$")
 _PAINT_RE = re.compile(r"^(GLOSS|METAL|PEARL)_L\d+_COLOR(\d+)$")
 _CHROME_RE = re.compile(r"^CHROME(\d+)_PAINT$")

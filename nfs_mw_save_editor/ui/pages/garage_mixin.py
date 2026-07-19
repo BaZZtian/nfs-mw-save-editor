@@ -35,6 +35,7 @@ from core.savefile import SaveFile
 from resources import resource_path
 from ui.icon_map import game_icon_path
 from ui.pages.constants import *
+from ui.pages.visual_summary import RIVAL_CAR_MODELS
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
 from ui.widgets import ToastNotification
 
@@ -142,7 +143,7 @@ class GarageMixin:
         alloc_row = QHBoxLayout(self.garage_alloc_frame)
         alloc_row.setContentsMargins(0, 0, 0, 0)
         alloc_row.setSpacing(8)
-        self.garage_alloc_owned = self._make_stat_badge("Owned empty: -")
+        self.garage_alloc_owned = self._make_stat_badge("Injection capacity: -")
         self.garage_alloc_career = self._make_stat_badge("Career empty: -")
         self.garage_alloc_blocked = self._make_stat_badge("Unavailable: -")
         alloc_row.addWidget(self.garage_alloc_owned, 0, Qt.AlignLeft)
@@ -326,13 +327,14 @@ class GarageMixin:
     def _current_allocator_snapshot(self) -> Optional[GarageAllocatorSnapshot]:
         if not self.savefile:
             return None
-        _, reserved_owned, _, reserved_career = self._current_snapshot_injection_plans()
+        _, reserved_owned, reserved_parts, reserved_career = self._current_snapshot_injection_plans()
         return self.savefile.get_garage_allocator_snapshot(
             location_overrides=self._current_owned_locations(),
             career_slot_overrides=self._current_owned_career_slots(),
             cleared_slots=self._current_cleared_pursuit_slots(),
             reserved_owned_abs_offs=reserved_owned,
             reserved_career_slots=reserved_career,
+            reserved_parts_slots=reserved_parts,
         )
 
     def _garage_transfer_plan_with_context(
@@ -787,6 +789,19 @@ class GarageMixin:
         label.setToolTip(source_kind)
         refresh_widget_style(label)
 
+    def _pink_slip_tooltip(self, slot: ResolvedTransferCarEntry) -> str:
+        # Provenance keys off the car MODEL, not its looks: every Blacklist
+        # rival drives a unique model, and an organic 0x42 row only exists as
+        # a claimed pink slip — so the model names the boss even after the
+        # player repaints or re-vinyls the car.
+        provenance = RIVAL_CAR_MODELS.get(slot.display_name)
+        if provenance is not None:
+            number, nickname = provenance
+            won_from = f"Won from Blacklist #{number} {nickname} as a pink slip prize."
+        else:
+            won_from = "Won from a Blacklist rival as a pink slip prize."
+        return won_from + "\nDrives, tunes and moves like any other career car."
+
     def _garage_card_tooltip(self, slot: ResolvedTransferCarEntry) -> str:
         return (
             f"Parts Slot {slot.parts_slot} | Loc 0x{slot.location_bits:02X} | "
@@ -848,9 +863,12 @@ class GarageMixin:
         if slot.is_pink_slip:
             self._apply_garage_source_badge(handle.source_label, "Career")
             self._apply_garage_source_badge(handle.pink_slip_badge, "Pink Slip")
+            handle.pink_slip_badge.setToolTip(self._pink_slip_tooltip(slot))
             handle.pink_slip_badge.setVisible(True)
         else:
             self._apply_garage_source_badge(handle.source_label, slot.source_kind)
+            if slot.source_kind == "Pink Slip":
+                handle.source_label.setToolTip(self._pink_slip_tooltip(slot))
             handle.pink_slip_badge.setVisible(False)
         handle.active_badge.setVisible(vm.is_active)
         handle.name_label.setText(slot.display_name)
@@ -1134,10 +1152,23 @@ class GarageMixin:
         blocks = [f"{title}\n" + "\n".join(lines) for title, lines in sections]
         self.garage_diag_text.setText("\n\n".join(blocks))
 
+    def _injection_capacity_summary(self, snapshot: GarageAllocatorSnapshot) -> Tuple[str, str]:
+        free_parts = len(snapshot.reusable_parts_slots)
+        total_parts = len(snapshot.parts_slots)
+        free_owned = len(snapshot.reusable_owned_slots)
+        tooltip = (
+            "How many new cars can be injected into this save.\n"
+            "Each car needs one customization block and one owned-car row;\n"
+            "capacity is the smaller of the two pools.\n"
+            f"Free customization blocks: {free_parts} of {total_parts}\n"
+            f"Free owned-car rows: {free_owned}"
+        )
+        return f"Injection capacity: {snapshot.injection_capacity}", tooltip
+
     def _sync_garage_summary_chrome(self, *, loaded: bool) -> None:
         snapshot = self._current_allocator_snapshot() if loaded else None
         if snapshot is None:
-            self.garage_alloc_owned.setText("Owned empty: -")
+            self.garage_alloc_owned.setText("Injection capacity: -")
             self.garage_alloc_career.setText("Career empty: -")
             self.garage_alloc_blocked.setText("Unavailable: -")
             self.garage_alloc_owned.setToolTip("")
@@ -1147,12 +1178,13 @@ class GarageMixin:
                 self.garage_warning_label.clear()
                 self.garage_warning_label.setVisible(False)
         else:
-            self.garage_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
+            capacity_text, capacity_tooltip = self._injection_capacity_summary(snapshot)
+            self.garage_alloc_owned.setText(capacity_text)
             self.garage_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
             unavailable_total = len(snapshot.unavailable_owned_slots) + len(snapshot.unavailable_career_slots)
             self.garage_alloc_blocked.setText(f"Unavailable: {unavailable_total}")
             tooltip = self._allocator_unavailable_tooltip(snapshot)
-            self.garage_alloc_owned.setToolTip(tooltip)
+            self.garage_alloc_owned.setToolTip(capacity_tooltip)
             self.garage_alloc_career.setToolTip(tooltip)
             self.garage_alloc_blocked.setToolTip(tooltip)
             if hasattr(self, "garage_warning_label"):

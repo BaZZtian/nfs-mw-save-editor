@@ -405,7 +405,7 @@ class PartsMixin:
         stats_row = QHBoxLayout(stats_host)
         stats_row.setContentsMargins(0, 0, 0, 0)
         stats_row.setSpacing(8)
-        self.parts_alloc_owned = self._make_stat_badge("Owned empty: -")
+        self.parts_alloc_owned = self._make_stat_badge("Injection capacity: -")
         self.parts_alloc_career = self._make_stat_badge("Career empty: -")
         self.parts_alloc_blocked = self._make_stat_badge("Unavailable: -")
         stats_row.addWidget(self.parts_alloc_owned, 0, Qt.AlignLeft)
@@ -1596,18 +1596,19 @@ class PartsMixin:
             return
         snapshot = self._current_allocator_snapshot() if loaded else None
         if snapshot is None:
-            self.parts_alloc_owned.setText("Owned empty: -")
+            self.parts_alloc_owned.setText("Injection capacity: -")
             self.parts_alloc_career.setText("Career empty: -")
             self.parts_alloc_blocked.setText("Unavailable: -")
             self.parts_alloc_owned.setToolTip("")
             self.parts_alloc_career.setToolTip("")
             self.parts_alloc_blocked.setToolTip("")
             return
-        self.parts_alloc_owned.setText(f"Owned empty: {len(snapshot.reusable_owned_slots)}")
+        capacity_text, capacity_tooltip = self._injection_capacity_summary(snapshot)
+        self.parts_alloc_owned.setText(capacity_text)
         self.parts_alloc_career.setText(f"Career empty: {len(snapshot.reusable_career_slots)}")
         unavailable_total = len(snapshot.unavailable_owned_slots) + len(snapshot.unavailable_career_slots)
         self.parts_alloc_blocked.setText(f"Unavailable: {unavailable_total}")
         tooltip = self._allocator_unavailable_tooltip(snapshot)
-        self.parts_alloc_owned.setToolTip(tooltip)
+        self.parts_alloc_owned.setToolTip(capacity_tooltip)
         self.parts_alloc_career.setToolTip(tooltip)
         self.parts_alloc_blocked.setToolTip(tooltip)

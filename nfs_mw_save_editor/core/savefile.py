@@ -1051,6 +1051,7 @@ class SaveFile:
         cleared_slots: Optional[Set[int]] = None,
         reserved_owned_abs_offs: Optional[Set[int]] = None,
         reserved_career_slots: Optional[Set[int]] = None,
+        reserved_parts_slots: Optional[Set[int]] = None,
     ) -> GarageAllocatorSnapshot:
         return GarageAllocatorSnapshot(
             owned_slots=tuple(self.get_owned_car_slot_statuses(reserved_abs_offs=reserved_owned_abs_offs)),
@@ -1062,6 +1063,7 @@ class SaveFile:
                     reserved_slots=reserved_career_slots,
                 )
             ),
+            parts_slots=tuple(self.get_parts_slot_statuses(reserved_parts_slots=reserved_parts_slots)),
         )
 
     def get_transfer_car_entries(

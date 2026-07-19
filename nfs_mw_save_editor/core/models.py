@@ -230,10 +230,22 @@ class CareerSlotStatus:
 class GarageAllocatorSnapshot:
     owned_slots: Tuple[OwnedCarSlotStatus, ...]
     career_slots: Tuple[CareerSlotStatus, ...]
+    parts_slots: Tuple[PartsSlotStatus, ...] = ()
 
     @property
     def reusable_owned_slots(self) -> Tuple[OwnedCarSlotStatus, ...]:
         return tuple(slot for slot in self.owned_slots if slot.reusable)
+
+    @property
+    def reusable_parts_slots(self) -> Tuple[PartsSlotStatus, ...]:
+        return tuple(slot for slot in self.parts_slots if slot.reusable)
+
+    @property
+    def injection_capacity(self) -> int:
+        """How many new cars can be injected: each needs one free owned-car
+        row and one free customization (parts) block, so the smaller pool
+        is the real ceiling."""
+        return min(len(self.reusable_owned_slots), len(self.reusable_parts_slots))
 
     @property
     def reusable_career_slots(self) -> Tuple[CareerSlotStatus, ...]:
