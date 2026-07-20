@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.savefile import SaveFile
+from core.cars import resolve_car_name
 from core.models import FullCarBuildSnapshot, SnapshotInjectionPlan, SnapshotLibraryEntry
 from core.tuning_limits import get_model_tuning_limits
 from ui.pages.constants import *
@@ -249,6 +250,15 @@ class PresetsMixin:
         self._refresh_presets_page(reason="filter_change")
 
     # -- Shared perf grid (read-only) ----------------------------
+
+    def _presets_model_name(self, signature: bytes, display_name: str) -> str:
+        """Model name for tuning-limit lookups.
+
+        Library display names may carry qualifiers ("Corvette C6 R (red)");
+        the signature is the immutable model key, so resolve through it and
+        fall back to the display name only when the signature is unknown.
+        """
+        return resolve_car_name(signature) or str(display_name)
 
     def _add_presets_perf_grid(self, parent: QVBoxLayout, performance_levels, model_name: str = "") -> None:
         grid = QGridLayout()
@@ -650,7 +660,7 @@ class PresetsMixin:
 
             # Performance bars (read-only, proper caps)
             card_layout.addWidget(self._make_card_field_label("Performance"))
-            self._add_presets_perf_grid(card_layout, entry.performance_levels, entry.display_name)
+            self._add_presets_perf_grid(card_layout, entry.performance_levels, self._presets_model_name(entry.primary_owned_record_template.signature, entry.display_name))
 
             # Action row
             action_row = QHBoxLayout()
@@ -841,7 +851,7 @@ class PresetsMixin:
 
             # Performance bars (read-only)
             card_layout.addWidget(self._make_card_field_label("Performance"))
-            self._add_presets_perf_grid(card_layout, snapshot.performance_levels, snapshot.display_name)
+            self._add_presets_perf_grid(card_layout, snapshot.performance_levels, self._presets_model_name(snapshot.signature, snapshot.display_name))
 
             # Export button
             action_row = QHBoxLayout()
@@ -1013,7 +1023,7 @@ class PresetsMixin:
         card_layout.addWidget(self._make_card_separator())
 
         card_layout.addWidget(self._make_card_field_label("Performance"))
-        self._add_presets_perf_grid(card_layout, entry.performance_levels, entry.display_name)
+        self._add_presets_perf_grid(card_layout, entry.performance_levels, self._presets_model_name(entry.primary_owned_record_template.signature, entry.display_name))
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
@@ -1146,7 +1156,7 @@ class PresetsMixin:
         card_layout.addWidget(self._make_card_separator())
 
         card_layout.addWidget(self._make_card_field_label("Performance"))
-        self._add_presets_perf_grid(card_layout, snapshot.performance_levels, snapshot.display_name)
+        self._add_presets_perf_grid(card_layout, snapshot.performance_levels, self._presets_model_name(snapshot.signature, snapshot.display_name))
 
         action_row = QHBoxLayout()
         action_row.setSpacing(8)

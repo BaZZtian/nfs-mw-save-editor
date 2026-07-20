@@ -134,5 +134,9 @@
       2
     ],
     "mode_values_hex": "02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 02 00"
+  },
+  "provenance": {
+    "method": "save harvest (materialized story/challenge car, no VLT preset)",
+    "note": "Rog's story GTO; kept as-is by generator v2 on 2026-07-20"
   }
 }
