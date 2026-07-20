@@ -180,14 +180,14 @@ def _verify_injected_record(
     entry: SnapshotLibraryEntry,
     *,
     target_mode: str,
+    target_location_bits: int,
     target_parts_slot: int,
     target_career_slot: Optional[int],
 ) -> bool:
-    expected_location = SaveFile.MY_CARS_FLAG if target_mode == "my_cars" else SaveFile.CAREER_FLAG
     for record in reloaded.get_owned_car_records():
         if record.signature != entry.primary_owned_record_template.signature:
             continue
-        if int(record.location_bits) != int(expected_location):
+        if int(record.location_bits) != int(target_location_bits):
             continue
         if int(record.parts_slot) != int(target_parts_slot):
             continue
@@ -233,6 +233,7 @@ def run_smoke_injects(
                     reloaded,
                     entry,
                     target_mode=target_mode,
+                    target_location_bits=plan.target_location_bits,
                     target_parts_slot=int(plan.target_parts_slot),
                     target_career_slot=plan.target_career_slot,
                 )
