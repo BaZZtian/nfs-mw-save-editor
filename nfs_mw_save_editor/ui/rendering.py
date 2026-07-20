@@ -86,6 +86,7 @@ class AnimatedCardShell(QWidget):
         self._reveal_finished_slots: list[Callable[[], None]] = []
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self._opacity_effect.setOpacity(1.0)
+        self._opacity_effect.setEnabled(False)
         self.setGraphicsEffect(self._opacity_effect)
 
     def set_content(self, widget: QWidget) -> None:
@@ -130,7 +131,7 @@ class AnimatedCardShell(QWidget):
             self._animation_group = None
         self._set_offset_y(0)
         self._opacity_effect.setOpacity(1.0)
-        self._opacity_effect.setEnabled(True)
+        self._opacity_effect.setEnabled(False)
 
     def reset_for_reuse(self) -> None:
         self.clear_animation()
@@ -185,6 +186,7 @@ class AnimatedCardShell(QWidget):
         if self._content is None:
             return
         self.clear_animation()
+        self._opacity_effect.setEnabled(True)
         self._opacity_effect.setOpacity(0.0)
         self._set_offset_y(-abs(int(distance)))
 
@@ -223,6 +225,7 @@ class AnimatedCardShell(QWidget):
         if self._content is None:
             return
         self.clear_animation()
+        self._opacity_effect.setEnabled(True)
         self._opacity_effect.setOpacity(0.0)
         self._set_offset_y(0)
         generation = self._reveal_generation
@@ -302,6 +305,11 @@ class AnimatedCardShell(QWidget):
     def _on_animation_finished(self) -> None:
         self._set_offset_y(0)
         self._opacity_effect.setOpacity(1.0)
+        # A live QGraphicsOpacityEffect keeps an offscreen cache even at full
+        # opacity.  Reused lazy-grid shells can otherwise repaint that stale
+        # cache after a filter rebuild, so leave the effect enabled only while
+        # the reveal is actually running.
+        self._opacity_effect.setEnabled(False)
         if self._animation_group is not None:
             self._animation_group.deleteLater()
             self._animation_group = None
