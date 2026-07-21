@@ -1,6 +1,6 @@
 {
   "kind": "car_build_snapshot_v2",
-  "source_file": "generated 2026-07-20: KSWD fresh-career pending band + GLOBALB.BUN presets",
+  "source_file": "generated 2026-07-21: KSWD fresh-career pending band + GLOBALB.BUN presets",
   "display_name": "Corvette C6.R",
   "source_kind": "Career",
   "car_number": 81,
@@ -139,8 +139,8 @@
     "donor_save": "KSWD fresh-career START (clean profile)",
     "pending_parts_slot": 15,
     "preset": "BONUS_C6R",
-    "perf_rule": "stock zeros (no presetride row for BONUS_ variants)",
-    "generated_on": "2026-07-20",
+    "perf_rule": "pending package verbatim (career canon: min(presetride, model upgrade ladder))",
+    "generated_on": "2026-07-21",
     "generator": "RE/tools/gen_snapshot_library.py"
   }
 }

@@ -1,6 +1,6 @@
 {
   "kind": "car_build_snapshot_v2",
-  "source_file": "generated 2026-07-20: KSWD fresh-career pending band + GLOBALB.BUN presets",
+  "source_file": "generated 2026-07-21: KSWD fresh-career pending band + GLOBALB.BUN presets",
   "display_name": "Porsche 911 GT2 (black)",
   "source_kind": "Career",
   "car_number": 83,
@@ -20,16 +20,16 @@
   },
   "primary_build_block": {
     "abs_off": 36877,
-    "normalized_hex": "FD 18 FE 18 00 19 02 19 04 19 06 19 08 19 0A 19 0C 19 0E 19 10 19 12 19 14 19 16 19 18 19 1A 19 1C 19 1E 19 20 19 22 19 24 19 26 19 28 19 2A 19 30 19 31 19 32 19 33 19 34 19 35 19 36 19 37 19 38 19 39 19 3A 19 3B 19 3C 19 3D 19 3E 19 3F 19 40 19 41 19 42 19 43 19 44 19 45 19 46 19 4D 19 54 19 5B 19 62 19 69 19 70 19 71 19 72 19 73 19 74 19 75 19 76 19 77 19 78 19 79 19 0B 09 7A 19 FF FF FF FF 50 23 FF FF FF FF 0A 23 9E 19 9F 19 A0 19 A7 19 AE 19 B5 19 A4 0E FF FF FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2A 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 33 51 65 54 00 00 00 00",
+    "normalized_hex": "FD 18 FE 18 00 19 02 19 04 19 06 19 08 19 0A 19 0C 19 0E 19 10 19 12 19 14 19 16 19 18 19 1A 19 1C 19 1E 19 20 19 22 19 24 19 26 19 28 19 2A 19 30 19 31 19 32 19 33 19 34 19 35 19 36 19 37 19 38 19 39 19 3A 19 3B 19 3C 19 3D 19 3E 19 3F 19 40 19 41 19 42 19 43 19 44 19 45 19 46 19 4D 19 54 19 5B 19 62 19 69 19 70 19 71 19 72 19 73 19 74 19 75 19 76 19 77 19 78 19 79 19 0B 09 7A 19 FF FF FF FF 50 23 FF FF FF FF 0A 23 9E 19 9F 19 A0 19 A7 19 AE 19 B5 19 A4 0E FF FF FF FF E1 0E E3 0E FF FF E1 0E FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 2A 15 54 27 71 1E 71 1E 6F 1E FF FF FF FF FF FF CD CD 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 33 51 65 54 00 00 00 00",
     "marker_hex": "17 CD CD CD",
     "performance_levels": {
-      "Tires": 1,
-      "Brakes": 1,
-      "Suspension": 1,
-      "Transmission": 1,
-      "Engine": 1,
-      "Turbo": 1,
-      "NOS": 1
+      "Tires": 0,
+      "Brakes": 0,
+      "Suspension": 0,
+      "Transmission": 0,
+      "Engine": 0,
+      "Turbo": 0,
+      "NOS": 0
     },
     "primary_visual_fields": {
       "Body Kit": "2A",
@@ -139,8 +139,8 @@
     "donor_save": "KSWD fresh-career START (clean profile)",
     "pending_parts_slot": 23,
     "preset": "CE_GT2",
-    "perf_rule": "presetride all-ones",
-    "generated_on": "2026-07-20",
+    "perf_rule": "pending package verbatim (career canon: min(presetride, model upgrade ladder))",
+    "generated_on": "2026-07-21",
     "generator": "RE/tools/gen_snapshot_library.py"
   }
 }

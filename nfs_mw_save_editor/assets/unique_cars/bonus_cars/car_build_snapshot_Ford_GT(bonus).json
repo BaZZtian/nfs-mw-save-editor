@@ -1,6 +1,6 @@
 {
   "kind": "car_build_snapshot_v2",
-  "source_file": "generated 2026-07-20: KSWD fresh-career pending band + GLOBALB.BUN presets",
+  "source_file": "generated 2026-07-21: KSWD fresh-career pending band + GLOBALB.BUN presets",
   "display_name": "Ford GT",
   "source_kind": "My Cars",
   "car_number": 106,
@@ -139,8 +139,8 @@
     "donor_save": "KSWD fresh-career START (clean profile)",
     "pending_parts_slot": 28,
     "preset": "CastrolGT",
-    "perf_rule": "presetride all-ones",
-    "generated_on": "2026-07-20",
+    "perf_rule": "pending package verbatim (career canon: min(presetride, model upgrade ladder))",
+    "generated_on": "2026-07-21",
     "generator": "RE/tools/gen_snapshot_library.py"
   }
 }
