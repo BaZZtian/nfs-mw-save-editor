@@ -1,6 +1,6 @@
 {
   "kind": "car_build_snapshot_v2",
-  "source_file": "generated 2026-07-21: KSWD fresh-career pending band + GLOBALB.BUN presets",
+  "source_file": "generated: fresh-career pending band + GLOBALB.BUN presets",
   "display_name": "Mercedes SL65 AMG (blue)",
   "source_kind": "Career",
   "car_number": 84,
@@ -136,11 +136,9 @@
   },
   "provenance": {
     "method": "pending-band harvest, VLT preset cross-check (EXACT on non-kit-derived slots)",
-    "donor_save": "KSWD fresh-career START (clean profile)",
+    "donor_save": "fresh-career start save (clean profile)",
     "pending_parts_slot": 26,
     "preset": "CE_SL65",
-    "perf_rule": "pending package verbatim (career canon: min(presetride, model upgrade ladder))",
-    "generated_on": "2026-07-21",
-    "generator": "RE/tools/gen_snapshot_library.py"
+    "perf_rule": "pending package verbatim (career canon: min(presetride, model upgrade ladder))"
   }
 }
