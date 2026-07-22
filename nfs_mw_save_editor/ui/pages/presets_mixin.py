@@ -470,12 +470,28 @@ class PresetsMixin:
             return "Ready with warning", "\n".join(warning_parts)
         return "Ready to stage", "Both injection targets are currently available."
 
+    @staticmethod
+    def _snapshot_provenance_lines(entry: SnapshotLibraryEntry) -> List[str]:
+        labels = {
+            "method": "Provenance",
+            "donor_save": "Donor save",
+            "preset": "VLT preset",
+            "note": "Note",
+        }
+        hidden = {"pending_parts_slot", "perf_rule"}
+        return [
+            f"{labels.get(name, name)}: {value}"
+            for name, value in entry.provenance
+            if name not in hidden
+        ]
+
     def _snapshot_library_card_tooltip(self, vm: SnapshotLibraryCardVm) -> str:
         entry = vm.entry
         tooltip_parts = [
             f"File: {entry.file_label}",
             f"Snapshot ID: {entry.snapshot_id[:60]}...",
         ]
+        tooltip_parts.extend(self._snapshot_provenance_lines(entry))
         if entry.has_visual_sidecar:
             tooltip_parts.append("Has visual sidecar")
         if entry.requires_unresolved_global_visual_state:

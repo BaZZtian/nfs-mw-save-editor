@@ -397,6 +397,7 @@ class SnapshotLibraryEntry:
     global_visual_table_mode_offset: int = 4
     global_visual_table_mode_uniform_value: Optional[int] = None
     global_visual_table_mode_tail_value: Optional[int] = None
+    provenance: Tuple[Tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

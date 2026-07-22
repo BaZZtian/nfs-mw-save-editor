@@ -124,6 +124,12 @@ def load_snapshot_library_entry(
         (str(name), str(value))
         for name, value in payload.get("primary_build_block", {}).get("primary_visual_fields", {}).items()
     )
+    provenance_payload = payload.get("provenance")
+    provenance = (
+        tuple((str(name), str(value)) for name, value in provenance_payload.items())
+        if isinstance(provenance_payload, dict)
+        else ()
+    )
     sidecar_payload = payload.get("optional_visual_sidecar")
     sidecar_entry: SnapshotVisualSidecarEntry | None = None
     if sidecar_payload is not None:
@@ -183,6 +189,7 @@ def load_snapshot_library_entry(
             if payload.get("global_visual_table", {}).get("mode_tail_value") is None
             else int(payload["global_visual_table"]["mode_tail_value"])
         ),
+        provenance=provenance,
     )
 
 
