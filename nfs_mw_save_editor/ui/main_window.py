@@ -269,10 +269,10 @@ class MainWindow(
             self.stack.addWidget(p)
 
         self._select_page("Junkman")
-        self.footer_chrome = QWidget()
-        self.footer_chrome.setLayout(self._build_footer())
-        base.addWidget(self.footer_chrome, 2, 0, 1, 2)
-        self._shell_theme_roots.append(self.footer_chrome)
+        # Floating footer: content scrolls underneath the translucent card.
+        self._build_floating_footer(root)
+        self._shell_theme_roots.extend([self.footer_tallies, self.footer_actions_card])
+        QTimer.singleShot(0, self._position_floating_footer)
 
         # -- Keyboard shortcuts --
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.on_open)
@@ -301,14 +301,12 @@ class MainWindow(
 
     def _build_header(self):
         row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
-        self.btn_open = ShellActionButton("Open save")
-        self.btn_save_header = ShellActionButton("Save + backup")
-        self.btn_fix = ShellActionButton("Fix checksums")
+        self.btn_open = ShellActionButton("Open save", height=36)
+        self.btn_fix = ShellActionButton("Fix checksums", height=36)
         self.btn_open.clicked.connect(self.on_open)
-        self.btn_save_header.clicked.connect(self.on_save)
         self.btn_fix.clicked.connect(self.on_fix_checksums)
-        self._set_game_button_icon(self.btn_save_header, "action_save")
 
         self.lbl_file = QLabel("File: (not opened)")
         self.lbl_file.setObjectName("filePath")
@@ -323,7 +321,7 @@ class MainWindow(
         self.lbl_unsaved.setProperty("pending", False)
         self.lbl_unsaved.setVisible(False)
 
-        for w in [self.btn_open, self.btn_save_header, self.btn_fix]:
+        for w in [self.btn_open, self.btn_fix]:
             row.addWidget(w)
         row.addStretch(1)
         row.addWidget(self.lbl_file, 1)
@@ -435,9 +433,12 @@ class MainWindow(
         layout.addStretch(1)
         return layout
 
-    def _build_footer(self):
-        row = QHBoxLayout()
-        row.setSpacing(10)
+    def _build_floating_footer(self, root: QWidget) -> None:
+        self.footer_tallies = QWidget(root)
+        self.footer_tallies.setObjectName("footerTallies")
+        tallies = QHBoxLayout(self.footer_tallies)
+        tallies.setContentsMargins(0, 0, 0, 0)
+        tallies.setSpacing(10)
         self.lbl_free = QLabel("Free slots: -/-")
         self.lbl_free.setObjectName("pillLabel")
 
@@ -450,6 +451,8 @@ class MainWindow(
         self.progress_bar.setFixedWidth(160)
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setFormat("0/7 Performance")
+        tallies.addWidget(self.lbl_free)
+        tallies.addWidget(self.progress_bar)
 
         self.btn_reset_want = ShellActionButton("Reset Want=Have")
         self.btn_apply = ShellActionButton("Apply (memory)")
@@ -459,13 +462,35 @@ class MainWindow(
         self.btn_save_footer.clicked.connect(self.on_save)
         self._set_game_button_icon(self.btn_reset_want, "action_reset")
         self._set_game_button_icon(self.btn_save_footer, "action_save")
-        row.addWidget(self.lbl_free)
-        row.addWidget(self.progress_bar)
-        row.addStretch(1)
-        row.addWidget(self.btn_reset_want)
-        row.addWidget(self.btn_apply)
-        row.addWidget(self.btn_save_footer)
-        return row
+
+        self.footer_actions_card = QFrame(root)
+        self.footer_actions_card.setObjectName("footerActionsCard")
+        actions = QHBoxLayout(self.footer_actions_card)
+        actions.setContentsMargins(10, 8, 10, 8)
+        actions.setSpacing(10)
+        actions.addWidget(self.btn_reset_want)
+        actions.addWidget(self.btn_apply)
+        actions.addWidget(self.btn_save_footer)
+
+    def _position_floating_footer(self) -> None:
+        if not hasattr(self, "footer_actions_card") or not hasattr(self, "stack"):
+            return
+        area = self.stack.geometry()
+        margin = 14
+        card_size = self.footer_actions_card.sizeHint()
+        self.footer_actions_card.resize(card_size)
+        self.footer_actions_card.move(
+            area.right() - margin - card_size.width(),
+            area.bottom() - margin - card_size.height(),
+        )
+        self.footer_actions_card.raise_()
+        tallies_size = self.footer_tallies.sizeHint()
+        self.footer_tallies.resize(tallies_size)
+        self.footer_tallies.move(
+            area.left() + margin,
+            area.bottom() - margin - tallies_size.height(),
+        )
+        self.footer_tallies.raise_()
 
     def _select_page(self, name: str):
         if self._current_stack_page_name() == name:
@@ -485,6 +510,9 @@ class MainWindow(
         overlay = self._start_page_transition_overlay()
         self.stack.setCurrentWidget(mapping[name])
         self._ensure_page_theme(name)
+        if hasattr(self, "footer_tallies"):
+            # The junkman token tallies only mean something on the Junkman page.
+            self.footer_tallies.setVisible(name == "Junkman")
         if name == "Profile":
             self._refresh_profile_inputs()
         elif name == "Career":
@@ -861,7 +889,7 @@ class MainWindow(
         self.right_stack.setCurrentIndex(0 if loaded else 1)
 
         for btn in [
-            self.btn_save_header, self.btn_save_footer, self.btn_fix,
+            self.btn_save_footer, self.btn_fix,
             self.btn_apply, self.btn_reset_want,
             self.btn_q_perf, self.btn_q_parts, self.btn_q_vis, self.btn_q_all, self.btn_q_clear,
             self.btn_load_preset, self.btn_save_preset, self.btn_export_have,
@@ -1068,6 +1096,9 @@ class MainWindow(
             self._page_transition_overlay.sync_to_parent()
         ToastNotification.reposition_active(self)
         self._update_header_path()
+        if hasattr(self, "footer_actions_card"):
+            # Defer until the grid has applied the new stack geometry.
+            QTimer.singleShot(0, self._position_floating_footer)
         if hasattr(self, "scroll") and hasattr(self, "cards_container"):
             prev = getattr(self, "_cards_per_row", DEFAULT_CARDS_PER_ROW)
             now = self._detect_cards_per_row()

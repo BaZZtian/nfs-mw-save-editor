@@ -24,7 +24,7 @@ class ProfileMixin:
     def _build_profile_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.setContentsMargins(10, 6, 10, 8)
+        layout.setContentsMargins(0, 6, 0, FOOTER_CLEARANCE)
         layout.setSpacing(12)
 
         self._profile_number_validator = QRegularExpressionValidator(

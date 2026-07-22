@@ -509,6 +509,9 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
         "HEAT_SEGMENT_ACTIVE_BG",
         _rgba(tokens["ACCENT"], 0.78),
     )
+    # Translucent "glass" card treatment; derived for every theme.
+    tokens.setdefault("BG_GLASS", _rgba(tokens["BG_CARD"], 0.62))
+    tokens.setdefault("BORDER_GLASS", _rgba(tokens["BORDER"], 0.70))
     dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
     if preset.text_on_accent_mode == "dark":
         tokens["TEXT_ON_ACCENT"] = dark_on_accent
@@ -644,9 +647,17 @@ QPushButton#navButton {{
     min-height: 36px;
 }}
 QFrame#navChrome {{
-    background: {BG_CARD};
-    border: 1px solid {BORDER};
+    background: {BG_GLASS};
+    border: 1px solid {BORDER_GLASS};
     border-radius: {RADIUS_XL};
+}}
+QFrame#footerActionsCard {{
+    background: {BG_GLASS};
+    border: 1px solid {BORDER_GLASS};
+    border-radius: {RADIUS_XL};
+}}
+QWidget#footerTallies {{
+    background: transparent;
 }}
 QLabel#navBrandLogo {{
     background: transparent;
@@ -704,7 +715,7 @@ QPushButton#iconBtn {{
 
 /* Token Card */
 QWidget#tokenCard {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
     padding: 0px;
@@ -997,13 +1008,13 @@ QLabel#toastError {{
 
 /* Stat Tiles (Profile summary strip) */
 QFrame#statTile {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
     padding: 0px;
 }}
 QFrame#pageControlsRow {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
     padding: 0px;
@@ -1059,7 +1070,7 @@ QLabel#statTileSub[status="error"] {{
 
 /* Garage Car Cards */
 QFrame#garageCard {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1071,7 +1082,7 @@ QFrame#garageCard[occupied="false"] {{
     opacity: 0.6;
 }}
 QFrame#contentCard {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1328,7 +1339,7 @@ QWidget#careerProgressColumns {{
     background: transparent;
 }}
 QFrame#careerTargetPanel, QFrame#careerReviewPanel {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1624,7 +1635,7 @@ QLabel#careerHeroStatus[state="defeated"] {{
     color: {MUTED};
 }}
 QWidget#careerTimeline {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1633,12 +1644,12 @@ QFrame#careerInspector {{
     border: none;
 }}
 QFrame#careerInspectorSection {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
 QFrame#careerTotalsStrip {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1774,7 +1785,7 @@ QLabel#activeCarBadge {{
 
 /* Settings Page Group Cards */
 QFrame#settingsGroup {{
-    background: {BG_CARD};
+    background: {BG_GLASS};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}

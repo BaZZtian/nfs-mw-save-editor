@@ -13,7 +13,7 @@ from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits
 from core.visual_parts import installed_parts
-from ui.pages.constants import PARTS_TILE_MIN_WIDTH
+from ui.pages.constants import FOOTER_CLEARANCE, PARTS_TILE_MIN_WIDTH
 from ui.pages.visual_summary import VisualSummaryVm, build_visual_summary
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
 from ui.widgets import WantSpinBox, build_perf_level_row
@@ -364,7 +364,7 @@ class PartsMixin:
     def _build_parts_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.setContentsMargins(10, 6, 10, 8)
+        layout.setContentsMargins(0, 6, 0, 8)
         layout.setSpacing(10)
         hint_row = QHBoxLayout()
         hint_row.setSpacing(8)
@@ -417,7 +417,7 @@ class PartsMixin:
         self.parts_cards = QWidget()
         self.parts_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.parts_cards_layout = QGridLayout(self.parts_cards)
-        self.parts_cards_layout.setContentsMargins(12, 12, 12, 12)
+        self.parts_cards_layout.setContentsMargins(12, 12, 12, FOOTER_CLEARANCE)
         self.parts_cards_layout.setHorizontalSpacing(14)
         self.parts_cards_layout.setVerticalSpacing(14)
         self.parts_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)

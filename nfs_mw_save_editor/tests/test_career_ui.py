@@ -136,7 +136,6 @@ def test_game_icons_are_wired_to_hero_actions_and_tuning_nav():
     assert window.career_view_transplant_btn.text() == "CHANGE RIVAL"
 
     for button in (
-        window.btn_save_header,
         window.btn_reset_want,
         window.btn_save_footer,
         window.nav_buttons["Tuning"],
@@ -737,7 +736,7 @@ def test_apply_rival_change_crossfades_the_refreshed_hero(tmp_path, monkeypatch)
     app.processEvents()
 
 
-def test_fullscreen_career_canvas_is_centered_and_capped():
+def test_fullscreen_career_canvas_is_left_anchored_and_capped():
     app = _app()
     window = MainWindow()
     window.resize(1920, 1080)
@@ -746,10 +745,14 @@ def test_fullscreen_career_canvas_is_centered_and_capped():
     window._select_page("Career")
     app.processEvents()
 
-    assert window.career_canvas.width() <= 1640
-    left = window.career_canvas.geometry().left()
-    right = window.page_career.width() - window.career_canvas.geometry().right() - 1
-    assert abs(left - right) <= 2
+    canvas = window.career_canvas
+    assert canvas.width() <= 1800
+    # Anchored to the nav side: no centering air on the left, leftover width
+    # (beyond the ultra-wide cap) goes right.
+    assert canvas.geometry().left() == 0
+    parent_width = canvas.parentWidget().width()
+    if parent_width <= 1800:
+        assert canvas.width() == parent_width
     window.close()
     app.processEvents()
 

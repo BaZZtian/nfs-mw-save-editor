@@ -280,7 +280,7 @@ class SettingsMixin:
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
-        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setContentsMargins(0, 10, 0, FOOTER_CLEARANCE)
 
         section = QLabel("Settings")
         section.setObjectName("sectionLabel")

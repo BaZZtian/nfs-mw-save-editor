@@ -79,7 +79,7 @@ from core.career_donor_library import (
     load_career_donor_library,
 )
 from ui.icon_map import game_icon_path, rival_asset_path
-from ui.pages.constants import BLACKLIST_BOSS_NAMES
+from ui.pages.constants import BLACKLIST_BOSS_NAMES, FOOTER_CLEARANCE
 from ui.theme import resolve_theme_tokens
 from ui.widgets import (
     AnimatedSegmentedControl,
@@ -1334,16 +1334,17 @@ class CareerMixin:
     def _build_career_page(self) -> QWidget:
         w = QWidget()
         outer = QHBoxLayout(w)
-        outer.setContentsMargins(10, 8, 10, 8)
+        outer.setContentsMargins(0, 8, 0, 8)
         outer.setSpacing(0)
         self.career_canvas = QWidget()
         self.career_canvas.setObjectName("careerCanvas")
-        self.career_canvas.setMaximumWidth(1640)
+        # Keep a ceiling for ultra-wide monitors, but anchor the canvas to the
+        # nav side: leftover width goes right, not into a nav/content gutter.
+        self.career_canvas.setMaximumWidth(1800)
         self.career_canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout = QVBoxLayout(self.career_canvas)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        outer.addStretch(1)
         outer.addWidget(self.career_canvas, 100)
         outer.addStretch(1)
 
@@ -1489,7 +1490,7 @@ class CareerMixin:
         view = QWidget()
         view.setObjectName("careerTransplantView")
         layout = QVBoxLayout(view)
-        layout.setContentsMargins(0, 0, 6, 0)
+        layout.setContentsMargins(0, 0, 6, FOOTER_CLEARANCE)
         layout.setSpacing(0)
 
         target_card, target_layout = self._make_card_frame(
@@ -1668,7 +1669,7 @@ class CareerMixin:
         host = QWidget()
         host.setObjectName("careerProgressView")
         host_layout = QVBoxLayout(host)
-        host_layout.setContentsMargins(0, 0, 6, 0)
+        host_layout.setContentsMargins(0, 0, 6, FOOTER_CLEARANCE)
         host_layout.setSpacing(10)
         host_layout.setAlignment(Qt.AlignTop)
 
@@ -2036,7 +2037,7 @@ class CareerMixin:
     def _build_career_rap_sheet_view(self) -> QWidget:
         host = QWidget()
         self.rap_sheet_layout = QVBoxLayout(host)
-        self.rap_sheet_layout.setContentsMargins(0, 0, 6, 0)
+        self.rap_sheet_layout.setContentsMargins(0, 0, 6, FOOTER_CLEARANCE)
         self.rap_sheet_layout.setSpacing(12)
 
         scroll = QScrollArea()

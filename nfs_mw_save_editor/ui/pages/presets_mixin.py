@@ -77,7 +77,7 @@ class PresetsMixin:
     def _build_presets_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.setContentsMargins(10, 6, 10, 8)
+        layout.setContentsMargins(0, 6, 0, 8)
         layout.setSpacing(10)
 
         hint = QLabel("Apply library builds to your save or save current builds for reuse.")
@@ -159,7 +159,7 @@ class PresetsMixin:
         self.snapshot_library_cards = QWidget()
         self.snapshot_library_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.snapshot_library_cards_layout = QGridLayout(self.snapshot_library_cards)
-        self.snapshot_library_cards_layout.setContentsMargins(12, 12, 12, 12)
+        self.snapshot_library_cards_layout.setContentsMargins(12, 12, 12, FOOTER_CLEARANCE)
         self.snapshot_library_cards_layout.setHorizontalSpacing(14)
         self.snapshot_library_cards_layout.setVerticalSpacing(14)
         self.snapshot_library_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -175,7 +175,7 @@ class PresetsMixin:
         self.snapshot_cards = QWidget()
         self.snapshot_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.snapshot_cards_layout = QGridLayout(self.snapshot_cards)
-        self.snapshot_cards_layout.setContentsMargins(12, 12, 12, 12)
+        self.snapshot_cards_layout.setContentsMargins(12, 12, 12, FOOTER_CLEARANCE)
         self.snapshot_cards_layout.setHorizontalSpacing(14)
         self.snapshot_cards_layout.setVerticalSpacing(14)
         self.snapshot_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)

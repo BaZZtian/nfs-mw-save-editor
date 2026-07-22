@@ -175,6 +175,7 @@ class JunkmanMixin:
     def _build_junk_page(self):
         w = QWidget()
         layout = QHBoxLayout(w)
+        layout.setContentsMargins(0, 6, 0, 8)
         layout.setSpacing(12)
 
     # -- left panel (filters, quick actions) ------------------------------
@@ -248,7 +249,7 @@ class JunkmanMixin:
         self.cards_container = QWidget()
         self.cards_grid = QGridLayout(self.cards_container)
         self.cards_grid.setSpacing(12)
-        self.cards_grid.setContentsMargins(8, 8, 8, 8)
+        self.cards_grid.setContentsMargins(8, 8, 8, FOOTER_CLEARANCE)
         self.cards_grid.setAlignment(Qt.AlignTop)
 
         self._cards_per_row = DEFAULT_CARDS_PER_ROW

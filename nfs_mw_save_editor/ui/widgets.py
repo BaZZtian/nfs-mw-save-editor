@@ -56,10 +56,17 @@ class ShellActionButton(QPushButton):
     _HEIGHT = 44
     _MIN_WIDTH = 140
 
-    def __init__(self, text: str, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        text: str,
+        parent: Optional[QWidget] = None,
+        *,
+        height: Optional[int] = None,
+    ) -> None:
         super().__init__(text, parent)
         self.setObjectName("shellActionButton")
-        self.setMinimumHeight(self._HEIGHT)
+        self._height = int(height) if height is not None else self._HEIGHT
+        self.setMinimumHeight(self._height)
 
     def _content_rects(self) -> tuple[QRectF, QRectF]:
         inner = QRectF(self.rect()).adjusted(
@@ -87,7 +94,7 @@ class ShellActionButton(QPushButton):
         width = self._SIDE_PADDING * 2 + text_width
         if not self.icon().isNull():
             width += self.iconSize().width() + self._ICON_TEXT_GAP
-        return QSize(max(self._MIN_WIDTH, width), self._HEIGHT)
+        return QSize(max(self._MIN_WIDTH, width), self._height)
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
         return self.sizeHint()

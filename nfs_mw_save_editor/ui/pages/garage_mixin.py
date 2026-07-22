@@ -104,7 +104,7 @@ class GarageMixin:
     def _build_garage_page(self):
         w = QWidget()
         layout = QVBoxLayout(w)
-        layout.setContentsMargins(10, 6, 10, 8)
+        layout.setContentsMargins(0, 6, 0, 8)
         layout.setSpacing(10)
 
         hint = QLabel(
@@ -161,7 +161,7 @@ class GarageMixin:
         self.garage_cards = QWidget()
         self.garage_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.garage_cards_layout = QGridLayout(self.garage_cards)
-        self.garage_cards_layout.setContentsMargins(12, 12, 12, 12)
+        self.garage_cards_layout.setContentsMargins(12, 12, 12, FOOTER_CLEARANCE)
         self.garage_cards_layout.setHorizontalSpacing(14)
         self.garage_cards_layout.setVerticalSpacing(14)
         self.garage_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
