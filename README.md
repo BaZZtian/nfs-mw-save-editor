@@ -219,7 +219,6 @@ The editor is based on validated save comparisons, game data, and in-game testin
 
 - [`docs/JUNKMAN_OFFSETS.md`](docs/JUNKMAN_OFFSETS.md)
 - [`docs/PROFILE_REVERSE_OVERVIEW.md`](docs/PROFILE_REVERSE_OVERVIEW.md)
-- [`docs/PROFILE_REVERSE_NOTES.md`](docs/PROFILE_REVERSE_NOTES.md)
 - [`docs/REVERSE_ENGINEERING_DOSSIER.md`](docs/REVERSE_ENGINEERING_DOSSIER.md)
 
 The README intentionally stays at product level; byte offsets and research history belong in those documents.

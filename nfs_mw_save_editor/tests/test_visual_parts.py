@@ -24,8 +24,7 @@ from core.visual_parts import (
     slot_name,
 )
 
-# Anchors verified 2026-07-12 against controlled Ford GT saves
-# (docs/PROFILE_REVERSE_NOTES.md + RE/tools/dump_save_visuals.py).
+# Anchors verified 2026-07-12 against controlled Ford GT saves.
 FORD_GT_GLOSS_A = 0x0E2E
 FORD_GT_CHROME_B = 0x0ED3
 FORD_GT_BODY_VINYL = 0x120D
