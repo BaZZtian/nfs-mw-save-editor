@@ -1,12 +1,14 @@
-"""One-shot importer: KSWD full-career pack -> career donor library.
+"""One-shot importer: full-career save pack -> career donor library.
 
 Understands the pack layout used by NFS_Most_Wanted_Blacklist_Full_Career:
   "NN. Blacklist #K"                      -> stage K, variant chapter_start
   "NN. Final Race versus BOSS - ..."      -> stage 16 - NN, variant boss_ready
-with the save at <folder>/NFS Most Wanted/KSWD/KSWD. The two endgame "16."
-folders are intentionally skipped in v1 (their donor semantics need a
-separate decision). Every accepted donor is validated with the transplant
-planner's donor checks (size, game magic, game-section MD5) before copying.
+with the save at <folder>/NFS Most Wanted/<profile>/<profile> (the profile
+directory name is auto-detected; MW stores the save file under the profile's
+own name). The two endgame "16." folders are intentionally skipped in v1
+(their donor semantics need a separate decision). Every accepted donor is
+validated with the transplant planner's donor checks (size, game magic,
+game-section MD5) before copying.
 """
 
 from __future__ import annotations
@@ -43,6 +45,19 @@ _BOSS_NAMES = {
 }
 
 
+def _find_profile_save(folder: Path) -> Optional[Path]:
+    """Locate <folder>/NFS Most Wanted/<profile>/<profile> without assuming
+    a profile name: MW keeps the save file under the profile's own name."""
+    base = folder / "NFS Most Wanted"
+    if not base.is_dir():
+        return None
+    for profile_dir in sorted(p for p in base.iterdir() if p.is_dir()):
+        candidate = profile_dir / profile_dir.name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _classify(folder_name: str) -> Optional[Tuple[int, str]]:
     m = _BLACKLIST_RE.match(folder_name)
     if m:
@@ -71,7 +86,7 @@ def _donor_is_valid(data: bytes, stage: int) -> Optional[str]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Import the KSWD full-career pack into the career donor library.",
+        description="Import a full-career save pack into the career donor library.",
     )
     parser.add_argument("pack_root", type=Path, help="Root folder of the full-career pack.")
     parser.add_argument(
@@ -98,8 +113,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             skipped.append(f"{folder.name} (unrecognized name)")
             continue
         stage, variant = classified
-        save_path = folder / "NFS Most Wanted" / "KSWD" / "KSWD"
-        if not save_path.is_file():
+        save_path = _find_profile_save(folder)
+        if save_path is None:
             skipped.append(f"{folder.name} (no save file inside)")
             continue
         data = save_path.read_bytes()
