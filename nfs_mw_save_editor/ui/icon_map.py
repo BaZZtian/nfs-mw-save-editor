@@ -62,13 +62,12 @@ NAV_ICONS: Dict[str, str] = {
 }
 
 
-# -- Career / Rap Sheet UI icon assets (relative to _ICONS_ROOT) --
+# -- Career UI icon assets (relative to _ICONS_ROOT) --
 GAME_ICONS: Dict[str, str] = {
     "race":       "career/race_events.png",
     "rival_race": "career/rival_race.png",
     "milestone":  "career/milestone_main.png",
     "trap":       "milestone/speedtrap.png",
-    "boss_race":  "career/boss_race_key_2.png",
     "blacklist":  "career/blacklist_top_15.png",
     "heat":       "career/heat.png",
     "bounty":     "career/bounty.png",

@@ -1334,8 +1334,7 @@ QPushButton#careerViewTab {{
 }}
 
 /* Stage-change workflow */
-QWidget#careerTransplantView, QWidget#careerStageGrid,
-QWidget#careerProgressColumns {{
+QWidget#careerTransplantView, QWidget#careerStageGrid {{
     background: transparent;
 }}
 QFrame#careerTargetPanel, QFrame#careerReviewPanel {{
@@ -1504,92 +1503,6 @@ QLabel#careerDiskNote {{
     background: transparent;
     color: {MUTED_DARK};
     font-size: 9.5px;
-}}
-QLabel#careerSectionTitle {{
-    background: transparent;
-    color: {TEXT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 1px;
-}}
-/* Rap Sheet: blacklist board cells */
-QFrame#rapBossCell {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_MD};
-}}
-QFrame#rapBossCell[state="defeated"] {{
-    background: {BG_DISABLED};
-}}
-QFrame#rapBossCell[state="current"] {{
-    background: {BG_NAV_ACTIVE};
-    border: 1px solid {ACCENT_BRIGHT};
-}}
-QLabel#rapBossNum {{
-    background: transparent;
-    color: {MUTED};
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
-}}
-QLabel#rapBossName {{
-    background: transparent;
-    color: {TEXT};
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}}
-QFrame#rapBossCell[state="defeated"] QLabel#rapBossName {{
-    color: {MUTED_DARK};
-}}
-QFrame#rapBossCell[state="locked"] QLabel#rapBossName {{
-    color: {MUTED};
-}}
-QFrame#rapBossCell[state="current"] QLabel#rapBossName {{
-    color: {TEXT_NAV_ACTIVE};
-}}
-QLabel#rapBossTag {{
-    background: transparent;
-    color: {ACCENT_BRIGHT};
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 1.2px;
-}}
-/* Plain container widgets inside cards must not paint the panel background
-   (same full-width dark-strip bug as the 2026-03-22 settingsGroup fix). */
-QWidget#rapDotRow, QWidget#rapBoardGrid {{
-    background: transparent;
-}}
-/* Rap Sheet: event/milestone dots */
-QFrame#rapDot {{
-    background: transparent;
-    border: none;
-}}
-QLabel#rapRowLabel {{
-    background: transparent;
-    color: {TEXT};
-    font-size: 11px;
-    font-weight: 600;
-}}
-QLabel#rapRowCount {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_MD};
-    padding: 2px 8px;
-    color: {MUTED};
-    font-size: 10.5px;
-    font-weight: 700;
-}}
-QLabel#rapRowCount[status="full"] {{
-    background: {STATUS_SUCCESS_BG};
-    border: 1px solid {STATUS_SUCCESS_BORDER};
-    color: {STATUS_SUCCESS_FG};
-}}
-QLabel#rapFootnote {{
-    background: transparent;
-    color: {MUTED_DARK};
-    font-size: 10px;
 }}
 /* Career v2: image-led hero, timeline and one chapter inspector. */
 QWidget#careerCanvas, QWidget#careerProgressView,
