@@ -60,6 +60,28 @@ BLACKLIST_BOSS_NAMES = {
     1: "Razor",
 }
 
+# Resolver display name (core/cars.py) -> (blacklist number, nickname).
+# Every rival drives a unique model and an organic 0x42 registry row only
+# exists as a claimed pink slip, so for those rows the model alone names the
+# boss - unlike the livery, it survives repaints and vinyl swaps.
+RIVAL_CAR_MODELS = {
+    "BMW M3 GTR": (1, "Razor"),
+    "Mercedes SLR McLaren": (2, "Bull"),
+    "Aston Martin DB9": (3, "Ronnie"),
+    "Dodge Viper SRT10": (4, "JV"),
+    "Corvette C6": (5, "Webster"),
+    "Lamborghini Gallardo": (6, "Ming"),
+    "Mercedes CLK 500": (7, "Kaze"),
+    "Ford Mustang GT": (8, "Jewels"),
+    "Mitsubishi Lancer EVO VIII": (9, "Earl"),
+    "Porsche Cayman S": (10, "Baron"),
+    "Mitsubishi Eclipse": (11, "Big Lou"),
+    "Mazda RX-8": (12, "Izzy"),
+    "Toyota Supra": (13, "Vic"),
+    "Lexus IS300": (14, "Taz"),
+    "VW Golf GTI": (15, "Sonny"),
+}
+
 
 @dataclass
 class TokenEntry:

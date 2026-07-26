@@ -14,8 +14,8 @@ from core.models import (
     ResolvedTransferCarEntry,
 )
 from core.savefile import SaveFile
+from ui.pages.constants import RIVAL_CAR_MODELS
 from ui.pages.garage_mixin import GarageMixin
-from ui.pages.visual_summary import RIVAL_CAR_MODELS
 
 
 def _owned_status(slot_index: int, *, reusable: bool) -> OwnedCarSlotStatus:

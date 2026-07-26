@@ -35,7 +35,6 @@ from core.savefile import SaveFile
 from resources import resource_path
 from ui.icon_map import game_icon_path
 from ui.pages.constants import *
-from ui.pages.visual_summary import RIVAL_CAR_MODELS
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
 from ui.widgets import ToastNotification
 
