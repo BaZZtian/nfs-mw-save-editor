@@ -126,7 +126,7 @@ def test_game_icons_are_wired_to_hero_actions_and_tuning_nav():
         icon = metric.findChild(QLabel, "careerHeroMetricIcon")
         assert icon is not None
         assert icon.pixmap() is not None and not icon.pixmap().isNull()
-        assert metric.size() == QSize(204, 72)
+        assert metric.size() == QSize(204, 76)
         assert metric.findChild(QWidget, "careerHeroMetricProgress") is None
 
     captions = [
@@ -388,7 +388,9 @@ def test_all_hero_busts_stay_inside_compact_and_fullscreen_banners():
     stamp.fill(Qt.GlobalColor.red)
     hero.set_defeated_stamp(stamp)
     hero.show()
-    for width, expected_height in ((790, 320), (1180, 320), (1640, 340)):
+    compact = _CareerHero._COMPACT_HEIGHT
+    wide = _CareerHero._WIDE_HEIGHT
+    for width, expected_height in ((790, compact), (1180, compact), (1640, wide)):
         hero.resize(width, expected_height)
         app.processEvents()
         assert hero.height() == expected_height

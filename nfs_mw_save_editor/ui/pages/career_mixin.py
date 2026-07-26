@@ -337,8 +337,10 @@ HERO_PORTRAIT_LAYOUTS: Mapping[int, HeroPortraitLayout] = MappingProxyType({
 class _CareerHero(QFrame):
     """Theme-built rival banner with graffiti and portrait art layers."""
 
-    _COMPACT_HEIGHT = 320
-    _WIDE_HEIGHT = 340
+    # The banner's rhythm step is whatever these heights leave over after the
+    # blocks' ink, so shortening the card is what tightens the spacing.
+    _COMPACT_HEIGHT = 300
+    _WIDE_HEIGHT = 316
     _WIDE_BREAKPOINT = 1450
     _COMPACT_STAMP_WIDTH = 175.0
     _WIDE_STAMP_WIDTH = 210.0
@@ -1528,7 +1530,7 @@ class CareerMixin:
         frame = QFrame()
         frame.setObjectName("careerHeroMetric")
         frame.setProperty("met", False)
-        frame.setFixedSize(204, 72)
+        frame.setFixedSize(204, 76)
         metric_layout = QHBoxLayout(frame)
         metric_layout.setContentsMargins(12, 9, 14, 9)
         metric_layout.setSpacing(10)
