@@ -11,8 +11,20 @@ from PySide6.QtWidgets import QApplication, QButtonGroup, QCheckBox, QFrame, QGr
 from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits
-from ui.pages.constants import FOOTER_CLEARANCE, PARTS_TILE_MIN_WIDTH
-from ui.rendering import ViewportLazyGridController, refresh_widget_style
+from ui.pages.constants import (
+    FOOTER_CLEARANCE,
+    PARTS_GRID_SIDE_MARGIN,
+    PARTS_GRID_SPACING,
+    PARTS_TILE_MAX_COLUMNS,
+    PARTS_TILE_MAX_WIDTH,
+    PARTS_TILE_MIN_WIDTH,
+)
+from ui.rendering import (
+    ViewportLazyGridController,
+    centered_side_margin,
+    fit_columns,
+    refresh_widget_style,
+)
 from ui.widgets import WantSpinBox, build_perf_level_row
 
 logger = logging.getLogger(__name__)
@@ -88,6 +100,7 @@ class ReusablePartsCardWidget(QFrame):
         self.setObjectName("contentCard")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setMinimumWidth(360)
+        self.setMaximumWidth(PARTS_TILE_MAX_WIDTH)
         self.setProperty("changed", False)
 
         card_layout = QVBoxLayout(self)
@@ -405,9 +418,11 @@ class PartsMixin:
         self.parts_cards = QWidget()
         self.parts_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.parts_cards_layout = QGridLayout(self.parts_cards)
-        self.parts_cards_layout.setContentsMargins(12, 12, 12, FOOTER_CLEARANCE)
-        self.parts_cards_layout.setHorizontalSpacing(14)
-        self.parts_cards_layout.setVerticalSpacing(14)
+        self.parts_cards_layout.setContentsMargins(
+            PARTS_GRID_SIDE_MARGIN, 12, PARTS_GRID_SIDE_MARGIN, FOOTER_CLEARANCE
+        )
+        self.parts_cards_layout.setHorizontalSpacing(PARTS_GRID_SPACING)
+        self.parts_cards_layout.setVerticalSpacing(PARTS_GRID_SPACING)
         self.parts_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
 
         self.parts_cards_scroll = QScrollArea()
@@ -569,11 +584,58 @@ class PartsMixin:
     def _on_parts_theme_changed(self) -> None:
         self._restyle_parts_pool()
 
+    def _parts_card_min_width(self) -> int:
+        """Widest minimum a built tuning card reports.
+
+        The perf grid (label + segments + spinner per part, twice per row) has
+        no room to compress, so a card is far wider than the generic tile
+        constant. Live cards are the honest measurement; the constant is only
+        the pre-render fallback.
+        """
+        widths = [PARTS_TILE_MIN_WIDTH]
+        widths.extend(card.minimumSizeHint().width() for card in self._parts_card_widgets.values())
+        for bucket in self._parts_card_pool.values():
+            widths.extend(card.minimumSizeHint().width() for card in bucket)
+        return max(widths)
+
+    def _parts_viewport_width(self) -> Optional[int]:
+        scroll = getattr(self, "parts_cards_scroll", None)
+        viewport = None if scroll is None else scroll.viewport()
+        return None if viewport is None else viewport.width()
+
     def _detect_parts_card_columns(self) -> int:
-        return self._detect_col_count("parts_cards_scroll", PARTS_TILE_MIN_WIDTH, ((1100, 2),))
+        width = self._parts_viewport_width()
+        if width is None:
+            return 1
+        # Measured against the base margins on purpose: the live ones grow to
+        # centre a short row, and feeding those back in would starve the fit.
+        return fit_columns(
+            width - 2 * PARTS_GRID_SIDE_MARGIN,
+            self._parts_card_min_width(),
+            spacing=PARTS_GRID_SPACING,
+            max_columns=PARTS_TILE_MAX_COLUMNS,
+        )
+
+    def _sync_parts_grid_margins(self, columns: int) -> None:
+        """Centre a row of cards that stops growing before the viewport does."""
+        width = self._parts_viewport_width()
+        if width is None:
+            return
+        side = centered_side_margin(
+            width,
+            columns,
+            PARTS_TILE_MAX_WIDTH,
+            spacing=PARTS_GRID_SPACING,
+            base_margin=PARTS_GRID_SIDE_MARGIN,
+        )
+        margins = self.parts_cards_layout.contentsMargins()
+        if margins.left() == side and margins.right() == side:
+            return
+        self.parts_cards_layout.setContentsMargins(side, margins.top(), side, margins.bottom())
 
     def _maybe_reflow_parts_rows(self, force: bool = False) -> None:
         columns = max(1, self._detect_parts_card_columns())
+        self._sync_parts_grid_margins(columns)
         if not force and columns == getattr(self, "_parts_slot_columns", 0):
             return
         self._parts_slot_columns = columns
@@ -1254,6 +1316,7 @@ class PartsMixin:
             changed=vm.changed,
             minimum_width=360,
         )
+        card.setMaximumWidth(PARTS_TILE_MAX_WIDTH)
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
@@ -1402,6 +1465,7 @@ class PartsMixin:
         self._parts_visible_order = [vm.card_entry.parts_slot for vm in view_models]
         self._parts_live_vm_map = {vm.card_entry.parts_slot: vm for vm in view_models}
         columns = max(1, self._detect_parts_card_columns())
+        self._sync_parts_grid_margins(columns)
         self._parts_slot_columns = columns
         self._parts_render_controller.schedule_render(
             self._parts_visible_order,
@@ -1412,6 +1476,17 @@ class PartsMixin:
             reset_scroll=reset_scroll,
         )
         self._parts_cards_dirty = False
+        QTimer.singleShot(0, self._recheck_parts_columns)
+
+    def _recheck_parts_columns(self) -> None:
+        """Re-run the column fit once cards exist.
+
+        Before a render there is nothing to measure and the fit falls back to
+        the tile constant; a built card is the honest number. Settles after one
+        pass, since the second fit sees the same measurement.
+        """
+        if self._parts_page_visible():
+            self._maybe_reflow_parts_rows()
 
     def _refresh_parts_page(self, reason: str = "data_change") -> None:
         loaded = self.savefile is not None

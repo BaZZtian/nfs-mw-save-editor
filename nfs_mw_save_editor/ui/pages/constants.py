@@ -32,7 +32,16 @@ FOOTER_CLEARANCE = 100
 U32_MAX = 0xFFFFFFFF
 GARAGE_TILE_MIN_WIDTH = 230
 GARAGE_TILE_MAX_COLUMNS = 3
-PARTS_TILE_MIN_WIDTH = 340
+# Pre-render fallback for the tuning grid: a built card measures ~734px wide
+# and cannot compress below it (perf grid). Live cards are measured instead
+# once they exist - see PartsMixin._parts_card_min_width.
+PARTS_TILE_MIN_WIDTH = 734
+# Cards stop growing here; a lone column on a mid-size window would otherwise
+# stretch to the full viewport. Leftover width becomes symmetric grid margins,
+# so a short row sits centred - see PartsMixin._sync_parts_grid_margins.
+PARTS_TILE_MAX_WIDTH = 980
+PARTS_GRID_SIDE_MARGIN = 12
+PARTS_GRID_SPACING = 14
 PARTS_TILE_MAX_COLUMNS = 2
 MY_CARS_TILE_MIN_WIDTH = 340
 MY_CARS_TILE_MAX_COLUMNS = 2

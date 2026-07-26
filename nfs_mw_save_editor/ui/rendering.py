@@ -27,6 +27,47 @@ _EVAL_MODE_NORMAL = "normal"
 _EVAL_MODE_FOLLOWUP = "followup_after_metrics"
 
 
+def fit_columns(
+    available_width: int,
+    card_min_width: int,
+    *,
+    spacing: int,
+    max_columns: int,
+) -> int:
+    """How many cards of *card_min_width* fit into *available_width*.
+
+    *available_width* is the viewport width already stripped of the grid's
+    left/right margins. Cards whose content cannot compress (the tuning perf
+    grid, for one) would otherwise be laid out below their own minimum and
+    get clipped, since the card scroll areas have no horizontal scrollbar.
+    """
+    if card_min_width <= 0:
+        return 1
+    columns = (available_width + spacing) // (card_min_width + spacing)
+    return max(1, min(int(max_columns), int(columns)))
+
+
+def centered_side_margin(
+    viewport_width: int,
+    columns: int,
+    card_max_width: int,
+    *,
+    spacing: int,
+    base_margin: int,
+) -> int:
+    """Side margin that centres a row which stops growing before the viewport.
+
+    Cards with a maximum width leave the rest of a wide viewport empty; giving
+    that leftover to both margins keeps the row centred instead of parked
+    against the left edge. Returns *base_margin* when the row fills the space.
+    """
+    widest_row = columns * card_max_width + max(0, columns - 1) * spacing
+    spare = viewport_width - 2 * base_margin - widest_row
+    if spare <= 0:
+        return base_margin
+    return base_margin + spare // 2
+
+
 def refresh_widget_style(widget: QWidget) -> None:
     """Re-polish a widget after dynamic-property changes."""
     style = widget.style()
