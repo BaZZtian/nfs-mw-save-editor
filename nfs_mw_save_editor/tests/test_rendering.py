@@ -1,7 +1,9 @@
 import os
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import QAbstractAnimation
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -31,12 +33,24 @@ def test_animated_card_shell_disables_opacity_effect_between_reveals() -> None:
 
     finished = []
     shell.revealFinished.connect(lambda: finished.append(True))
-    shell.queue_reveal(duration_ms=1, stable_checks=1)
+    shell.queue_reveal(duration_ms=100, stable_checks=1)
     assert effect.isEnabled()
 
-    QTest.qWait(30)
-    app.processEvents()
+    deadline = time.monotonic() + 2.0
+    while shell._animation_group is None:
+        app.processEvents()
+        assert time.monotonic() < deadline
+
+    animation = shell._animation_group
+    assert animation.state() == QAbstractAnimation.Running
+    assert effect.isEnabled()
+
+    while not finished:
+        QTest.qWait(10)
+        assert time.monotonic() < deadline
+
     assert finished == [True]
+    assert shell._animation_group is None
     assert effect.opacity() == 1.0
     assert not effect.isEnabled()
 
