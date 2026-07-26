@@ -480,6 +480,8 @@ class MainWindow(
         tallies.addWidget(self.progress_bar)
         self._footer_contexts = {
             "Junkman": self.footer_junkman_context,
+            "Profile": self.profile_footer_context,
+            "Career": self.career_footer_context,
         }
         for name, context in self._footer_contexts.items():
             context.setVisible(name == "Junkman")

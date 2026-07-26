@@ -1761,7 +1761,9 @@ class CareerMixin:
             self.career_inspector_stack.addWidget(page)
         self.career_inspector_stack.setCurrentIndex(0)
         host_layout.addWidget(self.career_inspector_stack, 1)
-        host_layout.addWidget(self._build_career_totals_strip())
+        # Keep the public total-label attributes alive during page construction;
+        # footerChrome adopts this parentless strip after all pages are built.
+        self.career_footer_context = self._build_career_totals_strip()
 
         scroll = QScrollArea()
         scroll.setObjectName("cardScroll")
@@ -1773,10 +1775,10 @@ class CareerMixin:
     def _build_career_totals_strip(self) -> QFrame:
         strip = QFrame()
         strip.setObjectName("careerTotalsStrip")
-        strip.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        strip.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         row = QHBoxLayout(strip)
-        row.setContentsMargins(24, 11, 24, 11)
-        row.setSpacing(12)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
         self.career_total_races_value = QLabel("—")
         self.career_total_milestones_value = QLabel("—")
         self.career_total_bounty_value = QLabel("—")
@@ -1900,6 +1902,8 @@ class CareerMixin:
                 self.career_total_prologue_value,
             ):
                 label.setText("—")
+            if hasattr(self, "_sync_footer_context_visibility"):
+                self._sync_footer_context_visibility()
             return
         self.career_total_races_value.setText(
             f"{summary.lifetime_race_wins} / {summary.lifetime_race_total}"
@@ -1912,6 +1916,8 @@ class CareerMixin:
         self.career_total_prologue_value.setText(
             f"{prologue_done} / {len(summary.prologue_races)}"
         )
+        if hasattr(self, "_sync_footer_context_visibility"):
+            self._sync_footer_context_visibility()
 
     def _update_career_hero(
         self,

@@ -658,9 +658,23 @@ QFrame#footerChrome {{
 }}
 QWidget#footerContext,
 QWidget#footerActions,
-QWidget#junkmanFooterContext {{
+QWidget#junkmanFooterContext,
+QFrame#profileFooterContext,
+QFrame#careerTotalsStrip,
+QFrame#footerMetric {{
     background: transparent;
     border: none;
+}}
+QLabel#footerMetricCaption {{
+    color: {MUTED};
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+QLabel#footerMetricValue {{
+    color: {TEXT};
+    font-size: 15px;
+    font-weight: 700;
 }}
 QLabel#navBrandLogo {{
     background: transparent;
@@ -1555,21 +1569,20 @@ QFrame#careerInspectorSection {{
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
-QFrame#careerTotalsStrip {{
-    background: {BG_GLASS};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_XL};
+QFrame#footerChrome QFrame#careerTotalsStrip {{
+    background: transparent;
+    border: none;
 }}
-QFrame#careerTotalsStrip QLabel {{
+QFrame#footerChrome QFrame#careerTotalsStrip QLabel {{
     background: transparent;
 }}
-QLabel#careerTotalsCaption {{
+QFrame#footerChrome QLabel#careerTotalsCaption {{
     color: {MUTED_DARK};
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 1.4px;
 }}
-QLabel#careerTotalsValue {{
+QFrame#footerChrome QLabel#careerTotalsValue {{
     color: {TEXT};
     font-size: 17px;
     font-weight: 700;

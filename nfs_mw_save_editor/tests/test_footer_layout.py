@@ -65,7 +65,6 @@ def test_footer_is_a_layout_row_and_preserves_public_controls():
 
 def test_footer_context_follows_page_and_actions_never_hide():
     window = _window(1180)
-    assert set(window._footer_contexts) == {"Junkman"}
     window._footer_page_name = "Junkman"
     window._sync_footer_context_visibility(force=True)
     assert window.footer_context.isVisible()
@@ -73,8 +72,19 @@ def test_footer_context_follows_page_and_actions_never_hide():
 
     window._select_page("Profile")
     APP.processEvents()
-    assert not window.footer_context.isVisible()
+    assert window.footer_context.isVisible()
+    assert window.profile_footer_context.isVisible()
     assert not window.footer_junkman_context.isVisible()
+
+    window._select_page("Career")
+    APP.processEvents()
+    assert window.footer_context.isVisible()
+    assert window.career_footer_context.isVisible()
+    assert not window.profile_footer_context.isVisible()
+
+    window._select_page("Garage")
+    APP.processEvents()
+    assert not window.footer_context.isVisible()
     assert window.footer_actions.isVisible()
     assert all(
         button.isVisible()
@@ -88,6 +98,71 @@ def test_footer_context_follows_page_and_actions_never_hide():
         button.isVisible()
         for button in (window.btn_reset_want, window.btn_apply, window.btn_save_footer)
     )
+    _close_window(window)
+
+
+def test_profile_and_career_totals_live_in_footer_without_moving_local_metrics():
+    window = _window(1180)
+    assert set(window._footer_contexts) == {"Junkman", "Profile", "Career"}
+
+    assert set(window.profile_summary_values) == {
+        "career_cars",
+        "pink_slips",
+        "my_cars",
+        "free_career_slots",
+    }
+    for value in window.profile_summary_values.values():
+        assert window.profile_footer_context.isAncestorOf(value)
+        assert window.footer_chrome.isAncestorOf(value)
+        assert not window.page_profile.isAncestorOf(value)
+
+    for value in (
+        window.career_total_races_value,
+        window.career_total_milestones_value,
+        window.career_total_bounty_value,
+        window.career_total_prologue_value,
+    ):
+        assert window.career_footer_context.isAncestorOf(value)
+        assert window.footer_chrome.isAncestorOf(value)
+        assert not window.page_career.isAncestorOf(value)
+
+    for hero_value in (
+        window.career_races_value,
+        window.career_milestones_value,
+        window.career_bounty_value,
+    ):
+        assert window.page_career.isAncestorOf(hero_value)
+        assert not window.footer_chrome.isAncestorOf(hero_value)
+
+    for local_value, page in (
+        (window.garage_alloc_owned, window.page_garage),
+        (window.garage_alloc_career, window.page_garage),
+        (window.garage_alloc_blocked, window.page_garage),
+        (window.parts_alloc_owned, window.page_parts),
+        (window.parts_alloc_career, window.page_parts),
+        (window.parts_alloc_blocked, window.page_parts),
+        (window.presets_free_career_badge, window.page_presets),
+    ):
+        assert page.isAncestorOf(local_value)
+        assert not window.footer_chrome.isAncestorOf(local_value)
+
+    _close_window(window)
+
+
+def test_moved_totals_refresh_without_page_parent_dependencies():
+    window = _window(1180)
+    window._refresh_profile_summary(False)
+    assert {label.text() for label in window.profile_summary_values.values()} == {"-"}
+    window._update_career_totals(None)
+    assert window.career_total_races_value.text() == "—"
+
+    window._select_page("Profile")
+    APP.processEvents()
+    assert window.profile_footer_context.isVisible()
+    window._select_page("Career")
+    APP.processEvents()
+    assert window.career_footer_context.isVisible()
+
     _close_window(window)
 
 
@@ -115,22 +190,37 @@ def test_footer_context_width_hysteresis_is_40_pixels():
     _close_window(window)
 
 
+def test_footer_recalculates_threshold_for_each_page_context():
+    window = _window(1920)
+    thresholds = {}
+    for page_name in ("Junkman", "Profile", "Career"):
+        window._select_page(page_name)
+        APP.processEvents()
+        window._sync_footer_context_visibility(force=True)
+        thresholds[page_name] = window._footer_context_required_width()
+        assert window.footer_context.isVisible()
+
+    assert len(set(thresholds.values())) > 1
+    _close_window(window)
+
+
 def test_visible_footer_context_does_not_raise_window_width_floor():
     window = _window(1920)
-    window._select_page("Junkman")
-    window._sync_footer_context_visibility(force=True)
-    QTest.qWait(20)
-    context = window._footer_contexts["Junkman"]
-    visible_floor = window.minimumWidth()
-    assert window.footer_context.width() == context.sizeHint().width()
+    for page_name in ("Junkman", "Profile", "Career"):
+        window._select_page(page_name)
+        window._sync_footer_context_visibility(force=True)
+        QTest.qWait(20)
+        context = window._footer_contexts[page_name]
+        visible_floor = window.minimumWidth()
+        assert window.footer_context.width() == context.sizeHint().width()
 
-    window.footer_context.hide()
-    window.footer_chrome.layout().invalidate()
-    window.footer_chrome.updateGeometry()
-    QTest.qWait(20)
-    hidden_floor = window.minimumWidth()
+        window.footer_context.hide()
+        window.footer_chrome.layout().invalidate()
+        window.footer_chrome.updateGeometry()
+        QTest.qWait(20)
+        hidden_floor = window.minimumWidth()
 
-    assert visible_floor <= hidden_floor
+        assert visible_floor <= hidden_floor
     _close_window(window)
 
 
@@ -159,7 +249,7 @@ def test_footer_width_sweep_keeps_actions_and_hides_context_when_needed():
 def test_footer_uses_shell_theme_when_page_theme_is_lazy():
     window = _window()
     original = window.theme_name
-    window._select_page("Junkman")
+    window._select_page("Profile")
     APP.processEvents()
     replacement = next(name for name in available_theme_names() if name != window.theme_name)
     window.on_theme_changed(replacement)
@@ -167,15 +257,18 @@ def test_footer_uses_shell_theme_when_page_theme_is_lazy():
 
     assert window.footer_chrome.property("_scopedThemeName") == replacement
     assert "QFrame#footerChrome" in window.footer_chrome.styleSheet()
+    assert "QLabel#footerMetricCaption" in window.footer_chrome.styleSheet()
 
     window._select_page("Settings")
     APP.processEvents()
     window.on_theme_changed(original)
     APP.processEvents()
-    window._select_page("Junkman")
+    window._select_page("Career")
     APP.processEvents()
 
-    assert window.footer_junkman_context.isVisible()
+    assert window.career_footer_context.isVisible()
     assert window.footer_chrome.property("_scopedThemeName") == original
-    assert "QFrame#footerChrome" in window.footer_chrome.styleSheet()
+    assert "QFrame#footerChrome QLabel#careerTotalsCaption" in (
+        window.footer_chrome.styleSheet()
+    )
     _close_window(window)
