@@ -249,7 +249,7 @@ class JunkmanMixin:
         self.cards_container = QWidget()
         self.cards_grid = QGridLayout(self.cards_container)
         self.cards_grid.setSpacing(12)
-        self.cards_grid.setContentsMargins(8, 8, 8, FOOTER_CLEARANCE)
+        self.cards_grid.setContentsMargins(8, 8, 8, 8)
         self.cards_grid.setAlignment(Qt.AlignTop)
 
         self._cards_per_row = DEFAULT_CARDS_PER_ROW
@@ -472,6 +472,8 @@ class JunkmanMixin:
         self.progress_bar.setRange(0, PERF_TOTAL)
         self.progress_bar.setValue(perf_unlocked)
         self.progress_bar.setFormat(f"{perf_unlocked}/{PERF_TOTAL} Performance")
+        if hasattr(self, "_sync_footer_context_visibility"):
+            self._sync_footer_context_visibility()
 
         self._update_header_path()
 

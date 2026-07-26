@@ -114,6 +114,14 @@ def _ensure_user_catalog_path() -> Path:
     return user_path
 
 
+class _FooterContextHost(QWidget):
+    """Expose the active context hint without raising the window width floor."""
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        hint = super().minimumSizeHint()
+        return QSize(0, hint.height())
+
+
 
 
 # ===================================================================
@@ -233,7 +241,7 @@ class MainWindow(
         self.nav_chrome.setLayout(self._build_nav())
         self.nav_chrome.setFixedWidth(150)
         self.nav_chrome.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        base.addWidget(self.nav_chrome, 0, 0, 2, 1)
+        base.addWidget(self.nav_chrome, 0, 0, 3, 1)
 
         self.stack = QStackedWidget()
         self.stack.setObjectName("contentStack")
@@ -268,11 +276,13 @@ class MainWindow(
                    self.page_presets, self.page_settings, self.page_about]:
             self.stack.addWidget(p)
 
+        self.footer_chrome = self._build_footer()
+        base.addWidget(self.footer_chrome, 2, 1)
+        self._shell_theme_roots.append(self.footer_chrome)
+        self._footer_page_name = "Junkman"
+        self._footer_context_expanded = False
+        self._set_footer_page("Junkman")
         self._select_page("Junkman")
-        # Floating footer: content scrolls underneath the translucent card.
-        self._build_floating_footer(root)
-        self._shell_theme_roots.extend([self.footer_tallies, self.footer_actions_card])
-        QTimer.singleShot(0, self._position_floating_footer)
 
         # -- Keyboard shortcuts --
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.on_open)
@@ -433,10 +443,25 @@ class MainWindow(
         layout.addStretch(1)
         return layout
 
-    def _build_floating_footer(self, root: QWidget) -> None:
-        self.footer_tallies = QWidget(root)
-        self.footer_tallies.setObjectName("footerTallies")
-        tallies = QHBoxLayout(self.footer_tallies)
+    def _build_footer(self) -> QFrame:
+        footer = QFrame()
+        footer.setObjectName("footerChrome")
+        footer.setMinimumHeight(60)
+        row = QHBoxLayout(footer)
+        row.setContentsMargins(10, 8, 10, 8)
+        row.setSpacing(10)
+
+        self.footer_context = _FooterContextHost()
+        self.footer_context.setObjectName("footerContext")
+        self.footer_context.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        contexts = QHBoxLayout(self.footer_context)
+        contexts.setContentsMargins(0, 0, 0, 0)
+        contexts.setSpacing(0)
+
+        self.footer_junkman_context = QWidget()
+        self.footer_junkman_context.setObjectName("junkmanFooterContext")
+        self.footer_junkman_context.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        tallies = QHBoxLayout(self.footer_junkman_context)
         tallies.setContentsMargins(0, 0, 0, 0)
         tallies.setSpacing(10)
         self.lbl_free = QLabel("Free slots: -/-")
@@ -453,6 +478,14 @@ class MainWindow(
         self.progress_bar.setFormat("0/7 Performance")
         tallies.addWidget(self.lbl_free)
         tallies.addWidget(self.progress_bar)
+        self._footer_contexts = {
+            "Junkman": self.footer_junkman_context,
+        }
+        for name, context in self._footer_contexts.items():
+            context.setVisible(name == "Junkman")
+            contexts.addWidget(context)
+        row.addWidget(self.footer_context, 0, Qt.AlignVCenter)
+        row.addStretch(1)
 
         self.btn_reset_want = ShellActionButton("Reset Want=Have")
         self.btn_apply = ShellActionButton("Apply (memory)")
@@ -463,34 +496,81 @@ class MainWindow(
         self._set_game_button_icon(self.btn_reset_want, "action_reset")
         self._set_game_button_icon(self.btn_save_footer, "action_save")
 
-        self.footer_actions_card = QFrame(root)
-        self.footer_actions_card.setObjectName("footerActionsCard")
-        actions = QHBoxLayout(self.footer_actions_card)
-        actions.setContentsMargins(10, 8, 10, 8)
+        self.footer_actions = QWidget()
+        self.footer_actions.setObjectName("footerActions")
+        self.footer_actions.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        actions = QHBoxLayout(self.footer_actions)
+        actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(10)
         actions.addWidget(self.btn_reset_want)
         actions.addWidget(self.btn_apply)
         actions.addWidget(self.btn_save_footer)
+        row.addWidget(self.footer_actions, 0, Qt.AlignVCenter)
+        return footer
 
-    def _position_floating_footer(self) -> None:
-        if not hasattr(self, "footer_actions_card") or not hasattr(self, "stack"):
+    def _footer_available_width(self) -> int:
+        root = self.centralWidget()
+        layout = root.layout() if root is not None else None
+        if root is None or not isinstance(layout, QGridLayout):
+            return self.footer_chrome.width() if hasattr(self, "footer_chrome") else 0
+        margins = layout.contentsMargins()
+        return max(
+            0,
+            root.width()
+            - margins.left()
+            - margins.right()
+            - self.nav_chrome.width()
+            - layout.horizontalSpacing(),
+        )
+
+    def _footer_context_required_width(self) -> int:
+        layout = self.footer_chrome.layout()
+        margins = layout.contentsMargins()
+        page_name = getattr(self, "_footer_page_name", None)
+        context = getattr(self, "_footer_contexts", {}).get(page_name)
+        context_width = context.sizeHint().width() if context is not None else 0
+        # Include both gaps around the expanding spacer.  The conservative
+        # allowance prevents a one-pixel oscillation at the layout boundary.
+        return (
+            margins.left()
+            + margins.right()
+            + context_width
+            + self.footer_actions.sizeHint().width()
+            + 2 * layout.spacing()
+        )
+
+    def _sync_footer_context_visibility(self, *, force: bool = False) -> None:
+        if not hasattr(self, "footer_context"):
             return
-        area = self.stack.geometry()
-        margin = 14
-        card_size = self.footer_actions_card.sizeHint()
-        self.footer_actions_card.resize(card_size)
-        self.footer_actions_card.move(
-            area.right() - margin - card_size.width(),
-            area.bottom() - margin - card_size.height(),
-        )
-        self.footer_actions_card.raise_()
-        tallies_size = self.footer_tallies.sizeHint()
-        self.footer_tallies.resize(tallies_size)
-        self.footer_tallies.move(
-            area.left() + margin,
-            area.bottom() - margin - tallies_size.height(),
-        )
-        self.footer_tallies.raise_()
+        page_name = getattr(self, "_footer_page_name", None)
+        context = getattr(self, "_footer_contexts", {}).get(page_name)
+        if context is None:
+            expanded = False
+        else:
+            # Cap the wrapper at the current context's live hint.  The host's
+            # zero-width minimum hint lets it shrink without raising the
+            # top-level window floor or leaking hidden sibling widths.
+            self.footer_context.setMaximumWidth(context.sizeHint().width())
+            available = self._footer_available_width()
+            threshold = self._footer_context_required_width()
+            currently_expanded = bool(getattr(self, "_footer_context_expanded", False))
+            if force:
+                expanded = available >= threshold
+            elif currently_expanded:
+                expanded = available >= threshold
+            else:
+                expanded = available >= threshold + 40
+        self._footer_context_expanded = expanded
+        self.footer_context.setVisible(expanded)
+
+    def _set_footer_page(self, name: str) -> None:
+        self._footer_page_name = name
+        for context_name, context in getattr(self, "_footer_contexts", {}).items():
+            context.setVisible(context_name == name)
+        self.footer_context.layout().invalidate()
+        self.footer_context.updateGeometry()
+        self.footer_chrome.layout().invalidate()
+        self._sync_footer_context_visibility()
 
     def _select_page(self, name: str):
         if self._current_stack_page_name() == name:
@@ -510,9 +590,7 @@ class MainWindow(
         overlay = self._start_page_transition_overlay()
         self.stack.setCurrentWidget(mapping[name])
         self._ensure_page_theme(name)
-        if hasattr(self, "footer_tallies"):
-            # The junkman token tallies only mean something on the Junkman page.
-            self.footer_tallies.setVisible(name == "Junkman")
+        self._set_footer_page(name)
         if name == "Profile":
             self._refresh_profile_inputs()
         elif name == "Career":
@@ -1096,9 +1174,7 @@ class MainWindow(
             self._page_transition_overlay.sync_to_parent()
         ToastNotification.reposition_active(self)
         self._update_header_path()
-        if hasattr(self, "footer_actions_card"):
-            # Defer until the grid has applied the new stack geometry.
-            QTimer.singleShot(0, self._position_floating_footer)
+        self._sync_footer_context_visibility()
         if hasattr(self, "scroll") and hasattr(self, "cards_container"):
             prev = getattr(self, "_cards_per_row", DEFAULT_CARDS_PER_ROW)
             now = self._detect_cards_per_row()

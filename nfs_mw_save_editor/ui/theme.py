@@ -651,13 +651,16 @@ QFrame#navChrome {{
     border: 1px solid {BORDER_GLASS};
     border-radius: {RADIUS_XL};
 }}
-QFrame#footerActionsCard {{
+QFrame#footerChrome {{
     background: {BG_GLASS};
     border: 1px solid {BORDER_GLASS};
     border-radius: {RADIUS_XL};
 }}
-QWidget#footerTallies {{
+QWidget#footerContext,
+QWidget#footerActions,
+QWidget#junkmanFooterContext {{
     background: transparent;
+    border: none;
 }}
 QLabel#navBrandLogo {{
     background: transparent;

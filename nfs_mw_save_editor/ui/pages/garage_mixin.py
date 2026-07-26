@@ -160,7 +160,7 @@ class GarageMixin:
         self.garage_cards = QWidget()
         self.garage_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.garage_cards_layout = QGridLayout(self.garage_cards)
-        self.garage_cards_layout.setContentsMargins(12, 12, 12, FOOTER_CLEARANCE)
+        self.garage_cards_layout.setContentsMargins(12, 12, 12, 12)
         self.garage_cards_layout.setHorizontalSpacing(14)
         self.garage_cards_layout.setVerticalSpacing(14)
         self.garage_cards_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)

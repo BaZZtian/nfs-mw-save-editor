@@ -25,10 +25,6 @@ PERF_IDS = (1, 2, 3, 4, 5, 6, 7)
 PERF_TOTAL = 7
 DEFAULT_CARDS_PER_ROW = 3
 MAX_CARDS_PER_ROW = 4
-# Bottom inset for scrollable page content so fully-scrolled cards clear the
-# floating footer cards (they occupy ~76px from the stack bottom: 44px buttons
-# + card padding/border + 14px margin) with comfortable air above the glass.
-FOOTER_CLEARANCE = 100
 U32_MAX = 0xFFFFFFFF
 GARAGE_TILE_MIN_WIDTH = 230
 GARAGE_TILE_MAX_COLUMNS = 3

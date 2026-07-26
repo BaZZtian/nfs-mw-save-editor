@@ -81,7 +81,7 @@ from core.career_donor_library import (
     load_career_donor_library,
 )
 from ui.icon_map import game_icon_path, rival_asset_path
-from ui.pages.constants import BLACKLIST_BOSS_NAMES, FOOTER_CLEARANCE
+from ui.pages.constants import BLACKLIST_BOSS_NAMES
 from ui.theme import resolve_theme_tokens
 from ui.widgets import (
     AnimatedSegmentedControl,
@@ -1562,7 +1562,7 @@ class CareerMixin:
         view = QWidget()
         view.setObjectName("careerTransplantView")
         layout = QVBoxLayout(view)
-        layout.setContentsMargins(0, 0, 6, FOOTER_CLEARANCE)
+        layout.setContentsMargins(0, 0, 6, 0)
         layout.setSpacing(0)
 
         target_card, target_layout = self._make_card_frame(
@@ -1741,7 +1741,7 @@ class CareerMixin:
         host = QWidget()
         host.setObjectName("careerProgressView")
         host_layout = QVBoxLayout(host)
-        host_layout.setContentsMargins(0, 0, 6, FOOTER_CLEARANCE)
+        host_layout.setContentsMargins(0, 0, 6, 0)
         host_layout.setSpacing(10)
         host_layout.setAlignment(Qt.AlignTop)
 

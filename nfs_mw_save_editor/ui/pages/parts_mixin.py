@@ -12,7 +12,6 @@ from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
 from core.tuning_limits import PERF_PART_NAMES, get_model_tuning_limits
 from ui.pages.constants import (
-    FOOTER_CLEARANCE,
     PARTS_GRID_SIDE_MARGIN,
     PARTS_GRID_SPACING,
     PARTS_TILE_MAX_COLUMNS,
@@ -419,7 +418,7 @@ class PartsMixin:
         self.parts_cards.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.parts_cards_layout = QGridLayout(self.parts_cards)
         self.parts_cards_layout.setContentsMargins(
-            PARTS_GRID_SIDE_MARGIN, 12, PARTS_GRID_SIDE_MARGIN, FOOTER_CLEARANCE
+            PARTS_GRID_SIDE_MARGIN, 12, PARTS_GRID_SIDE_MARGIN, 12
         )
         self.parts_cards_layout.setHorizontalSpacing(PARTS_GRID_SPACING)
         self.parts_cards_layout.setVerticalSpacing(PARTS_GRID_SPACING)
