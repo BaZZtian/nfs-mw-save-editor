@@ -3,8 +3,10 @@
 This note is a higher-level summary of how the Profile / Rap Sheet data model was
 understood for **Need for Speed: Most Wanted (2005)** PC v1.3 saves.
 
-The exact offsets and record layouts are encoded as named constants in
-`nfs_mw_save_editor/core/savefile.py`, which is the authoritative source.
+For the exact offsets, record layouts, and the experiment log behind them, see
+[`PROFILE_REVERSE_NOTES.md`](/docs/PROFILE_REVERSE_NOTES.md). The values actually used
+at runtime are encoded as named constants in `nfs_mw_save_editor/core/savefile.py`,
+which stays the authoritative source for the code.
 
 ## Problem statement
 
