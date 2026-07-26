@@ -13,7 +13,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from PySide6.QtCore import QAbstractAnimation, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -831,18 +831,31 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     app.processEvents()
 
     assert bytes(data) == before
-    metric_gap = (
-        window.career_view_switch.geometry().top()
-        - window.career_races_metric.geometry().bottom()
-        - 1
-    )
-    copy_gap = (
-        window.career_races_metric.geometry().top()
-        - window.career_hero_tagline.geometry().bottom()
-        - 1
-    )
-    assert metric_gap >= 16
-    assert abs(copy_gap - metric_gap) <= 1
+    # The banner runs on one optical rhythm: the distance from the card's top
+    # edge to the first ink, between every pair of blocks, and from the last
+    # block to the bottom edge are all the same (within pixel rounding).
+    hero = window.career_hero
+
+    def _ink_band(widget, *, is_label: bool) -> tuple[float, float]:
+        top = widget.mapTo(hero, widget.rect().topLeft()).y()
+        if not is_label:
+            return float(top), float(top + widget.height())
+        above, below = career_module._ink_insets(widget, widget.height())
+        return top + above, top + widget.height() - below
+
+    bands = [
+        _ink_band(window.career_hero_eyebrow, is_label=True),
+        _ink_band(window.career_stage_value, is_label=True),
+        _ink_band(window.career_hero_tagline, is_label=True),
+        _ink_band(window.career_races_metric, is_label=False),
+        _ink_band(window.career_view_switch, is_label=False),
+    ]
+    edges = [0.0] + [band[1] for band in bands]
+    starts = [band[0] for band in bands] + [float(hero.height())]
+    rhythm = [start - edge for edge, start in zip(edges, starts)]
+    assert len(rhythm) == 6
+    assert max(rhythm) - min(rhythm) <= 1.0, rhythm
+    assert min(rhythm) > 0
     assert window.career_view_switch.width() == 268
     assert window.career_view_switch.height() == 42
     assert window.career_view_rapsheet_btn.font().pixelSize() == 11
@@ -852,10 +865,10 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     eyebrow = window.findChild(QLabel, "careerHeroEyebrow")
     assert eyebrow is not None
     assert eyebrow.text() == "BLACKLIST"
-    headline_gap = window.career_stage_value.geometry().top() - eyebrow.geometry().bottom() - 1
-    assert 0 <= headline_gap <= 8
-    assert window.career_stage_value.font().pixelSize() == 54
-    assert window.career_boss_value.font().pixelSize() == 48
+    assert window.career_stage_value.font().pixelSize() == 68
+    assert window.career_boss_value.font().pixelSize() == 68
+    assert window.career_hero_tagline.font().pixelSize() == 15
+    assert window.career_hero_tagline.font().weight() == QFont.Weight.DemiBold
     assert not hasattr(window.career_stage_grid_host, "_refresh_transition_overlay")
     inspector = window.career_inspector_pages[window.career_inspector_stack.currentIndex()]
     assert not hasattr(inspector, "title")

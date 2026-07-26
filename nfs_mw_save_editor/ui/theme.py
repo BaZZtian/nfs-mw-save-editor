@@ -1285,18 +1285,19 @@ QLabel#careerHeroEyebrow {{
 QLabel#careerHeroRank {{
     color: {ACCENT_BRIGHT};
     font-family: 'Bahnschrift', 'Segoe UI';
-    font-size: 54px;
+    font-size: 68px;
 }}
 QLabel#careerHeroBoss {{
     color: {TEXT};
     font-family: 'Bahnschrift', 'Segoe UI';
-    font-size: 48px;
+    font-size: 68px;
     letter-spacing: 1.2px;
 }}
 QLabel#careerHeroTagline {{
     background: transparent;
     color: {MUTED};
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 600;
     letter-spacing: 0.2px;
 }}
 QFrame#careerHeroMetric {{

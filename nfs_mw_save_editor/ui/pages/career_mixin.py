@@ -39,6 +39,7 @@ from PySide6.QtGui import (
     QBitmap,
     QColor,
     QFontDatabase,
+    QFontMetrics,
     QImageReader,
     QLinearGradient,
     QPainter,
@@ -106,6 +107,102 @@ _CAREER_CROSSFADE_MS = 140
 # selected by name - and only when the machine actually has it.
 _HERO_DISPLAY_FAMILY = "Bahnschrift"
 _HERO_DISPLAY_STYLE = "Bold SemiCondensed"
+
+
+class _HeroRhythmColumn(QVBoxLayout):
+    """Stacks the banner's blocks with one equal *optical* gap everywhere.
+
+    Ordinary spacing measures widget boxes, and a label's box carries the blank
+    ascent/descent of its font: with a 68px headline above a 15px tagline the
+    same spacing looks nothing alike. This column measures the ink instead -
+    the gap to the card's top edge, between every pair of blocks and to the
+    bottom edge all come out the same. The step is whatever the card's height
+    leaves over, so it adapts to the wide/compact banner by itself.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(0)
+        self._ink_sources: Dict[int, QLabel] = {}
+
+    def set_ink_source(self, index: int, label: QLabel) -> None:
+        """Say which label's font decides the blank margins of block `index`."""
+        self._ink_sources[index] = label
+
+    def _block_height(self, index: int, width: int) -> int:
+        item = self.itemAt(index)
+        widget = item.widget()
+        if widget is not None and widget.isHidden():
+            return 0
+        if widget is not None and widget.hasHeightForWidth() and width > 0:
+            return widget.heightForWidth(width)
+        return item.sizeHint().height()
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802 - Qt override
+        count = self.count()
+        heights = [self._block_height(i, rect.width()) for i in range(count)]
+        insets = []
+        for index, height in enumerate(heights):
+            label = self._ink_sources.get(index)
+            insets.append(_ink_insets(label, height) if label is not None else (0.0, 0.0))
+        active = [i for i in range(count) if heights[i] > 0]
+        if not active:
+            super().setGeometry(rect)
+            return
+
+        ink_total = sum(heights[i] - insets[i][0] - insets[i][1] for i in active)
+        step = (rect.height() - ink_total) / (len(active) + 1)
+        if step < 0:
+            super().setGeometry(rect)
+            return
+
+        cursor = float(rect.top())
+        for index in range(count):
+            item = self.itemAt(index)
+            if heights[index] <= 0:
+                item.setGeometry(QRect(rect.left(), int(round(cursor)), rect.width(), 0))
+                continue
+            ink_top = cursor + step
+            top = ink_top - insets[index][0]
+            item.setGeometry(
+                QRect(rect.left(), int(round(top)), rect.width(), heights[index])
+            )
+            cursor = ink_top + (heights[index] - insets[index][0] - insets[index][1])
+
+
+def _label_block_height(label: QLabel) -> int:
+    """Height the label actually needs, independent of any layout pass.
+
+    Before the first layout a widget still reports a placeholder size, so the
+    banner rhythm cannot trust height(); the text's own hint can be trusted.
+    """
+    hint = label.sizeHint().height()
+    if label.hasHeightForWidth():
+        width = label.width() if label.width() > 0 else label.maximumWidth()
+        if 0 < width < 16_777_215:  # QWIDGETSIZE_MAX: an unconstrained width
+            return max(hint, label.heightForWidth(width))
+    return hint
+
+
+def _ink_insets(label: QLabel, height: Optional[int] = None) -> Tuple[float, float]:
+    """Blank space a label carries above and below its actual glyphs.
+
+    A font reserves ascent and descent room whether the text uses it or not, so
+    two labels of different sizes with the same layout spacing between them do
+    not look equally spaced. These insets are what has to be subtracted from a
+    rhythm step to make gaps equal to the eye.
+    """
+    metrics = QFontMetrics(label.font())
+    text = label.text() or "X"
+    tight = metrics.tightBoundingRect(text)
+    block_height = _label_block_height(label) if height is None else height
+    line_spacing = max(1, metrics.lineSpacing())
+    lines = max(1, round(block_height / line_spacing))
+    last_baseline = (lines - 1) * line_spacing + metrics.ascent()
+    top = metrics.ascent() + tight.top()
+    bottom = block_height - (last_baseline + tight.bottom())
+    return max(0.0, float(top)), max(0.0, float(bottom))
 
 
 def _apply_hero_display_font(label: QLabel) -> None:
@@ -1330,16 +1427,20 @@ class CareerMixin:
         self.career_hero = _CareerHero()
         self._career_hero_transition: Optional[ThemeTransitionOverlay] = None
         hero_layout = QHBoxLayout(self.career_hero)
-        hero_layout.setContentsMargins(28, 18, 20, 16)
+        hero_layout.setContentsMargins(28, 0, 20, 0)
         hero_layout.setSpacing(14)
 
-        hero_copy = QVBoxLayout()
-        hero_copy.setContentsMargins(0, 6, 0, 0)
-        hero_copy.setSpacing(3)
+        # Vertical spacing here is not authored by hand: the column keeps one
+        # optical step between every block and both card edges.
+        self.career_hero_copy = _HeroRhythmColumn()
+        hero_copy = self.career_hero_copy
+
         eyebrow = QLabel("BLACKLIST")
         eyebrow.setObjectName("careerHeroEyebrow")
         eyebrow.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.career_hero_eyebrow = eyebrow
         hero_copy.addWidget(eyebrow)
+        hero_copy.set_ink_source(0, eyebrow)
 
         headline = QHBoxLayout()
         headline.setSpacing(12)
@@ -1359,6 +1460,7 @@ class CareerMixin:
         headline.addWidget(self.career_hero_status, 0, Qt.AlignVCenter)
         headline.addStretch(1)
         hero_copy.addLayout(headline)
+        hero_copy.set_ink_source(1, self.career_stage_value)
         self.career_hero_tagline = QLabel("")
         self.career_hero_tagline.setObjectName("careerHeroTagline")
         self.career_hero_tagline.setWordWrap(True)
@@ -1366,7 +1468,7 @@ class CareerMixin:
         self.career_hero_tagline.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.career_hero_tagline.setVisible(False)
         hero_copy.addWidget(self.career_hero_tagline)
-        hero_copy.addSpacing(16)
+        hero_copy.set_ink_source(2, self.career_hero_tagline)
 
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
@@ -1387,7 +1489,6 @@ class CareerMixin:
         metrics.addWidget(self.career_bounty_metric)
         metrics.addStretch(1)
         hero_copy.addLayout(metrics)
-        hero_copy.addSpacing(16)
 
         # ── View switch: safe progress overview | stage change ──
         self.career_view_switch = AnimatedSegmentedControl(
@@ -1402,7 +1503,6 @@ class CareerMixin:
         hero_switch_row.addWidget(self.career_view_switch)
         hero_switch_row.addStretch(1)
         hero_copy.addLayout(hero_switch_row)
-        hero_copy.addStretch(1)
 
         hero_layout.addLayout(hero_copy, 3)
         hero_layout.addStretch(2)
