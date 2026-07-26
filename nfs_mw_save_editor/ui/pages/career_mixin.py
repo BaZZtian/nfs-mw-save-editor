@@ -1496,7 +1496,7 @@ class CareerMixin:
             button_object_name="careerViewTab",
             fixed_height=42,
         )
-        self.career_view_switch.setFixedWidth(268)
+        self.career_view_switch.setFixedWidth(280)
         self.career_view_rapsheet_btn = self.career_view_switch.button(0)
         self.career_view_transplant_btn = self.career_view_switch.button(1)
         hero_switch_row = QHBoxLayout()

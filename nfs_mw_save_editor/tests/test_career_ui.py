@@ -856,9 +856,10 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     assert len(rhythm) == 6
     assert max(rhythm) - min(rhythm) <= 1.0, rhythm
     assert min(rhythm) > 0
-    assert window.career_view_switch.width() == 268
+    assert window.career_view_switch.width() == 280
     assert window.career_view_switch.height() == 42
-    assert window.career_view_rapsheet_btn.font().pixelSize() == 11
+    assert window.career_view_rapsheet_btn.font().pixelSize() == 12
+    assert window.career_view_rapsheet_btn.font().weight() == QFont.Weight.DemiBold
     assert window.career_hero_status.isHidden()
     assert not hasattr(window, "career_stage_sub")
     assert window.findChild(QLabel, "careerHeroSub") is None

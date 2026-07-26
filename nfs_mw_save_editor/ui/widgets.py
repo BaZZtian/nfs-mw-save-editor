@@ -19,7 +19,16 @@ from PySide6.QtCore import (
     QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPalette, QPixmap, QTransform
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPalette,
+    QPixmap,
+    QTransform,
+)
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -166,7 +175,7 @@ class _SegmentHitButton(QPushButton):
 class AnimatedSegmentedControl(QFrame):
     """Crisp segmented control painted as one interruptible moving surface."""
 
-    _TRACK_INSET = 3
+    _TRACK_INSET = 2
     currentChanged = Signal(int)
 
     def __init__(
@@ -207,6 +216,12 @@ class AnimatedSegmentedControl(QFrame):
             button.setCheckable(False)
             button.setCursor(Qt.PointingHandCursor)
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            # Segment labels carry fractional letter spacing. Hinted glyphs snap
+            # to whole pixels, so that fraction piles up and every third gap
+            # jumps a pixel; unhinted glyphs keep the spacing even.
+            font = button.font()
+            font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+            button.setFont(font)
             button.clicked.connect(lambda _checked=False, i=index: self.setCurrentIndex(i))
             layout.addWidget(button, 1)
             self._buttons.append(button)

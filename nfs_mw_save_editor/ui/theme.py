@@ -1343,9 +1343,9 @@ QPushButton#careerViewTab {{
     border-radius: {RADIUS_MD};
     padding: 6px 16px;
     color: {MUTED};
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.9px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }}
 
 /* Stage-change workflow */
