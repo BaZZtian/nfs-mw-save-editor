@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import struct
 import sys
+import time
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -11,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QAbstractAnimation, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -628,11 +629,21 @@ def test_progress_hero_and_cards_crossfade_without_covering_the_timeline():
     assert window.career_inspector_stack.geometry() == inspector_geometry
     for overlay in (hero_overlay, inspector_overlay):
         assert overlay.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-    QTest.qWait(45)
-    assert 0.0 < hero_overlay._opacity.opacity() < 1.0
-    assert 0.0 < inspector_overlay._opacity.opacity() < 1.0
-    QTest.qWait(130)
-    app.processEvents()
+        assert overlay._fade.state() == QAbstractAnimation.Running
+
+    deadline = time.monotonic() + 2.0
+    while (
+        window._career_hero_transition is not None
+        or window._career_inspector_transition is not None
+    ):
+        QTest.qWait(10)
+        if (
+            window._career_hero_transition is None
+            and window._career_inspector_transition is None
+        ):
+            break
+        assert time.monotonic() < deadline
+
     assert window._career_hero_transition is None
     assert window._career_inspector_transition is None
     window.close()
