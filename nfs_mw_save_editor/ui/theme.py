@@ -1276,22 +1276,21 @@ QFrame#careerHero QLabel {{
 }}
 QLabel#careerHeroEyebrow {{
     color: {ACCENT_BRIGHT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 1.8px;
 }}
+/* The condensed cut is picked by style name in career_mixin; the family has to
+   be repeated here or the generic QWidget rule above wins over the set font. */
 QLabel#careerHeroRank {{
     color: {ACCENT_BRIGHT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-family: 'Bahnschrift', 'Segoe UI';
     font-size: 54px;
-    font-weight: 700;
 }}
 QLabel#careerHeroBoss {{
     color: {TEXT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
+    font-family: 'Bahnschrift', 'Segoe UI';
     font-size: 48px;
-    font-weight: 700;
     letter-spacing: 1.2px;
 }}
 QLabel#careerHeroTagline {{
@@ -1307,7 +1306,6 @@ QFrame#careerHeroMetric {{
 }}
 QLabel#careerHeroMetricValue {{
     color: {TEXT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 16px;
     font-weight: 700;
 }}
@@ -1327,7 +1325,6 @@ QPushButton#careerViewTab {{
     border-radius: {RADIUS_MD};
     padding: 6px 16px;
     color: {MUTED};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.9px;
@@ -1345,7 +1342,6 @@ QFrame#careerTargetPanel, QFrame#careerReviewPanel {{
 QLabel#careerStepLabel {{
     background: transparent;
     color: {ACCENT_BRIGHT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 1.5px;
@@ -1353,7 +1349,6 @@ QLabel#careerStepLabel {{
 QLabel#careerPanelTitle {{
     background: transparent;
     color: {TEXT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 19px;
     font-weight: 700;
 }}
@@ -1368,7 +1363,6 @@ QPushButton#careerVariantButton {{
     border-radius: {RADIUS_MD};
     padding: 7px 10px;
     color: {MUTED};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 9.5px;
     font-weight: 700;
     letter-spacing: 0.7px;
@@ -1379,7 +1373,6 @@ QPushButton#careerStageButton {{
     border-radius: {RADIUS_MD};
     padding: 7px 9px;
     color: {TEXT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 10.5px;
     font-weight: 700;
     text-align: left;
@@ -1417,7 +1410,6 @@ QFrame#careerRoute QLabel {{
 }}
 QLabel#careerRouteStage {{
     color: {TEXT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 12px;
     font-weight: 700;
 }}
@@ -1486,7 +1478,6 @@ QPushButton#careerTransplantButton {{
     border-radius: {RADIUS_MD};
     padding: 9px 14px;
     color: {TEXT_ON_ACCENT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
@@ -1527,7 +1518,6 @@ QLabel#careerHeroStatus {{
     border-radius: {RADIUS_MD};
     padding: 4px 10px;
     color: {STATUS_NEUTRAL_FG};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.8px;
@@ -1577,7 +1567,6 @@ QLabel#careerTotalsCaption {{
 }}
 QLabel#careerTotalsValue {{
     color: {TEXT};
-    font-family: 'Bahnschrift SemiCondensed', 'Segoe UI';
     font-size: 17px;
     font-weight: 700;
 }}

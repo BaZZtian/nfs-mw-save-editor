@@ -38,6 +38,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QBitmap,
     QColor,
+    QFontDatabase,
     QImageReader,
     QLinearGradient,
     QPainter,
@@ -98,6 +99,22 @@ _BOUNTY_CAVEAT_TEXT = (
 )
 
 _CAREER_CROSSFADE_MS = 140
+
+# Bahnschrift ships as a single variable-font family: its condensed cuts are
+# named styles, not families. Asking for the family "Bahnschrift Condensed"
+# silently falls back to whatever the platform picks, so the style has to be
+# selected by name - and only when the machine actually has it.
+_HERO_DISPLAY_FAMILY = "Bahnschrift"
+_HERO_DISPLAY_STYLE = "Bold SemiCondensed"
+
+
+def _apply_hero_display_font(label: QLabel) -> None:
+    if _HERO_DISPLAY_STYLE in QFontDatabase.styles(_HERO_DISPLAY_FAMILY):
+        font = QFontDatabase.font(_HERO_DISPLAY_FAMILY, _HERO_DISPLAY_STYLE, -1)
+    else:
+        font = label.font()
+        font.setBold(True)
+    label.setFont(font)
 
 # EventID type digit -> packaged game icon (ground truth for the digits:
 # the events' internal names in GLOBAL/gameplay.bin, see race_display_names).
@@ -746,7 +763,6 @@ class _BlacklistTimeline(QWidget):
                 )
 
             font = painter.font()
-            font.setFamily("Bahnschrift SemiCondensed")
             font.setBold(selected or state in {"current", "boss_ready"})
             font.setPointSizeF(9.0 if wide else 8.5)
             painter.setFont(font)
@@ -882,9 +898,8 @@ class _ProgressRowList(QFrame):
             cls._pixmap_cache.popitem(last=False)
         return original
 
-    def _condensed_font(self, painter: QPainter, size: float, *, bold: bool) -> None:
+    def _row_font(self, painter: QPainter, size: float, *, bold: bool) -> None:
         font = painter.font()
-        font.setFamily("Bahnschrift SemiCondensed")
         font.setBold(bold)
         font.setPointSizeF(size)
         painter.setFont(font)
@@ -895,17 +910,17 @@ class _ProgressRowList(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        self._condensed_font(painter, 11.0, bold=True)
+        self._row_font(painter, 11.0, bold=True)
         painter.setPen(QColor(tokens["TEXT"]))
         painter.drawText(QRectF(15, 11, self.width() - 30, 20), Qt.AlignLeft, self._title)
-        self._condensed_font(painter, 9.5, bold=False)
+        self._row_font(painter, 9.5, bold=False)
         painter.setPen(QColor(tokens["MUTED"]))
         painter.drawText(QRectF(15, 32, self.width() - 30, 20), Qt.AlignLeft, self._subtitle)
 
         self._row_rects = []
         top = self._paint_rows(painter, tokens, self._rows, self._ROWS_TOP)
         if self._boss_rows:
-            self._condensed_font(painter, 9.0, bold=True)
+            self._row_font(painter, 9.0, bold=True)
             painter.setPen(QColor(tokens["BOSS_GOLD"]))
             painter.drawText(
                 QRectF(15, top + 5, self.width() - 30, 16), Qt.AlignLeft, "BOSS"
@@ -954,7 +969,7 @@ class _ProgressRowList(QFrame):
                 painter.drawPixmap(int(box.left()) + 3, int(box.top()) + 3, icon)
                 painter.setOpacity(1.0)
 
-            self._condensed_font(painter, 10.0, bold=False)
+            self._row_font(painter, 10.0, bold=False)
             title_x = rect.left() + 37
             title_advance = painter.fontMetrics().horizontalAdvance(row.title)
             painter.setPen(title_color)
@@ -965,7 +980,7 @@ class _ProgressRowList(QFrame):
             )
 
             if row.tag:
-                self._condensed_font(painter, 7.5, bold=True)
+                self._row_font(painter, 7.5, bold=True)
                 tag_width = painter.fontMetrics().horizontalAdvance(row.tag) + 10
                 tag_rect = QRectF(
                     title_x + title_advance + 8, rect.center().y() - 7.5, tag_width, 15
@@ -976,7 +991,7 @@ class _ProgressRowList(QFrame):
                 painter.setPen(QColor(tokens["MUTED"]))
                 painter.drawText(tag_rect, Qt.AlignCenter, row.tag)
 
-            self._condensed_font(painter, 9.0, bold=True)
+            self._row_font(painter, 9.0, bold=True)
             detail_width = painter.fontMetrics().horizontalAdvance(row.detail)
             painter.setPen(detail_color)
             painter.drawText(
@@ -1330,10 +1345,12 @@ class CareerMixin:
         headline.setSpacing(12)
         self.career_stage_value = QLabel("-")
         self.career_stage_value.setObjectName("careerHeroRank")
+        _apply_hero_display_font(self.career_stage_value)
         self.career_stage_value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         headline.addWidget(self.career_stage_value)
         self.career_boss_value = QLabel("NO SAVE LOADED")
         self.career_boss_value.setObjectName("careerHeroBoss")
+        _apply_hero_display_font(self.career_boss_value)
         self.career_boss_value.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         headline.addWidget(self.career_boss_value)
         self.career_hero_status = QLabel("NO DATA")
