@@ -1504,7 +1504,10 @@ class CareerMixin:
         self.career_hero_tagline = QLabel("")
         self.career_hero_tagline.setObjectName("careerHeroTagline")
         self.career_hero_tagline.setWordWrap(True)
-        self.career_hero_tagline.setMaximumWidth(640)
+        # 680: Bull's canon sentence is the longest at 653px - at 640 it lost
+        # its last word ("...dreamin' of the [Blacklist.]") to an invisible
+        # wrapped line. Checked live against every rival's portrait zone.
+        self.career_hero_tagline.setMaximumWidth(680)
         self.career_hero_tagline.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.career_hero_tagline.setVisible(False)
         hero_copy.addWidget(self.career_hero_tagline)
