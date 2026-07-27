@@ -1414,8 +1414,10 @@ class CareerMixin:
         layout = QVBoxLayout(self.career_canvas)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        outer.addWidget(self.career_canvas, 100)
-        outer.addStretch(1)
+        outer.addWidget(self.career_canvas, 1)
+        # Zero stretch: the spacer stays empty until the canvas reaches its
+        # ceiling, so no strip of width is held back on ordinary monitors.
+        outer.addStretch(0)
 
         self.career_donor_root = default_user_career_donor_root()
         self.career_donor_library: tuple[CareerDonorEntry, ...] = ()
