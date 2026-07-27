@@ -108,6 +108,18 @@ _CAREER_CROSSFADE_MS = 140
 _HERO_DISPLAY_FAMILY = "Bahnschrift"
 _HERO_DISPLAY_STYLE = "Bold SemiCondensed"
 
+# Ink sample for the per-rival tagline: a capital's top and a descender's
+# bottom. Eleven of the fifteen canon bios have a descender somewhere, so this
+# keeps their exact positions and moves the four descender-less rivals (Big
+# Lou, Baron, JV, Ronnie) into the same row instead of one pixel above it.
+_TAGLINE_INK_SAMPLE = "Xg"
+
+# Ink sample for the rank: every glyph "#N" can show. At the 68px display size
+# the round digits (0, 2, 3, 8, 9) overshoot the flat-topped ones by a pixel -
+# an optical correction inside the font - so measuring the actual "#7" vs "#8"
+# re-dealt the blocks below by that pixel.
+_RANK_INK_SAMPLE = "#0123456789"
+
 
 class _HeroRhythmColumn(QVBoxLayout):
     """Stacks the banner's blocks with one equal *optical* gap everywhere.
@@ -125,10 +137,22 @@ class _HeroRhythmColumn(QVBoxLayout):
         self.setContentsMargins(0, 0, 0, 0)
         self.setSpacing(0)
         self._ink_sources: Dict[int, QLabel] = {}
+        self._ink_samples: Dict[int, str] = {}
 
-    def set_ink_source(self, index: int, label: QLabel) -> None:
-        """Say which label's font decides the blank margins of block `index`."""
+    def set_ink_source(
+        self, index: int, label: QLabel, sample: Optional[str] = None
+    ) -> None:
+        """Say which label's font decides the blank margins of block `index`.
+
+        A block whose text changes at runtime must pass a `sample`: ink is
+        then measured on that fixed string instead of the current text, so
+        which glyphs a particular rival's sentence happens to use (descender
+        or not, comma or not) cannot re-deal the whole column by a pixel or
+        two on every rival switch.
+        """
         self._ink_sources[index] = label
+        if sample is not None:
+            self._ink_samples[index] = sample
 
     def _block_height(self, index: int, width: int) -> int:
         item = self.itemAt(index)
@@ -145,7 +169,11 @@ class _HeroRhythmColumn(QVBoxLayout):
         insets = []
         for index, height in enumerate(heights):
             label = self._ink_sources.get(index)
-            insets.append(_ink_insets(label, height) if label is not None else (0.0, 0.0))
+            if label is None:
+                insets.append((0.0, 0.0))
+            else:
+                sample = self._ink_samples.get(index)
+                insets.append(_ink_insets(label, height, sample=sample))
         active = [i for i in range(count) if heights[i] > 0]
         if not active:
             super().setGeometry(rect)
@@ -185,16 +213,22 @@ def _label_block_height(label: QLabel) -> int:
     return hint
 
 
-def _ink_insets(label: QLabel, height: Optional[int] = None) -> Tuple[float, float]:
+def _ink_insets(
+    label: QLabel, height: Optional[int] = None, sample: Optional[str] = None
+) -> Tuple[float, float]:
     """Blank space a label carries above and below its actual glyphs.
 
     A font reserves ascent and descent room whether the text uses it or not, so
     two labels of different sizes with the same layout spacing between them do
     not look equally spaced. These insets are what has to be subtracted from a
     rhythm step to make gaps equal to the eye.
+
+    With `sample`, ink is measured on that string instead of the label's own
+    text - for labels whose text changes at runtime, so the measurement stays
+    the same whatever is currently showing.
     """
     metrics = QFontMetrics(label.font())
-    text = label.text() or "X"
+    text = sample or label.text() or "X"
     tight = metrics.tightBoundingRect(text)
     block_height = _label_block_height(label) if height is None else height
     line_spacing = max(1, metrics.lineSpacing())
@@ -1464,7 +1498,9 @@ class CareerMixin:
         headline.addWidget(self.career_hero_status, 0, Qt.AlignVCenter)
         headline.addStretch(1)
         hero_copy.addLayout(headline)
-        hero_copy.set_ink_source(1, self.career_stage_value)
+        hero_copy.set_ink_source(
+            1, self.career_stage_value, sample=_RANK_INK_SAMPLE
+        )
         self.career_hero_tagline = QLabel("")
         self.career_hero_tagline.setObjectName("careerHeroTagline")
         self.career_hero_tagline.setWordWrap(True)
@@ -1472,7 +1508,9 @@ class CareerMixin:
         self.career_hero_tagline.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.career_hero_tagline.setVisible(False)
         hero_copy.addWidget(self.career_hero_tagline)
-        hero_copy.set_ink_source(2, self.career_hero_tagline)
+        hero_copy.set_ink_source(
+            2, self.career_hero_tagline, sample=_TAGLINE_INK_SAMPLE
+        )
 
         metrics = QHBoxLayout()
         metrics.setSpacing(12)

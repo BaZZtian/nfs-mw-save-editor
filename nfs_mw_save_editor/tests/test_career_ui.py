@@ -838,17 +838,25 @@ def test_career_switches_are_read_only_and_status_stays_with_boss_name():
     # block to the bottom edge are all the same (within pixel rounding).
     hero = window.career_hero
 
-    def _ink_band(widget, *, is_label: bool) -> tuple[float, float]:
+    def _ink_band(widget, *, is_label: bool, sample=None) -> tuple[float, float]:
         top = widget.mapTo(hero, widget.rect().topLeft()).y()
         if not is_label:
             return float(top), float(top + widget.height())
-        above, below = career_module._ink_insets(widget, widget.height())
+        above, below = career_module._ink_insets(widget, widget.height(), sample=sample)
         return top + above, top + widget.height() - below
 
     bands = [
         _ink_band(window.career_hero_eyebrow, is_label=True),
-        _ink_band(window.career_stage_value, is_label=True),
-        _ink_band(window.career_hero_tagline, is_label=True),
+        _ink_band(
+            window.career_stage_value,
+            is_label=True,
+            sample=career_module._RANK_INK_SAMPLE,
+        ),
+        _ink_band(
+            window.career_hero_tagline,
+            is_label=True,
+            sample=career_module._TAGLINE_INK_SAMPLE,
+        ),
         _ink_band(window.career_races_metric, is_label=False),
         _ink_band(window.career_view_switch, is_label=False),
     ]
@@ -1005,6 +1013,45 @@ def test_rival_bios_are_canon_clean_and_wired_to_the_hero():
     window._on_career_timeline_selected(14)
     QTest.qWait(180)
     assert window.career_hero_tagline.text() == rival_bios.tagline(14)
+    window.close()
+    app.processEvents()
+
+
+def test_hero_blocks_hold_one_position_across_all_rivals():
+    # At real app widths every canon tagline is a single line, so the only
+    # per-rival variable the rhythm ever saw was which glyphs the sentence
+    # uses - and that is exactly what the fixed ink sample removes.
+    app = _app()
+    window = MainWindow()
+    window.resize(1600, 900)
+    window.savefile = SimpleNamespace(data=_synthetic_career(8))
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+    window.career_hero.layout().activate()
+    app.processEvents()
+
+    summary = career_progress.build_career_progress(bytes(_synthetic_career(8)))
+    hero = window.career_hero
+    col = window.career_hero_copy
+    positions = set()
+    for stage in range(15, 0, -1):
+        window._update_career_hero(summary, stage)
+        # Re-run the rhythm math directly: offscreen, a text change alone is
+        # not guaranteed to schedule the relayout a real window would get.
+        col.setGeometry(col.geometry())
+        positions.add((
+            window.career_races_metric.mapTo(
+                hero, window.career_races_metric.rect().topLeft()
+            ).y(),
+            window.career_view_switch.mapTo(
+                hero, window.career_view_switch.rect().topLeft()
+            ).y(),
+            window.career_hero_tagline.mapTo(
+                hero, window.career_hero_tagline.rect().topLeft()
+            ).y(),
+        ))
+    assert len(positions) == 1, positions
     window.close()
     app.processEvents()
 
