@@ -15,12 +15,10 @@ from ui.pages.constants import (
     PARTS_GRID_SIDE_MARGIN,
     PARTS_GRID_SPACING,
     PARTS_TILE_MAX_COLUMNS,
-    PARTS_TILE_MAX_WIDTH,
     PARTS_TILE_MIN_WIDTH,
 )
 from ui.rendering import (
     ViewportLazyGridController,
-    centered_side_margin,
     fit_columns,
     refresh_widget_style,
 )
@@ -99,7 +97,6 @@ class ReusablePartsCardWidget(QFrame):
         self.setObjectName("contentCard")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setMinimumWidth(360)
-        self.setMaximumWidth(PARTS_TILE_MAX_WIDTH)
         self.setProperty("changed", False)
 
         card_layout = QVBoxLayout(self)
@@ -606,8 +603,6 @@ class PartsMixin:
         width = self._parts_viewport_width()
         if width is None:
             return 1
-        # Measured against the base margins on purpose: the live ones grow to
-        # centre a short row, and feeding those back in would starve the fit.
         return fit_columns(
             width - 2 * PARTS_GRID_SIDE_MARGIN,
             self._parts_card_min_width(),
@@ -615,26 +610,8 @@ class PartsMixin:
             max_columns=PARTS_TILE_MAX_COLUMNS,
         )
 
-    def _sync_parts_grid_margins(self, columns: int) -> None:
-        """Centre a row of cards that stops growing before the viewport does."""
-        width = self._parts_viewport_width()
-        if width is None:
-            return
-        side = centered_side_margin(
-            width,
-            columns,
-            PARTS_TILE_MAX_WIDTH,
-            spacing=PARTS_GRID_SPACING,
-            base_margin=PARTS_GRID_SIDE_MARGIN,
-        )
-        margins = self.parts_cards_layout.contentsMargins()
-        if margins.left() == side and margins.right() == side:
-            return
-        self.parts_cards_layout.setContentsMargins(side, margins.top(), side, margins.bottom())
-
     def _maybe_reflow_parts_rows(self, force: bool = False) -> None:
         columns = max(1, self._detect_parts_card_columns())
-        self._sync_parts_grid_margins(columns)
         if not force and columns == getattr(self, "_parts_slot_columns", 0):
             return
         self._parts_slot_columns = columns
@@ -1315,7 +1292,6 @@ class PartsMixin:
             changed=vm.changed,
             minimum_width=360,
         )
-        card.setMaximumWidth(PARTS_TILE_MAX_WIDTH)
 
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
@@ -1464,7 +1440,6 @@ class PartsMixin:
         self._parts_visible_order = [vm.card_entry.parts_slot for vm in view_models]
         self._parts_live_vm_map = {vm.card_entry.parts_slot: vm for vm in view_models}
         columns = max(1, self._detect_parts_card_columns())
-        self._sync_parts_grid_margins(columns)
         self._parts_slot_columns = columns
         self._parts_render_controller.schedule_render(
             self._parts_visible_order,
