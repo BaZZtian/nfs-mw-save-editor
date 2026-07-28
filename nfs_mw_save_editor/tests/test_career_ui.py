@@ -1017,6 +1017,64 @@ def test_rival_bios_are_canon_clean_and_wired_to_the_hero():
     app.processEvents()
 
 
+def test_hero_backdrop_has_no_coherent_stripes_and_is_cached():
+    from PySide6.QtGui import QImage
+
+    app = _app()
+    _CareerHero._backdrop_cache.clear()
+    hero = _CareerHero()
+    hero.resize(1414, 300)
+
+    def render() -> QImage:
+        img = QImage(hero.size(), QImage.Format_RGB32)
+        img.fill(0)
+        hero.render(img)
+        return img
+
+    img = render()
+
+    # The enemy is vertical coherence, not noise: Qt's gradient dither
+    # repeats per column and reads as stripes (~0.28 on this metric in the
+    # steep mid zone), and a clean quantization leaves step edges. The
+    # composed backdrop plus the blue-noise tile keeps the column-mean
+    # profile flat; the residual grain is half-level and non-repeating.
+    def stripe_coherence(x0: int, x1: int, y0: int = 30, y1: int = 270) -> float:
+        half = 15
+        cols = [0.0] * (x1 - x0)
+        for y in range(y0, y1):
+            for i, x in enumerate(range(x0, x1)):
+                c = img.pixelColor(x, y)
+                cols[i] += 0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue()
+        cols = [v / (y1 - y0) for v in cols]
+        prefix = [0.0]
+        for value in cols:
+            prefix.append(prefix[-1] + value)
+        deviations = []
+        for i in range(half, len(cols) - half):
+            avg = (prefix[i + half + 1] - prefix[i - half]) / (2 * half + 1)
+            deviations.append(abs(cols[i] - avg))
+        return sum(deviations) / len(deviations)
+
+    text_zone = stripe_coherence(40, int(1414 * 0.40))
+    steep_zone = stripe_coherence(int(1414 * 0.45), int(1414 * 0.75))
+    assert text_zone < 0.05, text_zone
+    assert steep_zone < 0.15, steep_zone
+
+    assert len(_CareerHero._backdrop_cache) == 1
+    first = next(iter(_CareerHero._backdrop_cache.values()))
+    render()
+    assert next(iter(_CareerHero._backdrop_cache.values())) is first
+
+    # A resize paints from the stretched stale reference, then settles into
+    # an exact re-render for the new size shortly after.
+    hero.resize(1094, 300)
+    render()
+    assert not any(key[0] == 1094 for key in _CareerHero._backdrop_cache)
+    QTest.qWait(250)
+    app.processEvents()
+    assert any(key[0] == 1094 for key in _CareerHero._backdrop_cache)
+
+
 def test_hero_blocks_hold_one_position_across_all_rivals():
     # At real app widths every canon tagline is a single line, so the only
     # per-rival variable the rhythm ever saw was which glyphs the sentence

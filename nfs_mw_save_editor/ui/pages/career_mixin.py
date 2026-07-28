@@ -17,8 +17,15 @@ chapter inspector. Timeline browsing performs no writes.
 
 from __future__ import annotations
 
+import math
+import random
 import struct
 from collections import OrderedDict
+
+try:
+    import numpy as _np
+except ImportError:  # degrade to the quarter-res + noise-tile backdrop path
+    _np = None
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -32,21 +39,23 @@ from PySide6.QtCore import (
     QRectF,
     QSize,
     Qt,
+    QTimer,
     QVariantAnimation,
     Signal,
 )
 from PySide6.QtGui import (
     QBitmap,
+    QBrush,
     QColor,
     QFontDatabase,
     QFontMetrics,
+    QImage,
     QImageReader,
     QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
     QPixmap,
-    QRadialGradient,
     QRegion,
     QTransform,
 )
@@ -368,6 +377,182 @@ HERO_PORTRAIT_LAYOUTS: Mapping[int, HeroPortraitLayout] = MappingProxyType({
 })
 
 
+_NOISE_TILE_SIZE = 128
+_noise_tile: Optional[QImage] = None
+
+
+def _blue_noise_tile() -> QImage:
+    """Binary +1-level tile, high-frequency, half the pixels set.
+
+    Any 8-bit rendering of the banner's shallow gradients leaves vertical
+    structure the eye latches onto: Qt's own dither repeats per column
+    (the originally reported stripes), and a clean quantization leaves
+    step edges.
+    Composited with Plus over the finished backdrop, this tile breaks that
+    coherence with a half-level grain that does not line up into anything -
+    white noise minus its local mean, thresholded at the median, so the
+    energy is high-frequency and the density is exactly one half.
+    """
+    global _noise_tile
+    if _noise_tile is not None:
+        return _noise_tile
+    size = _NOISE_TILE_SIZE
+    rng = random.Random(0x5EED)
+    white = [[rng.random() for _ in range(size)] for _ in range(size)]
+    high_pass = []
+    for y in range(size):
+        row = []
+        for x in range(size):
+            acc = 0.0
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    acc += white[(y + dy) % size][(x + dx) % size]
+            row.append(white[y][x] - acc / 9.0)
+        high_pass.append(row)
+    ordered = sorted(value for row in high_pass for value in row)
+    median = ordered[len(ordered) // 2]
+    tile = QImage(size, size, QImage.Format_RGB32)
+    for y in range(size):
+        for x in range(size):
+            v = 1 if high_pass[y][x] > median else 0
+            tile.setPixelColor(x, y, QColor(v, v, v))
+    _noise_tile = tile
+    return tile
+
+
+def _render_hero_backdrop_dithered(
+    width: int, height: int, tokens: Mapping[str, str]
+) -> QImage:
+    """Full-resolution float compose with noise added BEFORE the rounding.
+
+    Every earlier attempt left something vertical for the eye: Qt's own
+    dither repeats per column, a clean quantization leaves step edges, and
+    quantizing a quarter-res reference before upscaling stretches its steps
+    into soft 10-15px bands (seen live in amplified screenshots). Randomized
+    rounding -
+    uniform half-level noise added to the float value, then rounded, fixed
+    seed - decorrelates the quantization error completely: no stripes, no
+    glow rings, only half-level grain with no structure. Needs numpy;
+    ~30ms at banner size, cached per size and theme by the caller.
+    """
+    w, h = max(2, width), max(2, height)
+
+    def rgb(token: str):
+        color = QColor(tokens[token])
+        return _np.array([color.red(), color.green(), color.blue()], dtype=_np.float64)
+
+    panel, card, soft = rgb("BG_PANEL"), rgb("BG_CARD"), rgb("ACCENT_SOFT")
+    bright = rgb("ACCENT_BRIGHT")
+
+    t = _np.arange(w, dtype=_np.float64) / w
+    base = _np.empty((w, 3), dtype=_np.float64)
+    left = t < 0.48
+    base[left] = panel + (card - panel) * (t[left] / 0.48)[:, None]
+    base[~left] = card + (soft - card) * ((t[~left] - 0.48) / 0.52)[:, None]
+    ts = _np.minimum(1.0, t / 0.72)
+    shade = _np.where(
+        ts < 0.52,
+        255.0 + (205.0 - 255.0) * (ts / 0.52),
+        205.0 * (1.0 - (ts - 0.52) / 0.48),
+    ) / 255.0
+
+    cx, cy, radius = w * 0.83, h * 0.38, w * 0.48
+    r = _np.sqrt(
+        (_np.arange(w, dtype=_np.float64)[None, :] - cx) ** 2
+        + (_np.arange(h, dtype=_np.float64)[:, None] - cy) ** 2
+    ) / radius
+    glow = _np.where(
+        r < 0.42,
+        74.0 + (24.0 - 74.0) * (r / 0.42),
+        _np.where(r < 1.0, 24.0 * (1.0 - (r - 0.42) / 0.58), 0.0),
+    ) / 255.0
+
+    image = base[None, :, :] * (1.0 - glow[..., None]) + bright * glow[..., None]
+    image = image * (1.0 - shade[None, :, None]) + panel * shade[None, :, None]
+
+    # One noise field for all three channels: luminance grain, no chroma.
+    noise = _np.random.default_rng(0x5EED).random((h, w)) - 0.5
+    out = _np.clip(_np.rint(image + noise[..., None]), 0, 255).astype(_np.uint8)
+    bgra = _np.empty((h, w, 4), dtype=_np.uint8)
+    bgra[..., 0] = out[..., 2]
+    bgra[..., 1] = out[..., 1]
+    bgra[..., 2] = out[..., 0]
+    bgra[..., 3] = 255
+    return QImage(bgra.tobytes(), w, h, w * 4, QImage.Format_RGB32).copy()
+
+
+def _render_hero_backdrop(width: int, height: int, tokens: Mapping[str, str]) -> QImage:
+    """The banner's three background gradients composed in float, quantized once.
+
+    Qt dithers every gradient fill and the three layers dither independently
+    (the old left_shade even re-covered the base it was cancelling, adding
+    the two patterns) - and because that dither repeats per column it reads
+    as vertical stripes on the shallow dark field. Composed in float there
+    is nothing to dither. Rendered at quarter resolution - the compose is
+    smooth, so the upscale adds nothing visible, and the pure-python cost
+    drops to ~20ms once per size and theme. The caller upscales and lays
+    the blue-noise tile over the result (see _blue_noise_tile): without it
+    the quantization step edges are their own, cleaner, stripes.
+    """
+    w = max(2, width // 4)
+    h = max(2, height // 4)
+
+    def rgb(token: str) -> Tuple[int, int, int]:
+        color = QColor(tokens[token])
+        return color.red(), color.green(), color.blue()
+
+    panel, card, soft = rgb("BG_PANEL"), rgb("BG_CARD"), rgb("ACCENT_SOFT")
+    bright = rgb("ACCENT_BRIGHT")
+
+    base_row: List[Tuple[float, float, float]] = []
+    shade_row: List[float] = []
+    for x in range(w):
+        t = x / w
+        if t < 0.48:
+            k = t / 0.48
+            a, b = panel, card
+        else:
+            k = (t - 0.48) / 0.52
+            a, b = card, soft
+        base_row.append(tuple(a[i] + (b[i] - a[i]) * k for i in range(3)))
+        ts = min(1.0, x / (w * 0.72))
+        if ts < 0.52:
+            alpha = 255.0 + (205.0 - 255.0) * (ts / 0.52)
+        else:
+            alpha = 205.0 * (1.0 - (ts - 0.52) / 0.48)
+        shade_row.append(alpha / 255.0)
+
+    cx, cy = w * 0.83, h * 0.38
+    radius = w * 0.48
+    radius_sq = radius * radius
+    buf = bytearray(w * h * 4)
+    i = 0
+    for y in range(h):
+        dy_sq = (y - cy) ** 2
+        for x in range(w):
+            r, g, b = base_row[x]
+            dist_sq = (x - cx) ** 2 + dy_sq
+            if dist_sq < radius_sq:
+                rr = math.sqrt(dist_sq) / radius
+                if rr < 0.42:
+                    ga = (74.0 + (24.0 - 74.0) * (rr / 0.42)) / 255.0
+                else:
+                    ga = (24.0 * (1.0 - (rr - 0.42) / 0.58)) / 255.0
+                r += (bright[0] - r) * ga
+                g += (bright[1] - g) * ga
+                b += (bright[2] - b) * ga
+            sa = shade_row[x]
+            r += (panel[0] - r) * sa
+            g += (panel[1] - g) * sa
+            b += (panel[2] - b) * sa
+            buf[i] = min(255, max(0, int(b + 0.5)))
+            buf[i + 1] = min(255, max(0, int(g + 0.5)))
+            buf[i + 2] = min(255, max(0, int(r + 0.5)))
+            buf[i + 3] = 255
+            i += 4
+    return QImage(bytes(buf), w, h, w * 4, QImage.Format_RGB32).copy()
+
+
 class _CareerHero(QFrame):
     """Theme-built rival banner with graffiti and portrait art layers."""
 
@@ -379,6 +564,7 @@ class _CareerHero(QFrame):
     _COMPACT_STAMP_WIDTH = 175.0
     _WIDE_STAMP_WIDTH = 210.0
     _art_cache: "OrderedDict[int, tuple[QPixmap, QPixmap]]" = OrderedDict()
+    _backdrop_cache: "OrderedDict[tuple, QImage]" = OrderedDict()
 
     def __init__(self) -> None:
         super().__init__()
@@ -389,6 +575,12 @@ class _CareerHero(QFrame):
         self._graffiti = QPixmap()
         self._portrait = QPixmap()
         self._defeated_stamp = QPixmap()
+        # Mid-resize the backdrop paints from the latest same-theme reference
+        # stretched to the new size; this settles the exact re-render.
+        self._backdrop_timer = QTimer(self)
+        self._backdrop_timer.setSingleShot(True)
+        self._backdrop_timer.setInterval(150)
+        self._backdrop_timer.timeout.connect(self._settle_backdrop)
 
     def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
         return True
@@ -492,30 +684,92 @@ class _CareerHero(QFrame):
             stamp_height,
         )
 
+    @staticmethod
+    def _backdrop_signature(tokens: Mapping[str, str]) -> tuple:
+        return (
+            tokens["BG_PANEL"],
+            tokens["BG_CARD"],
+            tokens["ACCENT_SOFT"],
+            tokens["ACCENT_BRIGHT"],
+        )
+
+    @staticmethod
+    def _build_backdrop(width: int, height: int, tokens: Mapping[str, str]) -> QImage:
+        """Full-size cache entry.
+
+        With numpy: full-res compose dithered before rounding - nothing
+        coherent survives. Without: quarter-res compose, upscale, noise
+        tile - the tile masks (not removes) the upscale's soft banding.
+        """
+        if _np is not None:
+            return _render_hero_backdrop_dithered(width, height, tokens)
+        quarter = _render_hero_backdrop(width, height, tokens)
+        image = quarter.scaled(
+            width, height, Qt.IgnoreAspectRatio, Qt.SmoothTransformation
+        )
+        tile = _blue_noise_tile()
+        painter = QPainter(image)
+        painter.setCompositionMode(QPainter.CompositionMode_Plus)
+        for tile_y in range(0, height, tile.height()):
+            for tile_x in range(0, width, tile.width()):
+                painter.drawImage(QPoint(tile_x, tile_y), tile)
+        painter.end()
+        return image
+
+    def _settle_backdrop(self) -> None:
+        tokens = resolve_theme_tokens()
+        key = (self.width(), self.height(), self._backdrop_signature(tokens))
+        if key not in self._backdrop_cache:
+            self._backdrop_cache[key] = self._build_backdrop(
+                self.width(), self.height(), tokens
+            )
+            while len(self._backdrop_cache) > 4:
+                self._backdrop_cache.popitem(last=False)
+        self.update()
+
+    def _shade_faded(self, color: QColor, width: int) -> QBrush:
+        """The old left_shade dimmed the grid and diagonal on its way out;
+        with the shade baked into the backdrop, the same piecewise-linear
+        attenuation is applied through the line color instead."""
+        gradient = QLinearGradient(0, 0, width, 0)
+        for pos, factor in ((0.0, 0.0), (0.374, 0.196), (0.72, 1.0), (1.0, 1.0)):
+            stop = QColor(color)
+            stop.setAlphaF(color.alphaF() * factor)
+            gradient.setColorAt(pos, stop)
+        return QBrush(gradient)
+
     def _paint_theme_background(self, painter: QPainter, tokens: Mapping[str, str]) -> None:
         width = self.width()
         height = self.height()
-        base = QLinearGradient(0, 0, width, 0)
-        base.setColorAt(0.0, QColor(tokens["BG_PANEL"]))
-        base.setColorAt(0.48, QColor(tokens["BG_CARD"]))
-        base.setColorAt(1.0, QColor(tokens["ACCENT_SOFT"]))
-        painter.fillRect(self.rect(), base)
-
-        glow_color = QColor(tokens["ACCENT_BRIGHT"])
-        glow_color.setAlpha(74)
-        clear_glow = QColor(glow_color)
-        clear_glow.setAlpha(0)
-        glow = QRadialGradient(width * 0.83, height * 0.38, width * 0.48)
-        glow.setColorAt(0.0, glow_color)
-        glow.setColorAt(0.42, QColor(glow_color.red(), glow_color.green(), glow_color.blue(), 24))
-        glow.setColorAt(1.0, clear_glow)
-        painter.fillRect(self.rect(), glow)
+        signature = self._backdrop_signature(tokens)
+        key = (width, height, signature)
+        backdrop = self._backdrop_cache.get(key)
+        if backdrop is None:
+            stale = None
+            for (_w, _h, sig), image in reversed(self._backdrop_cache.items()):
+                if sig == signature:
+                    stale = image
+                    break
+            if stale is not None:
+                # Mid-resize: stretch the last reference now (the compose is
+                # proportional, the difference is imperceptible in motion)
+                # and re-render exactly once the size settles.
+                backdrop = stale
+                self._backdrop_timer.start()
+            else:
+                backdrop = self._build_backdrop(width, height, tokens)
+                self._backdrop_cache[key] = backdrop
+                while len(self._backdrop_cache) > 4:
+                    self._backdrop_cache.popitem(last=False)
+        else:
+            self._backdrop_cache.move_to_end(key)
+        painter.drawImage(self.rect(), backdrop)
 
         # Restrained dossier grid: enough structure to feel authored, never a
         # competing illustration behind the metrics and rival portrait.
         grid = QColor(tokens["BORDER"])
         grid.setAlpha(42)
-        painter.setPen(QPen(grid, 1.0))
+        painter.setPen(QPen(self._shade_faded(grid, width), 1.0))
         start_x = int(width * 0.43)
         for x in range(start_x, width, 54):
             painter.drawLine(x, 0, x, height)
@@ -529,18 +783,7 @@ class _CareerHero(QFrame):
         diagonal.lineTo(width * 0.78, 0)
         diagonal.lineTo(width * 0.62, height)
         diagonal.closeSubpath()
-        painter.fillPath(diagonal, band)
-
-        left_shade = QLinearGradient(0, 0, width * 0.72, 0)
-        opaque = QColor(tokens["BG_PANEL"])
-        soft = QColor(tokens["BG_PANEL"])
-        clear = QColor(tokens["BG_PANEL"])
-        soft.setAlpha(205)
-        clear.setAlpha(0)
-        left_shade.setColorAt(0.0, opaque)
-        left_shade.setColorAt(0.52, soft)
-        left_shade.setColorAt(1.0, clear)
-        painter.fillRect(self.rect(), left_shade)
+        painter.fillPath(diagonal, self._shade_faded(band, width))
 
     def _graffiti_rect(self) -> QRectF:
         if self._stage is None or self._graffiti.isNull():
