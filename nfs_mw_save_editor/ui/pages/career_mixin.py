@@ -765,17 +765,6 @@ class _CareerHero(QFrame):
             self._backdrop_cache.move_to_end(key)
         painter.drawImage(self.rect(), backdrop)
 
-        # Restrained dossier grid: enough structure to feel authored, never a
-        # competing illustration behind the metrics and rival portrait.
-        grid = QColor(tokens["BORDER"])
-        grid.setAlpha(42)
-        painter.setPen(QPen(self._shade_faded(grid, width), 1.0))
-        start_x = int(width * 0.43)
-        for x in range(start_x, width, 54):
-            painter.drawLine(x, 0, x, height)
-        for y in range(42, height, 42):
-            painter.drawLine(start_x, y, width, y)
-
         band = QColor(tokens["ACCENT"])
         band.setAlpha(24)
         diagonal = QPainterPath(QPointF(width * 0.56, height))
