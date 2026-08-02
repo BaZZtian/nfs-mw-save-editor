@@ -42,7 +42,7 @@ class IntegrityStatus:
 class PursuitRecord:
     career_slot: int
     heat: float
-    heat_level: int
+    heat_level: Optional[int]
     bounty: int
     escaped: int
     busted: int
@@ -96,7 +96,7 @@ class ResolvedGarageEntry:
     source_kind: str
     occupied: bool
     heat: float
-    heat_level: int
+    heat_level: Optional[int]
     bounty: int
     escaped: int
     busted: int

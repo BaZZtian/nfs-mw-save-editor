@@ -208,7 +208,7 @@ class StagedEditState:
         self.parts_levels: StagedMap[int, dict[str, int]] = StagedMap()
         self.parts_masks: StagedMap[int, int] = StagedMap()
         self.slot_bounties: StagedMap[int, int] = StagedMap()
-        self.slot_heats: StagedMap[int, int] = StagedMap()
+        self.slot_heats: StagedMap[int, int | None] = StagedMap()
         self.owned_locations: StagedMap[int, int] = StagedMap()
         self.owned_career_slots: StagedMap[int, int] = StagedMap()
         self.snapshot_injections = StagedSnapshotInjections()

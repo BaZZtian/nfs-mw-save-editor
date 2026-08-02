@@ -518,7 +518,7 @@ class GarageMixin:
         if hasattr(self, "garage_diag_text"):
             self.garage_diag_text.setVisible(visible)
 
-    def _current_slot_heats(self) -> Dict[int, int]:
+    def _current_slot_heats(self) -> Dict[int, Optional[int]]:
         have_map = {
             slot.career_slot: self.have_slot_heats.get(slot.career_slot, 1)
             for slot in self.garage_slots
@@ -905,10 +905,10 @@ class GarageMixin:
                 and projected_slot.has_pursuit_link
                 and projected_slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
             )
-            lvl = vm.current_heat_level or 1
+            lvl = vm.current_heat_level
             for i, btn in enumerate(handle.heat_btns):
                 heat_level = i + 1
-                btn.setChecked(heat_level == lvl)
+                btn.setChecked(lvl is not None and heat_level == lvl)
                 btn.setEnabled(btn_enabled and heat_level <= vm.max_heat_level)
                 if heat_level > vm.max_heat_level:
                     btn.setToolTip(f"Locked until later story progression. Current cap: x{vm.max_heat_level}")
@@ -1038,8 +1038,9 @@ class GarageMixin:
                 heat_row_layout.addWidget(btn)
                 heat_buttons.append(btn)
 
-            current_lvl = vm.current_heat_level or 1
-            heat_buttons[current_lvl - 1].setChecked(True)
+            current_lvl = vm.current_heat_level
+            if current_lvl is not None:
+                heat_buttons[current_lvl - 1].setChecked(True)
             for i, btn in enumerate(heat_buttons):
                 heat_level = i + 1
                 if heat_level > vm.max_heat_level:

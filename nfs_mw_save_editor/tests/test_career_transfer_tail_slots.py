@@ -167,7 +167,7 @@ class PursuitSlotCanonicalizationTests(unittest.TestCase):
             payload[0] = slot & 0xFF
             payload[1:4] = SaveFile.GARAGE_SIGNATURE_A
             payload[8:12] = SaveFile.GARAGE_SIGNATURE_B
-            SaveFile._write_pursuit_heat_fields_into(payload, SaveFile.GARAGE_HEAT_BASELINE)
+            SaveFile._write_pursuit_heat_into(payload, SaveFile.GARAGE_HEAT_BASELINE)
             sf.data[abs_off:abs_off + SaveFile.GARAGE_SLOT_SIZE] = payload
 
         dirty_off = SaveFile.GARAGE_BASE_OFFSET + SaveFile.GARAGE_SLOT_SIZE

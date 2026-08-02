@@ -176,7 +176,7 @@ class MainWindow(
         self.have_parts_levels: Dict[int, Dict[str, int]] = {}
         self.have_parts_masks: Dict[int, int] = {}
         self.have_slot_bounties: Dict[int, int] = {}
-        self.have_slot_heats: Dict[int, int] = {}
+        self.have_slot_heats: Dict[int, Optional[int]] = {}
         self.have_owned_locations: Dict[int, int] = {}
         self.have_owned_career_slots: Dict[int, int] = {}
         self.garage_detection_error: Optional[str] = None

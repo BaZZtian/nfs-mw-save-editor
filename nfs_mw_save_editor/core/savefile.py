@@ -62,23 +62,22 @@ class SaveFile:
     PROFILE_ALIAS_MAX_LEN = 16
     GARAGE_BASE_OFFSET = 0xE2ED
     GARAGE_SLOT_SIZE = 0x38
-    GARAGE_HEAT_LEVEL_OFFSET = 0x06
-    GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS = (
-        0x04,
-        0x1C,
-    )
+    # Garage slot = engine FECareerRecord. Persisted heat is ONLY the float at
+    # +0x0C (native FECareerRecord::SetVehicleHeat writes a single float). The
+    # bytes at +0x03..+0x07 belong to FEImpoundData and +0x18..+0x37 are the two
+    # FEInfractionsData blocks; they correlate with heat in normal play but are
+    # different fields and must never be written by the heat editor.
+    GARAGE_IMPOUND_TIMES_BUSTED_OFFSET = 0x03
+    GARAGE_IMPOUND_STATE_OFFSET = 0x04
+    GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET = 0x05
+    GARAGE_IMPOUND_EVADE_COUNT_OFFSET = 0x06
     GARAGE_HEAT_FLOAT_OFFSET = 0x0C
     GARAGE_BOUNTY_OFFSET = 0x10
     GARAGE_ESCAPED_OFFSET = 0x14
     GARAGE_BUSTED_OFFSET = 0x16
-    GARAGE_HEAT_LEVEL_MIRROR_OFFSETS = (
-        GARAGE_HEAT_LEVEL_OFFSET,
-        0x1E,
-        0x20,
-        0x22,
-        0x24,
-        0x26,
-    )
+    GARAGE_UNSERVED_INFRACTIONS_OFFSET = 0x18
+    GARAGE_SERVED_INFRACTIONS_OFFSET = 0x28
+    GARAGE_INFRACTION_COUNTER_COUNT = 8
     GARAGE_HEAT_BASELINE = 1.0
     GARAGE_HEAT_MIN = 1.0
     GARAGE_HEAT_MAX = 5.0
@@ -270,46 +269,32 @@ class SaveFile:
         return level
 
     @classmethod
-    def _stored_heat_tier_from_value(cls, heat: float | int) -> int:
-        return cls._heat_level_from_value(heat) - 1
+    def _write_pursuit_heat_into(cls, payload: bytearray, heat: float | int) -> None:
+        struct.pack_into("<f", payload, cls.GARAGE_HEAT_FLOAT_OFFSET, cls._normalize_heat_value(heat))
 
     @classmethod
-    def _read_pursuit_heat_mirror_tiers(cls, data: bytes | bytearray, base_off: int) -> List[int]:
-        tiers: List[int] = []
-        for rel_off in cls.GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS:
-            raw_u32 = struct.unpack_from("<I", data, base_off + rel_off)[0]
-            tiers.append((raw_u32 >> 16) & 0xFFFF)
-        for rel_off in cls.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
-            tiers.append(struct.unpack_from("<H", data, base_off + rel_off)[0])
-        return tiers
+    def _init_empty_pursuit_counters_into(cls, payload: bytearray) -> None:
+        # Explicit empty-record init for impound/infraction counters; MaxBusted
+        # (+0x02) keeps the template value.
+        payload[cls.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET] = 0
+        payload[cls.GARAGE_IMPOUND_STATE_OFFSET] = 0
+        payload[cls.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET] = 0
+        struct.pack_into("<H", payload, cls.GARAGE_IMPOUND_EVADE_COUNT_OFFSET, 0)
+        for block_off in (cls.GARAGE_UNSERVED_INFRACTIONS_OFFSET, cls.GARAGE_SERVED_INFRACTIONS_OFFSET):
+            for counter in range(cls.GARAGE_INFRACTION_COUNTER_COUNT):
+                struct.pack_into("<H", payload, block_off + counter * 2, 0)
 
-    @classmethod
-    def _write_pursuit_heat_fields_into(cls, payload: bytearray, heat: float | int) -> None:
-        normalized = cls._normalize_heat_value(heat)
-        stored_tier = cls._stored_heat_tier_from_value(normalized)
-        struct.pack_into("<f", payload, cls.GARAGE_HEAT_FLOAT_OFFSET, normalized)
-        for rel_off in cls.GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS:
-            struct.pack_into("<I", payload, rel_off, (stored_tier & 0xFFFF) << 16)
-        for rel_off in cls.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
-            struct.pack_into("<H", payload, rel_off, stored_tier)
-
-    def _read_pursuit_heat_fields(self, abs_off: int) -> Tuple[float, int]:
+    def _read_pursuit_heat_fields(self, abs_off: int) -> Tuple[float, Optional[int]]:
         raw_heat = self._read_f32(abs_off + self.GARAGE_HEAT_FLOAT_OFFSET)
-        raw_tiers = self._read_pursuit_heat_mirror_tiers(self.data, abs_off)
         if math.isfinite(raw_heat):
             effective_heat = min(max(float(raw_heat), self.GARAGE_HEAT_MIN), self.GARAGE_HEAT_MAX)
             return float(raw_heat), int(self._heat_level_from_value(effective_heat))
-        fallback_level = max(1, max(raw_tiers, default=0) + 1)
-        return float(fallback_level), int(fallback_level)
+        # Fail closed: an unreadable heat float is reported as unknown, never
+        # reconstructed from the impound/infraction counters.
+        return float(raw_heat), None
 
-    def _write_pursuit_heat_fields(self, abs_off: int, heat: float | int) -> None:
-        normalized = self._normalize_heat_value(heat)
-        stored_tier = self._stored_heat_tier_from_value(normalized)
-        self._write_f32(abs_off + self.GARAGE_HEAT_FLOAT_OFFSET, normalized)
-        for rel_off in self.GARAGE_HEAT_LEVEL_U32_MIRROR_OFFSETS:
-            self._write_u32(abs_off + rel_off, (stored_tier & 0xFFFF) << 16)
-        for rel_off in self.GARAGE_HEAT_LEVEL_MIRROR_OFFSETS:
-            self._write_u16(abs_off + rel_off, stored_tier)
+    def _write_pursuit_heat(self, abs_off: int, heat: float | int) -> None:
+        self._write_f32(abs_off + self.GARAGE_HEAT_FLOAT_OFFSET, self._normalize_heat_value(heat))
 
     def saved_data_slice(self) -> Tuple[int, int]:
         start = self.layout.saved_data_offset
@@ -549,7 +534,8 @@ class SaveFile:
         if not pursuits:
             payload[1:4] = self.GARAGE_SIGNATURE_A
         payload[8:12] = self.GARAGE_SIGNATURE_B
-        self._write_pursuit_heat_fields_into(payload, self.GARAGE_HEAT_BASELINE)
+        self._write_pursuit_heat_into(payload, self.GARAGE_HEAT_BASELINE)
+        self._init_empty_pursuit_counters_into(payload)
         payload[self.GARAGE_BOUNTY_OFFSET:self.GARAGE_BOUNTY_OFFSET + 4] = b"\x00" * 4
         payload[self.GARAGE_ESCAPED_OFFSET:self.GARAGE_ESCAPED_OFFSET + 2] = b"\x00" * 2
         payload[self.GARAGE_BUSTED_OFFSET:self.GARAGE_BUSTED_OFFSET + 2] = b"\x00" * 2
@@ -1688,11 +1674,11 @@ class SaveFile:
                 return float(slot.heat)
         raise ValueError(f"Garage slot {wanted} was not detected")
 
-    def get_slot_heat_level(self, slot_index: int) -> int:
+    def get_slot_heat_level(self, slot_index: int) -> Optional[int]:
         wanted = int(slot_index)
         for slot in self.get_pursuit_records():
             if slot.career_slot == wanted:
-                return int(slot.heat_level)
+                return None if slot.heat_level is None else int(slot.heat_level)
         raise ValueError(f"Garage slot {wanted} was not detected")
 
     def set_slot_heat(self, slot_index: int, value: float | int) -> None:
@@ -1706,7 +1692,7 @@ class SaveFile:
             raise ValueError(f"Heat x{level} is locked by story progression{rank_text}; current cap is x{cap}")
         for slot in self.get_pursuit_records():
             if slot.career_slot == wanted:
-                self._write_pursuit_heat_fields(slot.abs_off, normalized)
+                self._write_pursuit_heat(slot.abs_off, normalized)
                 return
         raise ValueError(f"Garage slot {wanted} was not detected")
 

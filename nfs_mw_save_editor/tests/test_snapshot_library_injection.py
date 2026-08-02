@@ -754,7 +754,12 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         dirty_pursuit[0] = 0xFF
         dirty_pursuit[1:4] = SaveFile.GARAGE_SIGNATURE_A
         dirty_pursuit[8:12] = SaveFile.GARAGE_SIGNATURE_B
-        SaveFile._write_pursuit_heat_fields_into(dirty_pursuit, 4.0)
+        SaveFile._write_pursuit_heat_into(dirty_pursuit, 4.0)
+        dirty_pursuit[SaveFile.GARAGE_IMPOUND_STATE_OFFSET] = 2
+        dirty_pursuit[SaveFile.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET] = 5
+        struct.pack_into("<H", dirty_pursuit, SaveFile.GARAGE_IMPOUND_EVADE_COUNT_OFFSET, 3)
+        struct.pack_into("<H", dirty_pursuit, SaveFile.GARAGE_UNSERVED_INFRACTIONS_OFFSET, 11)
+        struct.pack_into("<H", dirty_pursuit, SaveFile.GARAGE_SERVED_INFRACTIONS_OFFSET, 13)
         struct.pack_into("<I", dirty_pursuit, SaveFile.GARAGE_BOUNTY_OFFSET, 123456)
         struct.pack_into("<H", dirty_pursuit, SaveFile.GARAGE_ESCAPED_OFFSET, 7)
         struct.pack_into("<H", dirty_pursuit, SaveFile.GARAGE_BUSTED_OFFSET, 8)
@@ -784,7 +789,13 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         self.assertEqual(repaired[1:4], SaveFile.GARAGE_SIGNATURE_A)
         self.assertEqual(repaired[8:12], SaveFile.GARAGE_SIGNATURE_B)
         self.assertAlmostEqual(repaired_heat, SaveFile.GARAGE_HEAT_BASELINE)
-        self.assertTrue(all(tier == 0 for tier in SaveFile._read_pursuit_heat_mirror_tiers(repaired, 0)))
+        self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET], 0)
+        self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_STATE_OFFSET], 0)
+        self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET], 0)
+        self.assertEqual(struct.unpack_from("<H", repaired, SaveFile.GARAGE_IMPOUND_EVADE_COUNT_OFFSET)[0], 0)
+        for block_off in (SaveFile.GARAGE_UNSERVED_INFRACTIONS_OFFSET, SaveFile.GARAGE_SERVED_INFRACTIONS_OFFSET):
+            for counter in range(SaveFile.GARAGE_INFRACTION_COUNTER_COUNT):
+                self.assertEqual(struct.unpack_from("<H", repaired, block_off + counter * 2)[0], 0)
         self.assertEqual(struct.unpack_from("<I", repaired, SaveFile.GARAGE_BOUNTY_OFFSET)[0], 0)
         self.assertEqual(struct.unpack_from("<H", repaired, SaveFile.GARAGE_ESCAPED_OFFSET)[0], 0)
         self.assertEqual(struct.unpack_from("<H", repaired, SaveFile.GARAGE_BUSTED_OFFSET)[0], 0)
