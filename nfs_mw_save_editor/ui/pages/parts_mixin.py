@@ -369,7 +369,7 @@ class PartsMixin:
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
         hint_row.addWidget(hint, 1)
-        self.chk_show_parts_diagnostics = QCheckBox("Show tuning diagnostics")
+        self.chk_show_parts_diagnostics = QCheckBox("Show parts diagnostics")
         self.chk_show_parts_diagnostics.stateChanged.connect(self.on_toggle_parts_diagnostics)
         hint_row.addWidget(self.chk_show_parts_diagnostics, 0, Qt.AlignRight)
         layout.addLayout(hint_row)
