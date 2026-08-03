@@ -492,7 +492,7 @@ class MainWindow(
         self.btn_reset_want = ShellActionButton("Reset Want=Have")
         self.btn_apply = ShellActionButton("Apply (memory)")
         self.btn_save_footer = ShellActionButton("Save + backup")
-        self.btn_reset_want.clicked.connect(self.on_reset_want)
+        self.btn_reset_want.clicked.connect(self._on_footer_reset_clicked)
         self.btn_apply.clicked.connect(self.on_apply_changes)
         self.btn_save_footer.clicked.connect(self.on_save)
         self._set_game_button_icon(self.btn_reset_want, "action_reset")
@@ -567,6 +567,11 @@ class MainWindow(
 
     def _set_footer_page(self, name: str) -> None:
         self._footer_page_name = name
+        # Career stages have no staged wants (transplants apply immediately),
+        # so the reset slot serves the matching affordance there instead.
+        self.btn_reset_want.setText(
+            "Reload from disk" if name == "Career" else "Reset Want=Have"
+        )
         for context_name, context in getattr(self, "_footer_contexts", {}).items():
             context.setVisible(context_name == name)
         self.footer_context.layout().invalidate()
@@ -623,6 +628,8 @@ class MainWindow(
             return "Profile"
         if current is self.page_junk:
             return "Junkman"
+        if current is self.page_career:
+            return "Career"
         if current is self.page_settings:
             return "Settings"
         if current is self.page_about:
@@ -1150,15 +1157,35 @@ class MainWindow(
             or self.staged_state.snapshot_injections.has_pending()
         )
 
+    def _buffer_matches_disk(self) -> bool:
+        """True when the in-memory save equals the file on disk.
+
+        Direct 63KB read+compare on every refresh point; the OS cache makes
+        this cheap and it can never go stale, unlike an mtime heuristic.
+        """
+
+        if not self.savefile:
+            return True
+        try:
+            return Path(self.savefile.path).read_bytes() == bytes(self.savefile.data)
+        except OSError:
+            return False
+
     def _update_action_states(self):
         pending = self._has_pending_changes()
         enabled = self.savefile is not None
         has_error = bool(self.profile_alias_error)
         self.btn_apply.setEnabled(enabled and pending and not has_error)
         self.btn_reset_want.setEnabled(enabled)
-        self.lbl_unsaved.setText("Unsaved changes" if pending else "")
-        self.lbl_unsaved.setProperty("pending", pending)
-        self.lbl_unsaved.setVisible(pending)
+        # Two badge states: staged wants ("Unsaved changes") win; otherwise a
+        # buffer that differs from disk - applied edits, transplants,
+        # injections - shows "Applied - not saved" until Save + backup.
+        applied_dirty = not pending and enabled and not self._buffer_matches_disk()
+        text = "Unsaved changes" if pending else ("Applied - not saved" if applied_dirty else "")
+        show = pending or applied_dirty
+        self.lbl_unsaved.setText(text)
+        self.lbl_unsaved.setProperty("pending", show)
+        self.lbl_unsaved.setVisible(show)
         self.lbl_unsaved.style().unpolish(self.lbl_unsaved)
         self.lbl_unsaved.style().polish(self.lbl_unsaved)
 
@@ -1275,8 +1302,39 @@ class MainWindow(
         try:
             self.savefile.save(make_backup=True)
             ToastNotification.show_toast(self, "Saved with backup")
+            self._update_action_states()
         except Exception as e:
             QMessageBox.critical(self, "Save failed", str(e))
+
+    def _on_footer_reset_clicked(self):
+        if self._current_stack_page_name() == "Career":
+            self.on_reload_from_disk()
+        else:
+            self.on_reset_want()
+
+    def on_reload_from_disk(self):
+        if not self.savefile:
+            QMessageBox.warning(self, "No file", "Open a save first.")
+            return
+        path = Path(self.savefile.path)
+        try:
+            disk = path.read_bytes()
+        except OSError as e:
+            QMessageBox.critical(self, "Reload failed", str(e))
+            return
+        if disk == bytes(self.savefile.data):
+            ToastNotification.show_toast(self, "Memory already matches the file")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Reload from disk",
+            "Discard applied-but-unsaved changes and reload the file from disk?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self.on_open(str(path))
 
     def on_fix_checksums(self):
         if not self.savefile:
