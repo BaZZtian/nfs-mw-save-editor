@@ -422,6 +422,19 @@ class CareerTransplantPlan:
     warnings: Tuple[str, ...]
     donor_bin: int
     spans_total_bytes: int
-    # Amount apply will add to SoldHistoryBounty so the rap-sheet total
-    # matches the donor stage (0 = user already has enough).
+    # Amount keep-mode apply will add to SoldHistoryBounty so the rap-sheet
+    # total matches the donor stage (0 = user already has enough).
     bounty_compensation: int = 0
+    # Rap-sheet bounty numbers for the apply preview. The two bounty modes
+    # only diverge on rollback (user_total_bounty > donor_total_bounty):
+    # keep leaves the earned total, normalize lands the total EXACTLY on
+    # donor_total_bounty - live cars are scaled proportionally when their
+    # sum exceeds the target (per-car rows below), sold history carries the
+    # rest.
+    user_total_bounty: int = 0
+    user_live_bounty: int = 0
+    donor_total_bounty: int = 0
+    normalized_sold_bounty: int = 0
+    # (slot_index, old_bounty, new_bounty) for every live car normalize
+    # would change; empty when cars stay untouched.
+    normalized_car_bounties: Tuple[Tuple[int, int, int], ...] = ()

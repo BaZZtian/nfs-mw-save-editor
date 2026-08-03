@@ -1325,8 +1325,12 @@ class SaveFile:
     def plan_career_transplant(self, donor_data: bytes) -> CareerTransplantPlan:
         return career_transplant.plan_career_transplant(self, donor_data)
 
-    def apply_career_transplant(self, donor_data: bytes) -> None:
-        return career_transplant.apply_career_transplant(self, donor_data)
+    def apply_career_transplant(
+        self,
+        donor_data: bytes,
+        bounty_mode: str = career_transplant.BOUNTY_MODE_KEEP,
+    ) -> None:
+        return career_transplant.apply_career_transplant(self, donor_data, bounty_mode)
 
     @classmethod
     def _snapshot_target_location_bits(

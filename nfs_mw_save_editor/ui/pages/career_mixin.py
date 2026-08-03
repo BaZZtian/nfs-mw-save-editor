@@ -2621,6 +2621,11 @@ class CareerMixin:
                         lines.append(
                             f"Bounty compensation: +{plan.bounty_compensation:,} via sold-cars history."
                         )
+                    elif plan.user_total_bounty > plan.donor_total_bounty:
+                        lines.append(
+                            f"Earned bounty {plan.user_total_bounty:,} is above the snapshot's "
+                            f"{plan.donor_total_bounty:,}: keep it or normalize on apply."
+                        )
                     if plan.warnings:
                         state = "warning"
                         lines.extend(f"Warning: {w}" for w in plan.warnings)
@@ -2662,28 +2667,73 @@ class CareerMixin:
             warning_lines += (
                 f"\n- Bounty compensation: +{plan.bounty_compensation:,} via sold-cars history"
             )
-        answer = QMessageBox.question(
-            self,
-            "Confirm career stage change",
-            (
-                f"Change career progression in memory?\n\n"
-                f"{_stage_title(current)}  ->  {_stage_title(plan.donor_bin)}\n"
-                f"Target snapshot: {_display_name_text(donor.display_name)}\n\n"
-                f"{_CHANGES_TEXT}\n{_KEEPS_TEXT}\n\n"
-                f"This edits memory only; use Save + backup to write the file."
-                f"{warning_lines}"
-            ),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+        base_text = (
+            f"Change career progression in memory?\n\n"
+            f"{_stage_title(current)}  ->  {_stage_title(plan.donor_bin)}\n"
+            f"Target snapshot: {_display_name_text(donor.display_name)}\n\n"
+            f"{_CHANGES_TEXT}\n{_KEEPS_TEXT}\n\n"
+            f"This edits memory only; use Save + backup to write the file."
+            f"{warning_lines}"
         )
-        if answer != QMessageBox.Yes:
-            return
+        bounty_mode = career_transplant.BOUNTY_MODE_KEEP
+        if plan.user_total_bounty > plan.donor_total_bounty:
+            # Rollback case: the two bounty modes diverge, so the choice is
+            # part of the confirmation. Normalize lands the total exactly on
+            # the target; every value it lowers is listed here explicitly.
+            slot_names = {
+                slot.career_slot: slot.display_name
+                for slot in getattr(self, "garage_slots", [])
+            }
+            car_lines = "".join(
+                f"\n  {slot_names.get(slot, f'Slot {slot + 1}')}: "
+                f"{old:,} -> {new:,}"
+                for slot, old, new in plan.normalized_car_bounties
+            )
+            if car_lines:
+                car_lines = "\nCar bounties scale proportionally:" + car_lines
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Question)
+            box.setWindowTitle("Confirm career stage change")
+            box.setText(
+                base_text
+                + (
+                    f"\n\nEarned bounty {plan.user_total_bounty:,} is above this "
+                    f"snapshot's own bounty of {plan.donor_total_bounty:,}.\n"
+                    f"Keep earned bounty: total stays {plan.user_total_bounty:,}.\n"
+                    f"Normalize: total becomes exactly the snapshot's "
+                    f"{plan.donor_total_bounty:,}."
+                    + car_lines
+                )
+            )
+            # ActionRole on both keeps the insertion order: Normalize first
+            # and default (the rollback intent is already explicit; every
+            # lowered value is listed above), Keep as the safety option.
+            normalize_btn = box.addButton("Normalize to snapshot", QMessageBox.ActionRole)
+            keep_btn = box.addButton("Keep earned bounty", QMessageBox.ActionRole)
+            cancel_btn = box.addButton(QMessageBox.Cancel)
+            box.setDefaultButton(normalize_btn)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked is cancel_btn or clicked is None:
+                return
+            if clicked is normalize_btn:
+                bounty_mode = career_transplant.BOUNTY_MODE_NORMALIZE
+        else:
+            answer = QMessageBox.question(
+                self,
+                "Confirm career stage change",
+                base_text,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
 
         hero_snapshot = self._career_crossfade_snapshot(
             self.career_hero, "_career_hero_transition"
         )
         try:
-            self.savefile.apply_career_transplant(donor_data)
+            self.savefile.apply_career_transplant(donor_data, bounty_mode)
         except Exception as exc:
             QMessageBox.critical(self, "Stage change failed", str(exc))
             return

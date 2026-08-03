@@ -36,7 +36,12 @@ from typing import Optional, Protocol, Tuple
 
 from core.garage_records import (
     EXPECTED_SAVE_SIZE,
+    GARAGE_RECORD_BOUNTY_REL,
+    GARAGE_RECORD_COUNT,
+    GARAGE_RECORD_SIZE,
+    GARAGE_RECORDS_OFFSET,
     SOLD_HISTORY_BOUNTY_OFFSET,
+    is_live_garage_record,
 )
 from core.models import CareerTransplantPlan, OwnedCarRecord
 from core.rap_sheet_totals import read_rap_sheet_totals
@@ -58,6 +63,13 @@ RACE_RECORD_COUNT = 248
 RACE_DONE_MASK = 0x0A
 
 U32_MAX = 0xFFFFFFFF
+
+# Bounty handling on apply. The modes only diverge on rollback (user total
+# above the donor target): keep preserves the earned total, normalize is the
+# opt-in that sets SoldHistoryBounty so the rap-sheet total matches the
+# target stage (floored at the live-car sum - cars are never touched).
+BOUNTY_MODE_KEEP = "keep"
+BOUNTY_MODE_NORMALIZE = "normalize"
 
 REFUSAL_USER_SIZE_MISMATCH = "User save size is not 63596 bytes"
 REFUSAL_DONOR_SIZE_MISMATCH = "Donor save size is not 63596 bytes"
@@ -125,14 +137,59 @@ def count_completed_races(data: bytes) -> Optional[int]:
     return done
 
 
-def _bounty_compensation(user_data: bytes, donor_data: bytes) -> int:
-    """Deficit of the user's rap-sheet bounty versus the donor's, floored at 0."""
+def _live_car_bounties(data: bytes) -> Tuple[Tuple[int, int], ...]:
+    """(slot_index, bounty) for every live garage record."""
+
+    out = []
+    for k in range(GARAGE_RECORD_COUNT):
+        base = GARAGE_RECORDS_OFFSET + k * GARAGE_RECORD_SIZE
+        raw = bytes(data[base:base + GARAGE_RECORD_SIZE])
+        if not is_live_garage_record(raw, k):
+            continue
+        out.append((k, int.from_bytes(
+            raw[GARAGE_RECORD_BOUNTY_REL:GARAGE_RECORD_BOUNTY_REL + 4], "little"
+        )))
+    return tuple(out)
+
+
+def _bounty_plan_numbers(
+    user_data: bytes, donor_data: bytes
+) -> Tuple[int, int, int, int, int, Tuple[Tuple[int, int, int], ...]]:
+    """Rap-sheet bounty numbers for the plan preview and both apply modes.
+
+    Returns ``(keep_compensation, user_total, user_live, donor_total,
+    normalized_sold, normalized_car_bounties)``. Normalize always lands the
+    total EXACTLY on the donor target: when the live-car sum exceeds it, every
+    live bounty is scaled proportionally (floored) and the sold history
+    carries the rounding remainder; otherwise cars stay untouched and sold
+    history is the difference. All zeros/empty when either buffer is not a
+    save.
+    """
 
     user_totals = read_rap_sheet_totals(user_data)
     donor_totals = read_rap_sheet_totals(donor_data)
     if user_totals is None or donor_totals is None:
-        return 0
-    return max(0, donor_totals.total_bounty - user_totals.total_bounty)
+        return (0, 0, 0, 0, 0, ())
+    target = donor_totals.total_bounty
+    live = user_totals.live_bounty
+    scaled_cars: Tuple[Tuple[int, int, int], ...] = ()
+    if live > target:
+        scaled = tuple(
+            (slot, bounty, bounty * target // live)
+            for slot, bounty in _live_car_bounties(user_data)
+        )
+        scaled_cars = tuple(row for row in scaled if row[1] != row[2])
+        normalized_sold = target - sum(new for _slot, _old, new in scaled)
+    else:
+        normalized_sold = target - live
+    return (
+        max(0, target - user_totals.total_bounty),
+        user_totals.total_bounty,
+        live,
+        target,
+        normalized_sold,
+        scaled_cars,
+    )
 
 
 def plan_career_transplant(
@@ -183,22 +240,29 @@ def plan_career_transplant(
         if save.get_active_career_record() is None:
             warnings.append(WARNING_USER_ACTIVE_CAREER_POINTER_INVALID)
 
+    compensation, user_total, user_live, donor_total, normalized_sold, scaled_cars = (
+        _bounty_plan_numbers(bytes(save.data), donor_data)
+        if refusal_reason is None
+        else (0, 0, 0, 0, 0, ())
+    )
     return CareerTransplantPlan(
         refusal_reason=refusal_reason,
         warnings=tuple(warnings),
         donor_bin=donor_bin,
         spans_total_bytes=spans_total_bytes,
-        bounty_compensation=(
-            _bounty_compensation(bytes(save.data), donor_data)
-            if refusal_reason is None
-            else 0
-        ),
+        bounty_compensation=compensation,
+        user_total_bounty=user_total,
+        user_live_bounty=user_live,
+        donor_total_bounty=donor_total,
+        normalized_sold_bounty=normalized_sold,
+        normalized_car_bounties=scaled_cars,
     )
 
 
 def apply_career_transplant(
     save: CareerTransplantSave,
     donor_data: bytes,
+    bounty_mode: str = BOUNTY_MODE_KEEP,
 ) -> None:
     """Apply a planned career-stage transplant to the user save buffer.
 
@@ -207,17 +271,35 @@ def apply_career_transplant(
     semantics as snapshot injection. It raises
     ``ValueError(plan.refusal_reason)`` when the plan refused, leaving the
     buffer byte-identical. Otherwise it copies ``TRANSPLANT_SPANS`` from donor
-    to user in order, then adds ``plan.bounty_compensation`` to the user's
-    SoldHistoryBounty (saturating at u32; no-op when 0). No other mutation and
-    no checksum recomputation.
+    to user in order, then settles SoldHistoryBounty per ``bounty_mode``:
+
+    - ``keep`` (default): add ``plan.bounty_compensation`` (saturating at
+      u32; no-op when 0) - the earned total is never lowered.
+    - ``normalize``: land the rap-sheet total EXACTLY on the donor target -
+      scale live car bounties per ``plan.normalized_car_bounties`` (only
+      populated when the live sum exceeds the target) and SET
+      SoldHistoryBounty to ``plan.normalized_sold_bounty``. This is the
+      opt-in rollback path; it lowers bounty values, so callers must
+      present every change (per-car included) before applying.
+
+    No other mutation and no checksum recomputation.
     """
 
+    if bounty_mode not in (BOUNTY_MODE_KEEP, BOUNTY_MODE_NORMALIZE):
+        raise ValueError(f"Unknown bounty mode: {bounty_mode!r}")
     plan = save.plan_career_transplant(donor_data)
     if plan.refusal_reason:
         raise ValueError(plan.refusal_reason)
     for start, end, _label in TRANSPLANT_SPANS:
         save.data[start:end] = donor_data[start:end]
-    if plan.bounty_compensation > 0:
+    if bounty_mode == BOUNTY_MODE_NORMALIZE:
+        for slot, _old, new in plan.normalized_car_bounties:
+            off = (GARAGE_RECORDS_OFFSET + slot * GARAGE_RECORD_SIZE
+                   + GARAGE_RECORD_BOUNTY_REL)
+            save.data[off:off + 4] = int(new).to_bytes(4, "little")
+        sold = min(U32_MAX, int(plan.normalized_sold_bounty))
+        save.data[SOLD_HISTORY_BOUNTY_OFFSET:SOLD_HISTORY_BOUNTY_OFFSET + 4] = sold.to_bytes(4, "little")
+    elif plan.bounty_compensation > 0:
         sold = int.from_bytes(
             save.data[SOLD_HISTORY_BOUNTY_OFFSET:SOLD_HISTORY_BOUNTY_OFFSET + 4], "little"
         )

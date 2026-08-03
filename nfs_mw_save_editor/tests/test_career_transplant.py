@@ -345,6 +345,133 @@ def test_bounty_compensation_computed_and_applied() -> None:
     assert read_rap_sheet_totals(bytes(save.data)).total_bounty == 650_000
 
 
+def _sold_value(save: _FakeSave) -> int:
+    return int.from_bytes(
+        save.data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
+                  career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4], "little")
+
+
+def test_normalize_mode_lowers_sold_history_on_rollback() -> None:
+    """Assert normalize sets sold history so the total matches the target."""
+
+    user = _valid_user_buffer()
+    _fill_garage_record(user, 0, 100_000)
+    _set_u32(user, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 900_000)
+
+    donor = bytearray(_valid_donor_buffer())
+    _fill_garage_record(donor, 0, 200_000)
+    _set_u32(donor, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 100_000)
+    donor = bytes(donor)
+
+    save = _FakeSave(user)
+    plan = career_transplant.plan_career_transplant(save, donor)
+    assert plan.bounty_compensation == 0
+    assert plan.user_total_bounty == 1_000_000
+    assert plan.user_live_bounty == 100_000
+    assert plan.donor_total_bounty == 300_000
+    assert plan.normalized_sold_bounty == 200_000
+    # Live sum is below the target, so cars stay untouched.
+    assert plan.normalized_car_bounties == ()
+
+    career_transplant.apply_career_transplant(
+        save, donor, career_transplant.BOUNTY_MODE_NORMALIZE)
+    assert _sold_value(save) == 200_000
+    assert read_rap_sheet_totals(bytes(save.data)).total_bounty == 300_000
+
+
+def _record_without_bounty(data: bytearray, slot: int) -> bytes:
+    base = garage_records.GARAGE_RECORDS_OFFSET + slot * garage_records.GARAGE_RECORD_SIZE
+    raw = bytearray(data[base:base + garage_records.GARAGE_RECORD_SIZE])
+    raw[garage_records.GARAGE_RECORD_BOUNTY_REL:
+        garage_records.GARAGE_RECORD_BOUNTY_REL + 4] = b"\x00" * 4
+    return bytes(raw)
+
+
+def test_normalize_mode_scales_live_cars_to_exact_target() -> None:
+    """Assert rich live cars are scaled proportionally and the total lands exactly."""
+
+    user = _valid_user_buffer()
+    _fill_garage_record(user, 0, 300_000)
+    _fill_garage_record(user, 1, 200_000)
+    _set_u32(user, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 100_000)
+
+    donor = bytearray(_valid_donor_buffer())
+    _fill_garage_record(donor, 0, 250_000)
+    donor = bytes(donor)
+
+    save = _FakeSave(user)
+    plan = career_transplant.plan_career_transplant(save, donor)
+    assert plan.user_live_bounty == 500_000
+    assert plan.donor_total_bounty == 250_000
+    assert plan.normalized_car_bounties == ((0, 300_000, 150_000), (1, 200_000, 100_000))
+    assert plan.normalized_sold_bounty == 0
+
+    before_rest = [_record_without_bounty(save.data, k) for k in (0, 1)]
+    career_transplant.apply_career_transplant(
+        save, donor, career_transplant.BOUNTY_MODE_NORMALIZE)
+    totals = read_rap_sheet_totals(bytes(save.data))
+    assert (totals.live_bounty, totals.sold_bounty) == (250_000, 0)
+    assert totals.total_bounty == 250_000
+    # Only the bounty field of each record changed.
+    assert [_record_without_bounty(save.data, k) for k in (0, 1)] == before_rest
+
+
+def test_normalize_rounding_remainder_lands_in_sold_history() -> None:
+    """Assert floored car scaling still hits the exact target via sold history."""
+
+    user = _valid_user_buffer()
+    _fill_garage_record(user, 0, 3)
+    _fill_garage_record(user, 1, 2)
+
+    donor = bytearray(_valid_donor_buffer())
+    _fill_garage_record(donor, 0, 4)
+    donor = bytes(donor)
+
+    save = _FakeSave(user)
+    plan = career_transplant.plan_career_transplant(save, donor)
+    assert plan.normalized_car_bounties == ((0, 3, 2), (1, 2, 1))
+    assert plan.normalized_sold_bounty == 1
+
+    career_transplant.apply_career_transplant(
+        save, donor, career_transplant.BOUNTY_MODE_NORMALIZE)
+    assert read_rap_sheet_totals(bytes(save.data)).total_bounty == 4
+
+
+def test_bounty_modes_agree_when_moving_forward() -> None:
+    """Assert keep and normalize write the same bytes on a forward jump."""
+
+    def _fixture() -> tuple[_FakeSave, bytes]:
+        user = _valid_user_buffer()
+        _fill_garage_record(user, 0, 100_000)
+        _set_u32(user, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 50_000)
+        donor = bytearray(_valid_donor_buffer())
+        _fill_garage_record(donor, 0, 400_000)
+        _set_u32(donor, career_transplant.SOLD_HISTORY_BOUNTY_OFFSET, 250_000)
+        return _FakeSave(user), bytes(donor)
+
+    save_keep, donor = _fixture()
+    career_transplant.apply_career_transplant(
+        save_keep, donor, career_transplant.BOUNTY_MODE_KEEP)
+    save_norm, _ = _fixture()
+    career_transplant.apply_career_transplant(
+        save_norm, donor, career_transplant.BOUNTY_MODE_NORMALIZE)
+
+    assert bytes(save_keep.data) == bytes(save_norm.data)
+    assert _sold_value(save_keep) == 550_000
+
+
+def test_unknown_bounty_mode_refuses_before_writing() -> None:
+    """Assert a bad mode raises and leaves the buffer byte-identical."""
+
+    user = _valid_user_buffer()
+    donor = _valid_donor_buffer()
+    save = _FakeSave(user)
+    before = bytes(save.data)
+    with pytest.raises(ValueError, match="Unknown bounty mode"):
+        career_transplant.apply_career_transplant(save, donor, "undo")
+    assert bytes(save.data) == before
+
+
 def test_bounty_compensation_is_zero_when_user_is_richer() -> None:
     """Assert a richer user gets no compensation and sold history stays untouched."""
 

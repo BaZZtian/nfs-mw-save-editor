@@ -694,9 +694,13 @@ def test_apply_rival_change_crossfades_the_refreshed_hero(tmp_path, monkeypatch)
         warnings=(),
         bounty_compensation=0,
         donor_bin=7,
+        user_total_bounty=0,
+        user_live_bounty=0,
+        donor_total_bounty=0,
+        normalized_sold_bounty=0,
     )
 
-    def apply_transplant(_donor_data):
+    def apply_transplant(_donor_data, _bounty_mode=career_transplant.BOUNTY_MODE_KEEP):
         data[career_transplant.CURRENT_BIN_OFFSET] = 7
 
     window.savefile = SimpleNamespace(
