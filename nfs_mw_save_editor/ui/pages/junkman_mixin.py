@@ -653,8 +653,16 @@ class JunkmanMixin:
                     transfer_changes.append(
                         f"{entry.display_name}: {from_kind} (slot {from_slot}) -> {to_kind} (slot {to_slot}){extra}"
                     )
-        have_total_bounty = sum(self.have_slot_bounties.values())
-        want_total_bounty = sum(self._current_slot_bounties().values()) if not self.garage_detection_error else None
+        # Same lifetime rule as the Profile tiles and Career's Rap Sheet:
+        # staged garage bounties plus the constant sold-car history component.
+        rap_totals = self.savefile.get_rap_sheet_totals() if self.savefile else None
+        sold_bounty = rap_totals.sold_bounty if rap_totals is not None else 0
+        have_total_bounty = sum(self.have_slot_bounties.values()) + sold_bounty
+        want_total_bounty = (
+            sum(self._current_slot_bounties().values()) + sold_bounty
+            if not self.garage_detection_error
+            else None
+        )
         heat_changes = 0 if self.garage_detection_error else len(self._pending_slot_heats())
         parts_changes: List[str] = []
         injection_changes: List[str] = []

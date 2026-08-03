@@ -35,14 +35,11 @@ import hashlib
 from typing import Optional, Protocol, Tuple
 
 from core.garage_records import (
-    GARAGE_RECORD_COUNT,
-    GARAGE_RECORD_SIZE,
-    GARAGE_RECORDS_OFFSET,
-    is_live_garage_record,
+    EXPECTED_SAVE_SIZE,
+    SOLD_HISTORY_BOUNTY_OFFSET,
 )
 from core.models import CareerTransplantPlan, OwnedCarRecord
-
-EXPECTED_SAVE_SIZE = 0xF86C
+from core.rap_sheet_totals import read_rap_sheet_totals
 GAME_SECTION_MD5_OFFSET = 0x0034
 GAME_SECTION_START = 0x0044
 GAME_SECTION_END = 0x4034
@@ -60,13 +57,6 @@ RACE_RECORD_COUNT = 248
 # across the whole 32-save ladder (flags 0x10 -> 0x1E, 0x04 -> 0x0E).
 RACE_DONE_MASK = 0x0A
 
-# Rap-sheet total bounty aggregates per-car garage records plus the
-# sold-cars history (engine: FEPlayerCarDB::GetTotalBounty over
-# FECareerRecord[25].Bounty and SoldHistoryBounty). Empty garage slots may
-# hold stale sold-car payloads, not zeros — only live records (Handle == slot
-# index, shared occupancy rule in core.garage_records) are summed.
-GARAGE_RECORD_BOUNTY_REL = 0x10
-SOLD_HISTORY_BOUNTY_OFFSET = 0xE865
 U32_MAX = 0xFFFFFFFF
 
 REFUSAL_USER_SIZE_MISMATCH = "User save size is not 63596 bytes"
@@ -135,37 +125,14 @@ def count_completed_races(data: bytes) -> Optional[int]:
     return done
 
 
-def total_rap_sheet_bounty(data: bytes) -> Optional[int]:
-    """Sum live garage-record bounties plus sold-history bounty.
-
-    Returns None when the buffer is not a save. Empty garage slots (stale
-    payloads) are skipped via the Handle-based occupancy rule.
-    """
-
-    if len(data) != EXPECTED_SAVE_SIZE:
-        return None
-    total = int.from_bytes(
-        data[SOLD_HISTORY_BOUNTY_OFFSET:SOLD_HISTORY_BOUNTY_OFFSET + 4], "little"
-    )
-    for k in range(GARAGE_RECORD_COUNT):
-        base = GARAGE_RECORDS_OFFSET + k * GARAGE_RECORD_SIZE
-        raw = bytes(data[base:base + GARAGE_RECORD_SIZE])
-        if not is_live_garage_record(raw, k):
-            continue
-        total += int.from_bytes(
-            raw[GARAGE_RECORD_BOUNTY_REL:GARAGE_RECORD_BOUNTY_REL + 4], "little"
-        )
-    return total
-
-
 def _bounty_compensation(user_data: bytes, donor_data: bytes) -> int:
     """Deficit of the user's rap-sheet bounty versus the donor's, floored at 0."""
 
-    user_total = total_rap_sheet_bounty(user_data)
-    donor_total = total_rap_sheet_bounty(donor_data)
-    if user_total is None or donor_total is None:
+    user_totals = read_rap_sheet_totals(user_data)
+    donor_totals = read_rap_sheet_totals(donor_data)
+    if user_totals is None or donor_totals is None:
         return 0
-    return max(0, donor_total - user_total)
+    return max(0, donor_totals.total_bounty - user_totals.total_bounty)
 
 
 def plan_career_transplant(

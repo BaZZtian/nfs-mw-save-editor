@@ -321,12 +321,23 @@ class ProfileMixin:
             self.busted_total_current_label.setText("Current: -")
             return
 
+        # Lifetime totals must match Career's Rap Sheet: live garage records
+        # plus the sold-car history block (shared core.rap_sheet_totals rule).
+        rap_totals = self.savefile.get_rap_sheet_totals() if self.savefile is not None else None
+        sold_bounty = rap_totals.sold_bounty if rap_totals is not None else 0
+        sold_escapes = rap_totals.sold_escapes if rap_totals is not None else 0
+        sold_busts = rap_totals.sold_busts if rap_totals is not None else 0
+
         current_bounties = self._current_slot_bounties()
         cleared_slots = self._current_cleared_pursuit_slots()
-        have_total = sum(self.have_slot_bounties.values())
-        current_total = sum(current_bounties.values())
-        escaped_total = sum(0 if slot.career_slot in cleared_slots else slot.escaped for slot in self.garage_slots)
-        busted_total = sum(0 if slot.career_slot in cleared_slots else slot.busted for slot in self.garage_slots)
+        have_total = sum(self.have_slot_bounties.values()) + sold_bounty
+        current_total = sum(current_bounties.values()) + sold_bounty
+        escaped_total = sold_escapes + sum(
+            0 if slot.career_slot in cleared_slots else slot.escaped for slot in self.garage_slots
+        )
+        busted_total = sold_busts + sum(
+            0 if slot.career_slot in cleared_slots else slot.busted for slot in self.garage_slots
+        )
 
         self.total_bounty_label.setText(self._format_u32(current_total))
         self.total_bounty_current_label.setText(self._format_current_value(have_total))

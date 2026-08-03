@@ -34,10 +34,10 @@ from core.career_transplant import (
     RACE_RECORD_SIZE,
     RACE_TABLE_OFFSET,
     read_current_bin,
-    total_rap_sheet_bounty,
 )
 from core.race_chapters import resolve_offering
 from core.race_names import resolve_event_id
+from core.rap_sheet_totals import read_rap_sheet_totals
 
 # SavedGameplayDataHeader counts (u32 each, from 0x4C): mNumPersistent,
 # mNumSavedTimers, mNumMilestoneTypes, mNumMilestoneRecords,
@@ -442,7 +442,8 @@ def build_career_progress(data: bytes) -> Optional[CareerProgressSummary]:
     races = parse_races(data)
     milestones = parse_milestones(data)
     speedtraps = parse_speedtraps(data)
-    bounty = total_rap_sheet_bounty(data)
+    rap_totals = read_rap_sheet_totals(data)
+    bounty = rap_totals.total_bounty if rap_totals is not None else None
     endgame = is_endgame(data)
     if (
         races is None

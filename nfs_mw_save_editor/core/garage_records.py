@@ -23,6 +23,27 @@ GARAGE_RECORD_SIZE = 0x38
 GARAGE_RECORD_COUNT = 25
 GARAGE_EMPTY_HANDLE = 0xFF
 
+# Whole serialized profile size; shared by the transplant planner and the
+# rap-sheet totals reader as their "is this a save at all" gate.
+EXPECTED_SAVE_SIZE = 0xF86C
+
+# Record-relative pursuit-stat fields used by rap-sheet aggregation.
+GARAGE_RECORD_BOUNTY_REL = 0x10
+GARAGE_RECORD_ESCAPED_REL = 0x14
+GARAGE_RECORD_BUSTED_REL = 0x16
+
+# VehicleDB's sold-car history block is serialized immediately after the
+# CareerRecords array, mirroring the memory layout (CareerRecords[25] @0x8728
+# ends exactly at SoldHistoryBounty @0x8CA0 in VehicleDB.hpp; in the save
+# 0xE2ED + 25*0x38 = 0xE865). Field placement verified across the
+# 721-path/549-unique corpus: all 365 saves with SoldHistoryBounty == 0 carry
+# zero counters, all 184 others carry plausible pursuit counts.
+SOLD_HISTORY_BOUNTY_OFFSET = 0xE865
+SOLD_HISTORY_EVADED_OFFSET = 0xE869
+SOLD_HISTORY_BUSTED_OFFSET = 0xE86B
+SOLD_HISTORY_UNSERVED_INFRACTIONS_OFFSET = 0xE86D
+SOLD_HISTORY_SERVED_INFRACTIONS_OFFSET = 0xE87D
+
 
 def has_canonical_pad_bytes(raw: bytes) -> bool:
     """Pad/alignment bytes of a healthy serialized FECareerRecord.

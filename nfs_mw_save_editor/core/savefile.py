@@ -8,7 +8,7 @@ import struct
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from core import career_transplant, garage_records, snapshot_export, snapshot_injection, snapshot_library
+from core import career_transplant, garage_records, rap_sheet_totals, snapshot_export, snapshot_injection, snapshot_library
 from core.cars import resolve_car_name
 from core.checksums import ea_crc32
 from core.junkman import JunkmanInventory
@@ -1678,15 +1678,10 @@ class SaveFile:
         new_flags = (record.flags | self.PINK_SLIP_FLAG) if enabled else (record.flags & ~self.PINK_SLIP_FLAG)
         self._write_u16(record.abs_off + self.CAREER_VEHICLE_FLAGS_OFFSET, new_flags)
 
-    def get_total_bounty(self) -> int:
-        return sum(slot.bounty for slot in self.get_garage_slots())
+    def get_rap_sheet_totals(self) -> Optional[rap_sheet_totals.RapSheetTotals]:
+        """Shared Rap Sheet aggregates (live garage + sold-car history)."""
 
-    def get_escape_bust_totals(self) -> Tuple[int, int]:
-        slots = self.get_garage_slots()
-        return (
-            sum(slot.escaped for slot in slots),
-            sum(slot.busted for slot in slots),
-        )
+        return rap_sheet_totals.read_rap_sheet_totals(bytes(self.data))
 
     # --- integrity ---
 

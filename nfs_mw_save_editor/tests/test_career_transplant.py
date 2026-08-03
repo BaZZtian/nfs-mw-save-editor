@@ -4,7 +4,8 @@ import hashlib
 
 import pytest
 
-from core import career_transplant
+from core import career_transplant, garage_records
+from core.rap_sheet_totals import read_rap_sheet_totals
 from core.savefile import SaveFile
 
 
@@ -36,10 +37,10 @@ class _FakeSave:
 def _zero_bounty_fields(data: bytearray) -> None:
     """Zero garage bounties + sold history so fixtures imply no compensation."""
 
-    for k in range(career_transplant.GARAGE_RECORD_COUNT):
-        off = (career_transplant.GARAGE_RECORDS_OFFSET
-               + k * career_transplant.GARAGE_RECORD_SIZE
-               + career_transplant.GARAGE_RECORD_BOUNTY_REL)
+    for k in range(garage_records.GARAGE_RECORD_COUNT):
+        off = (garage_records.GARAGE_RECORDS_OFFSET
+               + k * garage_records.GARAGE_RECORD_SIZE
+               + garage_records.GARAGE_RECORD_BOUNTY_REL)
         data[off:off + 4] = b"\x00" * 4
     data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
          career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4] = b"\x00" * 4
@@ -312,12 +313,12 @@ def _set_u32(data: bytearray, off: int, value: int) -> None:
 def _fill_garage_record(data: bytearray, index: int, bounty: int) -> None:
     """Write a live (Handle == index) garage record with the given bounty."""
 
-    base = career_transplant.GARAGE_RECORDS_OFFSET + index * career_transplant.GARAGE_RECORD_SIZE
-    data[base:base + career_transplant.GARAGE_RECORD_SIZE] = b"\x00" * career_transplant.GARAGE_RECORD_SIZE
+    base = garage_records.GARAGE_RECORDS_OFFSET + index * garage_records.GARAGE_RECORD_SIZE
+    data[base:base + garage_records.GARAGE_RECORD_SIZE] = b"\x00" * garage_records.GARAGE_RECORD_SIZE
     data[base] = index
     data[base + 1] = 0xCD
     data[base + 0x0A:base + 0x0C] = b"\xCD\xCD"
-    _set_u32(data, base + career_transplant.GARAGE_RECORD_BOUNTY_REL, bounty)
+    _set_u32(data, base + garage_records.GARAGE_RECORD_BOUNTY_REL, bounty)
 
 
 def test_bounty_compensation_computed_and_applied() -> None:
@@ -341,7 +342,7 @@ def test_bounty_compensation_computed_and_applied() -> None:
         save.data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
                   career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4], "little")
     assert sold == 50_000 + 500_000
-    assert career_transplant.total_rap_sheet_bounty(bytes(save.data)) == 650_000
+    assert read_rap_sheet_totals(bytes(save.data)).total_bounty == 650_000
 
 
 def test_bounty_compensation_is_zero_when_user_is_richer() -> None:
