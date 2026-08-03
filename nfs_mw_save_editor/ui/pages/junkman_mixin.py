@@ -709,7 +709,7 @@ class JunkmanMixin:
         alias_want = self.staged_state.profile_alias.current(self.have_profile_alias)
         summary_lines = [
             f"Token slots: {total} total, {used} used, {free} free, {needed} needed, delta +{add} / -{remove}",
-            f"Invalid token data preserved: {unknown_preserved}",
+            f"Unknown token IDs preserved: {unknown_preserved}",
             f"Money: {self.have_money} -> {money_want}",
         ]
         if alias_want != self.have_profile_alias:
@@ -786,7 +786,17 @@ class JunkmanMixin:
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         try:
-            self.savefile.set_junkman_counts(want_full, clamp_max=self._current_max())
+            # Token belt writes go through the healing normalizer (clear-all +
+            # canonical rewrite), so gate them on a real token edit: a
+            # token-clean apply must leave all 63 raw slots byte-identical,
+            # ghosts included. Sparse dicts make literal want==have comparison
+            # unreliable; pending is effective-value based with default 0.
+            tokens_changed = (
+                self.staged_state.counts.has_pending(self.have_counts, default=0)
+                or self.clear_unknown_next
+            )
+            if tokens_changed:
+                self.savefile.set_junkman_counts(want_full, clamp_max=self._current_max())
             self.savefile.set_money(self.staged_state.money.current(self.have_money))
             alias_want = self.staged_state.profile_alias.current(self.have_profile_alias)
             if alias_want != self.have_profile_alias:
