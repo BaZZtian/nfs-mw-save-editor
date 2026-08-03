@@ -279,6 +279,10 @@ def _new_savefile_buffer() -> SaveFile:
     sf = object.__new__(SaveFile)
     sf.path = Path("fixture-save")
     sf.data = bytearray(b"\xEE" * (SaveFile.GARAGE_BASE_OFFSET + SaveFile.GARAGE_SLOT_SIZE * 2))
+    # Empty garage slots with stale 0xEE payloads (Handle 0xFF is the only
+    # thing that makes a slot empty; the rest is legal garbage).
+    for slot in range(2):
+        sf.data[SaveFile.GARAGE_BASE_OFFSET + slot * SaveFile.GARAGE_SLOT_SIZE] = SaveFile.GARAGE_EMPTY_HANDLE
     return sf
 
 
@@ -751,9 +755,10 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         owned_abs = SaveFile.CAREER_VEHICLE_BASE_OFFSET
         pursuit_abs = SaveFile.GARAGE_BASE_OFFSET
         dirty_pursuit = bytearray(SaveFile.GARAGE_SLOT_SIZE)
-        dirty_pursuit[0] = 0xFF
-        dirty_pursuit[1:4] = SaveFile.GARAGE_SIGNATURE_A
-        dirty_pursuit[8:12] = SaveFile.GARAGE_SIGNATURE_B
+        dirty_pursuit[0] = SaveFile.GARAGE_EMPTY_HANDLE
+        dirty_pursuit[1] = 0xCD
+        dirty_pursuit[SaveFile.GARAGE_IMPOUND_MAX_BUSTED_OFFSET] = SaveFile.GARAGE_MAX_BUSTED_BASE
+        dirty_pursuit[0x0A:0x0C] = b"\xCD\xCD"
         SaveFile._write_pursuit_heat_into(dirty_pursuit, 4.0)
         dirty_pursuit[SaveFile.GARAGE_IMPOUND_STATE_OFFSET] = 2
         dirty_pursuit[SaveFile.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET] = 5
@@ -786,9 +791,10 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         repaired = bytes(sf.data[pursuit_abs:pursuit_abs + SaveFile.GARAGE_SLOT_SIZE])
         repaired_heat = struct.unpack_from("<f", repaired, SaveFile.GARAGE_HEAT_FLOAT_OFFSET)[0]
         self.assertEqual(repaired[0], 0)
-        self.assertEqual(repaired[1:4], SaveFile.GARAGE_SIGNATURE_A)
-        self.assertEqual(repaired[8:12], SaveFile.GARAGE_SIGNATURE_B)
-        self.assertAlmostEqual(repaired_heat, SaveFile.GARAGE_HEAT_BASELINE)
+        self.assertEqual(repaired[1], 0xCD)
+        self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_MAX_BUSTED_OFFSET], SaveFile.GARAGE_MAX_BUSTED_BASE)
+        self.assertEqual(repaired[0x0A:0x0C], b"\xCD\xCD")
+        self.assertAlmostEqual(repaired_heat, SaveFile.GARAGE_HEAT_NATIVE_FRESH)
         self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET], 0)
         self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_STATE_OFFSET], 0)
         self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET], 0)

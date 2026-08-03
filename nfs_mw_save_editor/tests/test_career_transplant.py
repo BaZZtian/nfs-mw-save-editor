@@ -310,12 +310,13 @@ def _set_u32(data: bytearray, off: int, value: int) -> None:
 
 
 def _fill_garage_record(data: bytearray, index: int, bounty: int) -> None:
-    """Write a signature-valid occupied garage record with the given bounty."""
+    """Write a live (Handle == index) garage record with the given bounty."""
 
     base = career_transplant.GARAGE_RECORDS_OFFSET + index * career_transplant.GARAGE_RECORD_SIZE
     data[base:base + career_transplant.GARAGE_RECORD_SIZE] = b"\x00" * career_transplant.GARAGE_RECORD_SIZE
-    data[base + 1:base + 4] = career_transplant.GARAGE_SIGNATURE_VARIANTS[0]
-    data[base + 8:base + 12] = career_transplant.GARAGE_SIGNATURE_B
+    data[base] = index
+    data[base + 1] = 0xCD
+    data[base + 0x0A:base + 0x0C] = b"\xCD\xCD"
     _set_u32(data, base + career_transplant.GARAGE_RECORD_BOUNTY_REL, bounty)
 
 

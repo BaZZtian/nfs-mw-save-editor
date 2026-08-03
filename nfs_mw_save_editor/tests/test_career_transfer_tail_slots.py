@@ -165,8 +165,9 @@ class PursuitSlotCanonicalizationTests(unittest.TestCase):
             abs_off = SaveFile.GARAGE_BASE_OFFSET + slot * SaveFile.GARAGE_SLOT_SIZE
             payload = bytearray(SaveFile.GARAGE_SLOT_SIZE)
             payload[0] = slot & 0xFF
-            payload[1:4] = SaveFile.GARAGE_SIGNATURE_A
-            payload[8:12] = SaveFile.GARAGE_SIGNATURE_B
+            payload[1] = 0xCD
+            payload[SaveFile.GARAGE_IMPOUND_MAX_BUSTED_OFFSET] = SaveFile.GARAGE_MAX_BUSTED_BASE
+            payload[0x0A:0x0C] = b"\xCD\xCD"
             SaveFile._write_pursuit_heat_into(payload, SaveFile.GARAGE_HEAT_BASELINE)
             sf.data[abs_off:abs_off + SaveFile.GARAGE_SLOT_SIZE] = payload
 
@@ -180,9 +181,11 @@ class PursuitSlotCanonicalizationTests(unittest.TestCase):
         repaired_heat = struct.unpack_from("<f", repaired, SaveFile.GARAGE_HEAT_FLOAT_OFFSET)[0]
 
         self.assertEqual(repaired[0], 1)
-        self.assertEqual(repaired[1:4], SaveFile.GARAGE_SIGNATURE_A)
-        self.assertEqual(repaired[8:12], SaveFile.GARAGE_SIGNATURE_B)
-        self.assertAlmostEqual(repaired_heat, SaveFile.GARAGE_HEAT_BASELINE)
+        self.assertEqual(repaired[1], 0xCD)
+        self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_MAX_BUSTED_OFFSET], SaveFile.GARAGE_MAX_BUSTED_BASE)
+        self.assertEqual(repaired[SaveFile.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET], 0)
+        self.assertEqual(repaired[0x0A:0x0C], b"\xCD\xCD")
+        self.assertAlmostEqual(repaired_heat, SaveFile.GARAGE_HEAT_NATIVE_FRESH)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import struct
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from core import career_transplant, snapshot_export, snapshot_injection, snapshot_library
+from core import career_transplant, garage_records, snapshot_export, snapshot_injection, snapshot_library
 from core.cars import resolve_car_name
 from core.checksums import ea_crc32
 from core.junkman import JunkmanInventory
@@ -60,13 +60,16 @@ class SaveFile:
     PROFILE_ALIAS_BUFFER_SIZE = 0x24
     PROFILE_ALIAS_DEFAULT_LEN = 7
     PROFILE_ALIAS_MAX_LEN = 16
-    GARAGE_BASE_OFFSET = 0xE2ED
-    GARAGE_SLOT_SIZE = 0x38
+    GARAGE_BASE_OFFSET = garage_records.GARAGE_RECORDS_OFFSET
+    GARAGE_SLOT_SIZE = garage_records.GARAGE_RECORD_SIZE
+    GARAGE_SLOT_COUNT = garage_records.GARAGE_RECORD_COUNT
+    GARAGE_EMPTY_HANDLE = garage_records.GARAGE_EMPTY_HANDLE
     # Garage slot = engine FECareerRecord. Persisted heat is ONLY the float at
     # +0x0C (native FECareerRecord::SetVehicleHeat writes a single float). The
     # bytes at +0x03..+0x07 belong to FEImpoundData and +0x18..+0x37 are the two
     # FEInfractionsData blocks; they correlate with heat in normal play but are
     # different fields and must never be written by the heat editor.
+    GARAGE_IMPOUND_MAX_BUSTED_OFFSET = 0x02
     GARAGE_IMPOUND_TIMES_BUSTED_OFFSET = 0x03
     GARAGE_IMPOUND_STATE_OFFSET = 0x04
     GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET = 0x05
@@ -81,13 +84,13 @@ class SaveFile:
     GARAGE_HEAT_BASELINE = 1.0
     GARAGE_HEAT_MIN = 1.0
     GARAGE_HEAT_MAX = 5.0
-    GARAGE_SIGNATURE_A = b"\xCD\x03\x00"
-    GARAGE_SIGNATURE_VARIANTS = (
-        b"\xCD\x03\x00",
-        b"\xCD\x04\x00",
-        b"\xCD\x05\x00",
-    )
-    GARAGE_SIGNATURE_B = b"\x00\x00\xCD\xCD"
+    # Native FECareerRecord::Default (0x56F750, build-specific) zeroes the
+    # heat float; the in-game x1 display comes from runtime clamping. Editor
+    # UI still clamps user input to GARAGE_HEAT_MIN..MAX.
+    GARAGE_HEAT_NATIVE_FRESH = 0.0
+    # Base impound-strike allowance; Add Impound Strike markers raise it to
+    # at most 5. Gameplay data, never a detection criterion.
+    GARAGE_MAX_BUSTED_BASE = 3
     CAREER_VEHICLE_BASE_OFFSET = 0x6219
     CAREER_VEHICLE_SIZE = 0x14
     CAREER_VEHICLE_SIGNATURE_OFFSET = 0x04
@@ -274,12 +277,13 @@ class SaveFile:
 
     @classmethod
     def _init_empty_pursuit_counters_into(cls, payload: bytearray) -> None:
-        # Explicit empty-record init for impound/infraction counters; MaxBusted
-        # (+0x02) keeps the template value.
+        # Explicit zero-record init for impound/infraction counters; MaxBusted
+        # (+0x02) is gameplay data owned by the caller. EvadeCount is a
+        # one-byte char (+0x07 is Pad1, not ours to write).
         payload[cls.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET] = 0
         payload[cls.GARAGE_IMPOUND_STATE_OFFSET] = 0
         payload[cls.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET] = 0
-        struct.pack_into("<H", payload, cls.GARAGE_IMPOUND_EVADE_COUNT_OFFSET, 0)
+        payload[cls.GARAGE_IMPOUND_EVADE_COUNT_OFFSET] = 0
         for block_off in (cls.GARAGE_UNSERVED_INFRACTIONS_OFFSET, cls.GARAGE_SERVED_INFRACTIONS_OFFSET):
             for counter in range(cls.GARAGE_INFRACTION_COUNTER_COUNT):
                 struct.pack_into("<H", payload, block_off + counter * 2, 0)
@@ -482,63 +486,35 @@ class SaveFile:
         return int(fallback.car_number)
 
     @classmethod
-    def _is_garage_slot(cls, raw: bytes) -> bool:
-        return (
-            len(raw) == cls.GARAGE_SLOT_SIZE
-            and raw[1:4] in cls.GARAGE_SIGNATURE_VARIANTS
-            and raw[8:12] == cls.GARAGE_SIGNATURE_B
-        )
+    def _is_empty_garage_slot(cls, raw: bytes) -> bool:
+        return garage_records.is_empty_garage_record(raw)
 
     @classmethod
-    def _is_blank_pursuit_tail_slot(cls, raw: bytes) -> bool:
-        return (
-            len(raw) == cls.GARAGE_SLOT_SIZE
-            and raw[:1] == b"\xFF"
-            and raw[1:24] == (b"\xCD" * 23)
-            and raw[24:] == (b"\x00" * (cls.GARAGE_SLOT_SIZE - 24))
-        )
-
-    @classmethod
-    def _is_native_empty_pursuit_slot(cls, raw: bytes) -> bool:
-        return (
-            len(raw) == cls.GARAGE_SLOT_SIZE
-            and cls._is_garage_slot(raw)
-            and raw[:1] == b"\xFF"
-        )
+    def _is_live_garage_slot(cls, raw: bytes, career_slot: int) -> bool:
+        return garage_records.is_live_garage_record(raw, career_slot)
 
     def _garage_slot_abs_off(self, career_slot: int) -> int:
         wanted = int(career_slot)
-        if wanted < 0:
-            raise ValueError("career_slot must be >= 0")
+        if not (0 <= wanted < self.GARAGE_SLOT_COUNT):
+            raise ValueError(f"career_slot must be in range 0..{self.GARAGE_SLOT_COUNT - 1}")
         abs_off = self.GARAGE_BASE_OFFSET + wanted * self.GARAGE_SLOT_SIZE
         if abs_off + self.GARAGE_SLOT_SIZE > len(self.data):
             raise ValueError(f"Career slot {wanted} points outside the file")
         return abs_off
 
     def _build_zero_pursuit_slot_payload(self, career_slot: int) -> bytes:
-        pursuits = self.get_pursuit_records()
-        if pursuits:
-            zero_template = next(
-                (
-                    record for record in reversed(pursuits)
-                    if (record.bounty, record.escaped, record.busted) == (0, 0, 0)
-                ),
-                pursuits[-1],
-            )
-            payload = bytearray(
-                self.data[zero_template.abs_off:zero_template.abs_off + self.GARAGE_SLOT_SIZE]
-            )
-        else:
-            payload = bytearray(self.GARAGE_SLOT_SIZE)
+        # Native fresh FECareerRecord, mirroring the inlined Default body of
+        # CreateNewCareerRecord: handle = slot, MaxBusted base, every counter
+        # and the heat float zero. Native leaves the alignment bytes
+        # +0x01/+0x0A..0B as prior memory; their corpus-universal value is CD
+        # and our own live-record pad gate requires it, so we write it.
+        payload = bytearray(self.GARAGE_SLOT_SIZE)
         payload[0] = int(career_slot) & 0xFF
-        if not pursuits:
-            payload[1:4] = self.GARAGE_SIGNATURE_A
-        payload[8:12] = self.GARAGE_SIGNATURE_B
-        self._write_pursuit_heat_into(payload, self.GARAGE_HEAT_BASELINE)
+        payload[1] = 0xCD
+        payload[self.GARAGE_IMPOUND_MAX_BUSTED_OFFSET] = self.GARAGE_MAX_BUSTED_BASE
+        payload[0x0A:0x0C] = b"\xCD\xCD"
+        struct.pack_into("<f", payload, self.GARAGE_HEAT_FLOAT_OFFSET, self.GARAGE_HEAT_NATIVE_FRESH)
         self._init_empty_pursuit_counters_into(payload)
-        payload[self.GARAGE_BOUNTY_OFFSET:self.GARAGE_BOUNTY_OFFSET + 4] = b"\x00" * 4
-        payload[self.GARAGE_ESCAPED_OFFSET:self.GARAGE_ESCAPED_OFFSET + 2] = b"\x00" * 2
-        payload[self.GARAGE_BUSTED_OFFSET:self.GARAGE_BUSTED_OFFSET + 2] = b"\x00" * 2
         return bytes(payload)
 
     def _ensure_pursuit_slot_initialized(self, career_slot: int) -> int:
@@ -548,24 +524,39 @@ class SaveFile:
                 return slot.abs_off
         abs_off = self._garage_slot_abs_off(wanted)
         raw = bytes(self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE])
-        if not self._is_blank_pursuit_tail_slot(raw):
-            raise ValueError(f"Pursuit slot {wanted} was not detected")
+        if not self._is_empty_garage_slot(raw):
+            raise ValueError(f"Pursuit slot {wanted} is neither live nor empty")
         self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE] = self._build_zero_pursuit_slot_payload(wanted)
         return abs_off
 
     def get_pursuit_records(self) -> List[PursuitRecord]:
-        slots: List[PursuitRecord] = []
-        slot_index = 0
-        base_off = self.GARAGE_BASE_OFFSET
+        """Walk the fixed 25-slot CareerRecords array; return live records only.
 
-        while base_off + self.GARAGE_SLOT_SIZE <= len(self.data):
-            raw = bytes(self.data[base_off:base_off + self.GARAGE_SLOT_SIZE])
-            if not self._is_garage_slot(raw):
+        Occupancy is decided by the Handle byte alone (0xFF = empty, slot
+        index = live); holes are legal and a zero-car garage is a valid [].
+        Anything else is unexplained data and fails closed.
+        """
+
+        slots: List[PursuitRecord] = []
+        for career_slot in range(self.GARAGE_SLOT_COUNT):
+            base_off = self.GARAGE_BASE_OFFSET + career_slot * self.GARAGE_SLOT_SIZE
+            if base_off + self.GARAGE_SLOT_SIZE > len(self.data):
                 break
+            raw = bytes(self.data[base_off:base_off + self.GARAGE_SLOT_SIZE])
+            if self._is_empty_garage_slot(raw):
+                continue
+            if not self._is_live_garage_slot(raw, career_slot):
+                if raw[0] != career_slot:
+                    raise ValueError(
+                        f"Garage record {career_slot} has unexpected handle 0x{raw[0]:02X}"
+                    )
+                raise ValueError(
+                    f"Garage record {career_slot} fails the canonical pad-byte gate"
+                )
             heat, heat_level = self._read_pursuit_heat_fields(base_off)
             slots.append(
                 PursuitRecord(
-                    career_slot=slot_index,
+                    career_slot=career_slot,
                     heat=heat,
                     heat_level=heat_level,
                     bounty=self._read_u32(base_off + self.GARAGE_BOUNTY_OFFSET),
@@ -574,11 +565,6 @@ class SaveFile:
                     abs_off=base_off,
                 )
             )
-            base_off += self.GARAGE_SLOT_SIZE
-            slot_index += 1
-
-        if not slots:
-            raise ValueError("Failed to detect garage block")
         return slots
 
     def get_owned_car_records(self) -> List[OwnedCarRecord]:
@@ -929,44 +915,75 @@ class SaveFile:
             linked_counts[slot] = linked_counts.get(slot, 0) + 1
 
         statuses: List[CareerSlotStatus] = []
-        for record in self.get_pursuit_records():
-            linked = linked_counts.get(record.career_slot, 0)
-            raw = bytes(self.data[record.abs_off:record.abs_off + self.GARAGE_SLOT_SIZE])
-            native_empty = linked == 0 and self._is_native_empty_pursuit_slot(raw)
-            if record.career_slot in staged_cleared_slots:
+        pursuits_by_slot = {record.career_slot: record for record in self.get_pursuit_records()}
+        for career_slot in range(self.GARAGE_SLOT_COUNT):
+            try:
+                abs_off = self._garage_slot_abs_off(career_slot)
+            except ValueError:
+                break
+            linked = linked_counts.get(career_slot, 0)
+            record = pursuits_by_slot.get(career_slot)
+            blocked_reason = None
+            status_detail: Optional[str] = None
+            if record is None:
+                # Empty slot (Handle 0xFF): any stale payload is invisible to
+                # the game, so the slot is freely reusable when unlinked.
+                reusable = linked == 0
+                status_kind = "reusable" if reusable else "occupied"
+                status_code = "reusable" if reusable else "occupied"
+                if career_slot in reserved_career_slots and reusable:
+                    reusable = False
+                    blocked_reason = "Reserved by staged injector"
+                    status_kind = "reserved"
+                    status_code = "reserved_by_staged_injector"
+                    status_detail = blocked_reason
+                elif linked > 1:
+                    blocked_reason = f"Ambiguous: {linked} cars target this career slot"
+                    status_kind = "blocked"
+                    status_code = "ambiguous_career_target"
+                    status_detail = blocked_reason
+                elif linked == 1:
+                    blocked_reason = "Already targeted by a staged Career car"
+                    status_kind = "reserved"
+                    status_code = "reserved_by_staged_career_target"
+                    status_detail = blocked_reason
                 bounty = 0
                 escaped = 0
                 busted = 0
+                is_zero = True
             else:
-                bounty = record.bounty
-                escaped = record.escaped
-                busted = record.busted
-            is_zero = (bounty, escaped, busted) == (0, 0, 0)
-            reusable = linked == 0 and (native_empty or is_zero)
-            blocked_reason = None
-            status_kind = "occupied" if linked == 1 else ("reusable" if reusable else "blocked")
-            status_code = "occupied" if linked == 1 else ("reusable" if reusable else "unlinked_pursuit")
-            status_detail: Optional[str] = None
-            if record.career_slot in reserved_career_slots and reusable:
-                reusable = False
-                blocked_reason = "Reserved by staged injector"
-                status_kind = "reserved"
-                status_code = "reserved_by_staged_injector"
-                status_detail = blocked_reason
-            elif linked == 0 and not (native_empty or is_zero):
-                blocked_reason = "Unlinked pursuit stats present"
-                status_kind = "blocked"
-                status_code = "unlinked_pursuit"
-                status_detail = blocked_reason
-            elif linked > 1:
-                blocked_reason = f"Ambiguous: {linked} cars target this career slot"
-                status_kind = "blocked"
-                status_code = "ambiguous_career_target"
-                status_detail = blocked_reason
+                if career_slot in staged_cleared_slots:
+                    bounty = 0
+                    escaped = 0
+                    busted = 0
+                else:
+                    bounty = record.bounty
+                    escaped = record.escaped
+                    busted = record.busted
+                is_zero = (bounty, escaped, busted) == (0, 0, 0)
+                reusable = linked == 0 and is_zero
+                status_kind = "occupied" if linked == 1 else ("reusable" if reusable else "blocked")
+                status_code = "occupied" if linked == 1 else ("reusable" if reusable else "unlinked_pursuit")
+                if career_slot in reserved_career_slots and reusable:
+                    reusable = False
+                    blocked_reason = "Reserved by staged injector"
+                    status_kind = "reserved"
+                    status_code = "reserved_by_staged_injector"
+                    status_detail = blocked_reason
+                elif linked == 0 and not is_zero:
+                    blocked_reason = "Unlinked pursuit stats present"
+                    status_kind = "blocked"
+                    status_code = "unlinked_pursuit"
+                    status_detail = blocked_reason
+                elif linked > 1:
+                    blocked_reason = f"Ambiguous: {linked} cars target this career slot"
+                    status_kind = "blocked"
+                    status_code = "ambiguous_career_target"
+                    status_detail = blocked_reason
             statuses.append(
                 CareerSlotStatus(
-                    career_slot=record.career_slot,
-                    abs_off=record.abs_off,
+                    career_slot=career_slot,
+                    abs_off=abs_off,
                     linked_car_count=linked,
                     reusable=reusable,
                     blocked_reason=blocked_reason,
@@ -979,54 +996,6 @@ class SaveFile:
                     is_zero=is_zero,
                 )
             )
-        next_slot = len(statuses)
-        while True:
-            try:
-                abs_off = self._garage_slot_abs_off(next_slot)
-            except ValueError:
-                break
-            raw = bytes(self.data[abs_off:abs_off + self.GARAGE_SLOT_SIZE])
-            if not self._is_blank_pursuit_tail_slot(raw):
-                break
-            linked = linked_counts.get(next_slot, 0)
-            reusable = linked == 0
-            blocked_reason = None
-            status_kind = "reusable" if reusable else "occupied"
-            status_code = "reusable" if reusable else "occupied"
-            status_detail: Optional[str] = None
-            if next_slot in reserved_career_slots and reusable:
-                reusable = False
-                blocked_reason = "Reserved by staged injector"
-                status_kind = "reserved"
-                status_code = "reserved_by_staged_injector"
-                status_detail = blocked_reason
-            elif linked > 1:
-                blocked_reason = f"Ambiguous: {linked} cars target this career slot"
-                status_kind = "blocked"
-                status_code = "ambiguous_career_target"
-                status_detail = blocked_reason
-            elif linked == 1:
-                blocked_reason = "Already targeted by a staged Career car"
-                status_kind = "reserved"
-                status_code = "reserved_by_staged_career_target"
-                status_detail = blocked_reason
-            statuses.append(
-                CareerSlotStatus(
-                    career_slot=next_slot,
-                    abs_off=abs_off,
-                    linked_car_count=linked,
-                    reusable=reusable,
-                    blocked_reason=blocked_reason,
-                    status_kind=status_kind,
-                    status_code=status_code,
-                    status_detail=status_detail,
-                    bounty=0,
-                    escaped=0,
-                    busted=0,
-                    is_zero=True,
-                )
-            )
-            next_slot += 1
         return statuses
 
     def get_garage_allocator_snapshot(
@@ -1075,8 +1044,8 @@ class SaveFile:
             if pursuit is not None and career_slot in staged_cleared_slots:
                 pursuit = PursuitRecord(
                     career_slot=pursuit.career_slot,
-                    heat=self.GARAGE_HEAT_BASELINE,
-                    heat_level=self._heat_level_from_value(self.GARAGE_HEAT_BASELINE),
+                    heat=self.GARAGE_HEAT_NATIVE_FRESH,
+                    heat_level=self._heat_level_from_value(self.GARAGE_HEAT_MIN),
                     bounty=0,
                     escaped=0,
                     busted=0,

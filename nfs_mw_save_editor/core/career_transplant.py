@@ -34,6 +34,12 @@ from __future__ import annotations
 import hashlib
 from typing import Optional, Protocol, Tuple
 
+from core.garage_records import (
+    GARAGE_RECORD_COUNT,
+    GARAGE_RECORD_SIZE,
+    GARAGE_RECORDS_OFFSET,
+    is_live_garage_record,
+)
 from core.models import CareerTransplantPlan, OwnedCarRecord
 
 EXPECTED_SAVE_SIZE = 0xF86C
@@ -56,15 +62,10 @@ RACE_DONE_MASK = 0x0A
 
 # Rap-sheet total bounty aggregates per-car garage records plus the
 # sold-cars history (engine: FEPlayerCarDB::GetTotalBounty over
-# FECareerRecord[25].Bounty and SoldHistoryBounty). Empty garage slots hold
-# sentinel garbage, not zeros — only records matching the garage-slot
-# signature (same shape SaveFile._is_garage_slot checks) are summed.
-GARAGE_RECORDS_OFFSET = 0xE2ED
-GARAGE_RECORD_SIZE = 0x38
-GARAGE_RECORD_COUNT = 25
+# FECareerRecord[25].Bounty and SoldHistoryBounty). Empty garage slots may
+# hold stale sold-car payloads, not zeros — only live records (Handle == slot
+# index, shared occupancy rule in core.garage_records) are summed.
 GARAGE_RECORD_BOUNTY_REL = 0x10
-GARAGE_SIGNATURE_VARIANTS = (b"\xCD\x03\x00", b"\xCD\x04\x00", b"\xCD\x05\x00")
-GARAGE_SIGNATURE_B = b"\x00\x00\xCD\xCD"
 SOLD_HISTORY_BOUNTY_OFFSET = 0xE865
 U32_MAX = 0xFFFFFFFF
 
@@ -134,19 +135,11 @@ def count_completed_races(data: bytes) -> Optional[int]:
     return done
 
 
-def _is_garage_record(raw: bytes) -> bool:
-    return (
-        len(raw) == GARAGE_RECORD_SIZE
-        and raw[1:4] in GARAGE_SIGNATURE_VARIANTS
-        and raw[8:12] == GARAGE_SIGNATURE_B
-    )
-
-
 def total_rap_sheet_bounty(data: bytes) -> Optional[int]:
-    """Sum occupied garage-record bounties plus sold-history bounty.
+    """Sum live garage-record bounties plus sold-history bounty.
 
-    Returns None when the buffer is not a save. Empty garage slots (sentinel
-    garbage) are skipped via the signature check.
+    Returns None when the buffer is not a save. Empty garage slots (stale
+    payloads) are skipped via the Handle-based occupancy rule.
     """
 
     if len(data) != EXPECTED_SAVE_SIZE:
@@ -157,7 +150,7 @@ def total_rap_sheet_bounty(data: bytes) -> Optional[int]:
     for k in range(GARAGE_RECORD_COUNT):
         base = GARAGE_RECORDS_OFFSET + k * GARAGE_RECORD_SIZE
         raw = bytes(data[base:base + GARAGE_RECORD_SIZE])
-        if not _is_garage_record(raw):
+        if not is_live_garage_record(raw, k):
             continue
         total += int.from_bytes(
             raw[GARAGE_RECORD_BOUNTY_REL:GARAGE_RECORD_BOUNTY_REL + 4], "little"

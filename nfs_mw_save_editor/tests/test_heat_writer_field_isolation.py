@@ -19,14 +19,20 @@ def _savefile_with_pursuit_record(record: bytearray) -> SaveFile:
     sf.data = bytearray(SaveFile.GARAGE_BASE_OFFSET + SaveFile.GARAGE_SLOT_SIZE * 2)
     sf.data[SaveFile.PLAYER_RANK_OFFSET] = 1
     sf.data[SaveFile.GARAGE_BASE_OFFSET:SaveFile.GARAGE_BASE_OFFSET + SaveFile.GARAGE_SLOT_SIZE] = record
+    sf.data[SaveFile.GARAGE_BASE_OFFSET + SaveFile.GARAGE_SLOT_SIZE] = SaveFile.GARAGE_EMPTY_HANDLE
     return sf
 
 
 def _sentinel_record() -> bytearray:
+    # Live record for slot 0: handle + canonical pad bytes; every gameplay
+    # byte (including MaxBusted/TimesBusted) stays sentinel to prove the
+    # writer leaves them alone.
     record = bytearray([SENTINEL] * SaveFile.GARAGE_SLOT_SIZE)
     record[0] = 0
-    record[1:4] = SaveFile.GARAGE_SIGNATURE_A
-    record[8:12] = SaveFile.GARAGE_SIGNATURE_B
+    record[1] = 0xCD
+    record[7] = 0x00
+    record[8:10] = b"\x00\x00"
+    record[10:12] = b"\xCD\xCD"
     return record
 
 
@@ -44,13 +50,12 @@ class HeatWriterFieldIsolationTests(unittest.TestCase):
         self.assertAlmostEqual(struct.unpack_from("<f", after, heat_start)[0], 3.0)
 
     def test_set_slot_heat_preserves_impound_and_infraction_counters(self) -> None:
-        # MaxBusted/TimesBusted (+0x02/+0x03) double as the slot-detection
-        # signature bytes, so only detectable values are exercised here.
         record = _sentinel_record()
-        record[1:4] = b"\xCD\x05\x00"  # MaxBusted=5, TimesBusted=0
+        record[SaveFile.GARAGE_IMPOUND_MAX_BUSTED_OFFSET] = 5
+        record[SaveFile.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET] = 3
         record[SaveFile.GARAGE_IMPOUND_STATE_OFFSET] = 1
         record[SaveFile.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET] = 4
-        struct.pack_into("<H", record, SaveFile.GARAGE_IMPOUND_EVADE_COUNT_OFFSET, 7)
+        record[SaveFile.GARAGE_IMPOUND_EVADE_COUNT_OFFSET] = 7
         struct.pack_into("<f", record, SaveFile.GARAGE_HEAT_FLOAT_OFFSET, 2.0)
         infraction_offsets = [
             block_off + counter * 2
@@ -64,11 +69,11 @@ class HeatWriterFieldIsolationTests(unittest.TestCase):
         sf.set_slot_heat(0, 5.0)
 
         base = SaveFile.GARAGE_BASE_OFFSET
-        self.assertEqual(sf.data[base + 0x02], 5)
-        self.assertEqual(sf.data[base + SaveFile.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET], 0)
+        self.assertEqual(sf.data[base + SaveFile.GARAGE_IMPOUND_MAX_BUSTED_OFFSET], 5)
+        self.assertEqual(sf.data[base + SaveFile.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET], 3)
         self.assertEqual(sf.data[base + SaveFile.GARAGE_IMPOUND_STATE_OFFSET], 1)
         self.assertEqual(sf.data[base + SaveFile.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET], 4)
-        self.assertEqual(struct.unpack_from("<H", sf.data, base + SaveFile.GARAGE_IMPOUND_EVADE_COUNT_OFFSET)[0], 7)
+        self.assertEqual(sf.data[base + SaveFile.GARAGE_IMPOUND_EVADE_COUNT_OFFSET], 7)
         for index, rel_off in enumerate(infraction_offsets):
             self.assertEqual(struct.unpack_from("<H", sf.data, base + rel_off)[0], 100 + index)
         record = sf.get_pursuit_records()[0]
