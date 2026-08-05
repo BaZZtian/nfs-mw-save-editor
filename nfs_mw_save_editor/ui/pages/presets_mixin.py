@@ -432,6 +432,8 @@ class PresetsMixin:
             )
             if vm.staged_plan is not None and vm.staged_plan.refusal_reason is None:
                 target_bits: List[str] = []
+                if vm.staged_plan.target_car_number is not None:
+                    target_bits.append(f"Car #{vm.staged_plan.target_car_number}")
                 if vm.staged_plan.target_parts_slot is not None:
                     target_bits.append(f"Parts Slot {vm.staged_plan.target_parts_slot}")
                 if vm.staged_plan.target_career_slot is not None:

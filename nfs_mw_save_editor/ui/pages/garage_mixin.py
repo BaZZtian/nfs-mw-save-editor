@@ -495,7 +495,48 @@ class GarageMixin:
         for title, lines in groups:
             if lines:
                 sections.append((title, lines))
+        numbering = self._car_numbering_diagnostic_lines()
+        if numbering:
+            sections.append(("Car numbering", numbering))
         return sections
+
+    def _car_numbering_diagnostic_lines(self) -> List[str]:
+        """Report rows that break the native rule car number = 81 + registry row.
+
+        Only hand-numbered saves have anything to show: the game numbers by
+        position, so a mismatch means an editor wrote that row. Read-only - a
+        native purchase can later collide with such a number, which is worth
+        knowing before injecting, but repairing it stays the user's call.
+        """
+
+        if self.savefile is None:
+            return []
+        audit = self.savefile.audit_car_number_registry()
+        if audit.is_native:
+            return []
+        lines = [
+            f"Registry rows: {audit.row_count} (native {audit.expected_row_count}) - "
+            f"{len(audit.live_rows)} live, {len(audit.tombstone_rows)} sold, "
+            f"{len(audit.empty_rows)} never used"
+        ]
+        base = self.savefile.CAR_NUMBER_SLOT_BASE
+        shown = audit.drifted_rows[:8]
+        lines.extend(
+            f"Row {row} - car #{car_number}, the game would number it #{base + row}"
+            for row, car_number in shown
+        )
+        if len(audit.drifted_rows) > len(shown):
+            lines.append(f"... and {len(audit.drifted_rows) - len(shown)} more hand-numbered row(s)")
+        if audit.duplicate_numbers:
+            lines.append(
+                "Duplicate car numbers (the game shows the first match): "
+                + ", ".join(f"#{number}" for number in audit.duplicate_numbers)
+            )
+        lines.extend(
+            f"Row {row} - car #{car_number} is outside the native range"
+            for row, car_number in audit.out_of_range_rows[:4]
+        )
+        return lines
 
     def _detect_garage_slot_columns(self) -> int:
         return self._detect_col_count("garage_cards_scroll", 300, ((1420, 3), (860, 2)))

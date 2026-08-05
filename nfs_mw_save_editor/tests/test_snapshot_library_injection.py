@@ -13,7 +13,6 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 from core.models import (
     CareerSlotStatus,
     FullCarBuildSnapshot,
-    OwnedCarRecord,
     OwnedCarSlotStatus,
     OwnedCarTemplate,
     PartsSlotStatus,
@@ -150,12 +149,20 @@ def _make_snapshot(
     )
 
 
-def _owned_slot(slot_index: int, *, reusable: bool = True, abs_off: int | None = None) -> OwnedCarSlotStatus:
+def _owned_slot(
+    slot_index: int,
+    *,
+    reusable: bool = True,
+    abs_off: int | None = None,
+    car_number: int | None = None,
+) -> OwnedCarSlotStatus:
     slot_abs_off = (
         SaveFile.CAREER_VEHICLE_BASE_OFFSET + slot_index * SaveFile.CAREER_VEHICLE_SIZE
         if abs_off is None
         else int(abs_off)
     )
+    if car_number is None:
+        car_number = SaveFile.EMPTY_CAR_NUMBER if reusable else slot_index + 1
     return OwnedCarSlotStatus(
         slot_index=slot_index,
         abs_off=slot_abs_off,
@@ -165,7 +172,7 @@ def _owned_slot(slot_index: int, *, reusable: bool = True, abs_off: int | None =
         status_kind="reusable" if reusable else "occupied",
         status_code="reusable" if reusable else "occupied",
         status_detail=None,
-        car_number=SaveFile.EMPTY_CAR_NUMBER if reusable else slot_index + 1,
+        car_number=car_number,
         location_bits=0,
         misc_bits=0,
         parts_slot=SaveFile.EMPTY_CAREER_SLOT,
@@ -207,18 +214,6 @@ def _career_slot(career_slot: int, *, reusable: bool = True) -> CareerSlotStatus
         escaped=0,
         busted=0,
         is_zero=True,
-    )
-
-
-def _existing_record(car_number: int = 7) -> OwnedCarRecord:
-    return OwnedCarRecord(
-        car_number=car_number,
-        signature=b"\x01" * 8,
-        location_bits=SaveFile.MY_CARS_FLAG,
-        misc_bits=0,
-        parts_slot=40,
-        career_slot=SaveFile.EMPTY_CAREER_SLOT,
-        abs_off=SaveFile.CAREER_VEHICLE_BASE_OFFSET + 0x200,
     )
 
 
@@ -703,7 +698,6 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         owned_abs = SaveFile.CAREER_VEHICLE_BASE_OFFSET
         sidecar_owned_abs = owned_abs + SaveFile.CAREER_VEHICLE_SIZE
 
-        sf.get_owned_car_records = lambda: [_existing_record(car_number=7)]
         sf.get_owned_car_slot_statuses = lambda **kwargs: [
             _owned_slot(0, reusable=True, abs_off=owned_abs),
             _owned_slot(1, reusable=True, abs_off=sidecar_owned_abs),
@@ -728,7 +722,9 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         primary_record = _read_owned_record(bytes(sf.data[owned_abs:owned_abs + SaveFile.CAREER_VEHICLE_SIZE]))
         sidecar_record = _read_owned_record(bytes(sf.data[sidecar_owned_abs:sidecar_owned_abs + SaveFile.CAREER_VEHICLE_SIZE]))
 
-        self.assertEqual(primary_record["car_number"], 8)
+        # Registry row 0 -> the native number for that row, never max+1.
+        self.assertEqual(primary_record["car_number"], SaveFile.CAR_NUMBER_SLOT_BASE)
+        self.assertEqual(plan.target_car_number, SaveFile.CAR_NUMBER_SLOT_BASE)
         self.assertEqual(primary_record["signature"], signature)
         self.assertEqual(primary_record["location_bits"], SaveFile.MY_CARS_FLAG)
         self.assertEqual(primary_record["misc_bits"], 9)
@@ -770,7 +766,6 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         struct.pack_into("<H", dirty_pursuit, SaveFile.GARAGE_BUSTED_OFFSET, 8)
         sf.data[pursuit_abs:pursuit_abs + SaveFile.GARAGE_SLOT_SIZE] = dirty_pursuit
 
-        sf.get_owned_car_records = lambda: [_existing_record(car_number=41)]
         sf.get_owned_car_slot_statuses = lambda **kwargs: [_owned_slot(0, reusable=True, abs_off=owned_abs)]
         sf.get_parts_slot_statuses = lambda **kwargs: [_parts_slot(31, reusable=True)]
         sf.get_career_slot_statuses = lambda **kwargs: [_career_slot(0, reusable=True)]
@@ -782,7 +777,7 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         self.assertIsNone(plan.refusal_reason)
         self.assertEqual(plan.target_career_slot, 0)
         record = _read_owned_record(bytes(sf.data[owned_abs:owned_abs + SaveFile.CAREER_VEHICLE_SIZE]))
-        self.assertEqual(record["car_number"], 42)
+        self.assertEqual(record["car_number"], SaveFile.CAR_NUMBER_SLOT_BASE)
         self.assertEqual(record["signature"], signature)
         self.assertEqual(record["location_bits"], SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG)
         self.assertEqual(record["parts_slot"], 31)
@@ -818,6 +813,160 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
 
         self.assertEqual(str(caught.exception), "No validated empty owned-car slots available")
         self.assertEqual(bytes(sf.data), original)
+
+    def test_injection_writes_only_its_own_row_and_parts_block(self) -> None:
+        # 0x0A57 / 0x41FF / 0xF29A all looked like allocator state while car
+        # numbering was being reverse-engineered, and none of them is.
+        # Nothing outside the planned targets may move.
+        sf = _new_savefile_buffer()
+        sf.data.extend(b"\xEE" * (0x10000 - len(sf.data)))
+        before = bytes(sf.data)
+        owned_abs = SaveFile.CAREER_VEHICLE_BASE_OFFSET
+        sf.get_owned_car_slot_statuses = lambda **kwargs: [_owned_slot(0, reusable=True, abs_off=owned_abs)]
+        sf.get_parts_slot_statuses = lambda **kwargs: [_parts_slot(31, reusable=True)]
+
+        sf.inject_snapshot(_make_snapshot(), "my_cars")
+
+        parts_abs = _parts_abs_off(31)
+        allowed = set(range(owned_abs, owned_abs + SaveFile.CAREER_VEHICLE_SIZE))
+        allowed |= set(range(parts_abs, parts_abs + SaveFile.PARTS_BLOCK_SIZE))
+        changed = {off for off, (old, new) in enumerate(zip(before, sf.data)) if old != new}
+        self.assertTrue(changed)
+        self.assertEqual(changed - allowed, set())
+        for off in (0x0A57, 0x41FF, 0xF29A):
+            self.assertEqual(sf.data[off], before[off])
+
+
+class NativeCarNumberAllocatorTests(unittest.TestCase):
+    """car_number = 81 + physical registry row (native rule, 486 saves)."""
+
+    def _planning_save(self, owned_slots: list[OwnedCarSlotStatus]) -> SaveFile:
+        sf = object.__new__(SaveFile)
+        sf.get_owned_car_slot_statuses = lambda **kwargs: owned_slots
+        sf.get_parts_slot_statuses = lambda **kwargs: [_parts_slot(31, reusable=True)]
+        return sf
+
+    def test_number_comes_from_the_row_even_when_live_numbers_are_higher(self) -> None:
+        sf = self._planning_save([
+            _owned_slot(0, reusable=False, car_number=199),
+            _owned_slot(1, reusable=True),
+        ])
+
+        plan = sf.plan_snapshot_injection(_make_snapshot(), "my_cars")
+
+        self.assertIsNone(plan.refusal_reason)
+        self.assertEqual(plan.target_car_number, 82)
+        self.assertEqual(plan.warnings, ())
+
+    def test_tombstone_row_is_reused_with_its_own_number(self) -> None:
+        sf = self._planning_save([
+            _owned_slot(0, reusable=False, car_number=81),
+            _owned_slot(1, reusable=True),  # sold car: native tombstone
+            _owned_slot(2, reusable=False, car_number=83),
+        ])
+
+        plan = sf.plan_snapshot_injection(_make_snapshot(), "my_cars")
+
+        self.assertEqual(plan.target_car_number, 82)
+        self.assertEqual(
+            plan.target_owned_abs_off,
+            SaveFile.CAREER_VEHICLE_BASE_OFFSET + SaveFile.CAREER_VEHICLE_SIZE,
+        )
+
+    def test_row_whose_number_a_drifted_record_stole_is_skipped(self) -> None:
+        # Drifted save: a hand-numbered record sits on another row's number.
+        sf = self._planning_save([
+            _owned_slot(0, reusable=False, car_number=82),
+            _owned_slot(1, reusable=True),
+            _owned_slot(2, reusable=True),
+        ])
+
+        plan = sf.plan_snapshot_injection(_make_snapshot(), "my_cars")
+
+        self.assertEqual(plan.target_car_number, 83)
+        self.assertEqual(
+            plan.target_owned_abs_off,
+            SaveFile.CAREER_VEHICLE_BASE_OFFSET + 2 * SaveFile.CAREER_VEHICLE_SIZE,
+        )
+        self.assertEqual(plan.warnings, ())
+
+    def test_unavoidable_collision_is_refused_never_written(self) -> None:
+        # A duplicate number makes one of the two cars unreachable in game,
+        # so there is no "warn and write anyway" here.
+        sf = _new_savefile_buffer()
+        original = bytes(sf.data)
+        sf.get_owned_car_slot_statuses = lambda **kwargs: [
+            _owned_slot(0, reusable=False, car_number=82),
+            _owned_slot(1, reusable=True),
+        ]
+        sf.get_parts_slot_statuses = lambda **kwargs: [_parts_slot(31, reusable=True)]
+        snapshot = _make_snapshot()
+
+        plan = sf.plan_snapshot_injection(snapshot, "my_cars")
+
+        self.assertEqual(
+            plan.refusal_reason,
+            "Car number 82 belongs to owned-car row 1 but a live record already uses it - "
+            "free that number or repair the save",
+        )
+        self.assertIsNone(plan.target_car_number)
+        self.assertEqual(plan.warnings, ())
+        with self.assertRaises(ValueError):
+            sf.inject_snapshot(snapshot, "my_cars")
+        self.assertEqual(bytes(sf.data), original)
+
+    def test_row_outside_the_native_registry_is_refused(self) -> None:
+        sf = self._planning_save([_owned_slot(SaveFile.CAREER_VEHICLE_SLOT_COUNT, reusable=True)])
+
+        plan = sf.plan_snapshot_injection(_make_snapshot(), "my_cars")
+
+        self.assertEqual(plan.refusal_reason, "No empty owned-car row inside the native car registry")
+        self.assertIsNone(plan.target_car_number)
+
+    def test_sidecar_pair_numbers_the_primary_row_and_tombstones_the_sidecar(self) -> None:
+        sf = _new_savefile_buffer()
+        snapshot = _make_snapshot(sidecar_offset=1)
+        owned_abs = SaveFile.CAREER_VEHICLE_BASE_OFFSET + 4 * SaveFile.CAREER_VEHICLE_SIZE
+        sf.get_owned_car_slot_statuses = lambda **kwargs: [
+            _owned_slot(3, reusable=False, car_number=84),
+            _owned_slot(4, reusable=True),
+            _owned_slot(5, reusable=True),
+        ]
+        sf.get_parts_slot_statuses = lambda **kwargs: [
+            _parts_slot(31, reusable=True),
+            _parts_slot(32, reusable=True),
+        ]
+
+        plan = sf.inject_snapshot(snapshot, "my_cars")
+
+        self.assertEqual(plan.target_car_number, 85)
+        primary = _read_owned_record(bytes(sf.data[owned_abs:owned_abs + SaveFile.CAREER_VEHICLE_SIZE]))
+        sidecar_abs = owned_abs + SaveFile.CAREER_VEHICLE_SIZE
+        sidecar = _read_owned_record(bytes(sf.data[sidecar_abs:sidecar_abs + SaveFile.CAREER_VEHICLE_SIZE]))
+        self.assertEqual(primary["car_number"], 85)
+        self.assertEqual(sidecar["car_number"], SaveFile.EMPTY_CAR_NUMBER)
+
+    def test_staged_injections_take_distinct_numbers_from_distinct_rows(self) -> None:
+        slots = [
+            _owned_slot(0, reusable=False, car_number=81),
+            _owned_slot(1, reusable=True),
+            _owned_slot(2, reusable=True),
+        ]
+        sf = object.__new__(SaveFile)
+        sf.get_owned_car_slot_statuses = lambda *, reserved_abs_offs=None, **kwargs: [
+            slot for slot in slots if slot.abs_off not in (reserved_abs_offs or set())
+        ]
+        sf.get_parts_slot_statuses = lambda **kwargs: [_parts_slot(31, reusable=True)]
+        snapshot = _make_snapshot()
+
+        first = sf.plan_snapshot_injection(snapshot, "my_cars")
+        second = sf.plan_snapshot_injection(
+            snapshot,
+            "my_cars",
+            reserved_owned_abs_offs={first.target_owned_abs_off},
+        )
+
+        self.assertEqual((first.target_car_number, second.target_car_number), (82, 83))
 
 
 if __name__ == "__main__":

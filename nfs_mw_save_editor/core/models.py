@@ -211,6 +211,40 @@ class OwnedCarSlotStatus:
 
 
 @dataclass(frozen=True)
+class CarNumberRegistryAudit:
+    """Read-only verdict on the car registry against the native numbering rule.
+
+    The game numbers a car by its physical registry row (81 + row), so a row
+    whose number says otherwise was written by hand - by an old editor, or by
+    us before this rule was known. The audit reports; repairing is the user's
+    call, never a silent fix.
+    """
+
+    row_count: int
+    expected_row_count: int
+    live_rows: Tuple[int, ...]
+    tombstone_rows: Tuple[int, ...]
+    empty_rows: Tuple[int, ...]
+    # (row, number actually stored there) for rows that break the rule.
+    drifted_rows: Tuple[Tuple[int, int], ...]
+    out_of_range_rows: Tuple[Tuple[int, int], ...]
+    duplicate_numbers: Tuple[int, ...]
+
+    @property
+    def prefix_intact(self) -> bool:
+        return self.row_count == self.expected_row_count
+
+    @property
+    def is_native(self) -> bool:
+        return (
+            self.prefix_intact
+            and not self.drifted_rows
+            and not self.out_of_range_rows
+            and not self.duplicate_numbers
+        )
+
+
+@dataclass(frozen=True)
 class CareerSlotStatus:
     career_slot: int
     abs_off: int
@@ -412,6 +446,9 @@ class SnapshotInjectionPlan:
     target_career_slot: Optional[int]
     refusal_reason: Optional[str]
     warnings: Tuple[str, ...]
+    # Native car number for the chosen registry row (81 + row); None when the
+    # plan refuses. The game numbers cars by physical row, never by a counter.
+    target_car_number: Optional[int] = None
     target_sidecar_owned_abs_off: Optional[int] = None
     target_sidecar_parts_slot: Optional[int] = None
 

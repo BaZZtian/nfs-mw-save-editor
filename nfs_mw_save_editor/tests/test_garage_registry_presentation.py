@@ -7,6 +7,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from core.models import (
+    CarNumberRegistryAudit,
     CareerSlotStatus,
     GarageAllocatorSnapshot,
     OwnedCarSlotStatus,
@@ -129,6 +130,49 @@ class InjectionCapacityBadgeTests(unittest.TestCase):
         self.assertEqual(text, "Injection capacity: 3")
         self.assertIn("Free customization blocks: 3 of 44", tooltip)
         self.assertIn("Free owned-car rows: 7", tooltip)
+
+
+class CarNumberingDiagnosticsTests(unittest.TestCase):
+    """Diagnostics stay quiet on native saves and name the rows on drifted ones."""
+
+    def _mixin_with_audit(self, audit) -> GarageMixin:
+        mixin = GarageMixin()
+        sf = object.__new__(SaveFile)
+        sf.audit_car_number_registry = lambda: audit
+        mixin.savefile = sf
+        return mixin
+
+    def test_native_save_reports_nothing(self) -> None:
+        audit = CarNumberRegistryAudit(
+            row_count=SaveFile.CAREER_VEHICLE_SLOT_COUNT,
+            expected_row_count=SaveFile.CAREER_VEHICLE_SLOT_COUNT,
+            live_rows=(0, 1),
+            tombstone_rows=(),
+            empty_rows=tuple(range(2, SaveFile.CAREER_VEHICLE_SLOT_COUNT)),
+            drifted_rows=(),
+            out_of_range_rows=(),
+            duplicate_numbers=(),
+        )
+
+        self.assertEqual(self._mixin_with_audit(audit)._car_numbering_diagnostic_lines(), [])
+
+    def test_drift_and_duplicates_are_named(self) -> None:
+        audit = CarNumberRegistryAudit(
+            row_count=SaveFile.CAREER_VEHICLE_SLOT_COUNT,
+            expected_row_count=SaveFile.CAREER_VEHICLE_SLOT_COUNT,
+            live_rows=(0, 29),
+            tombstone_rows=(3,),
+            empty_rows=(4,),
+            drifted_rows=((29, 150),),
+            out_of_range_rows=(),
+            duplicate_numbers=(111,),
+        )
+
+        lines = self._mixin_with_audit(audit)._car_numbering_diagnostic_lines()
+
+        self.assertIn("2 live, 1 sold", lines[0])
+        self.assertIn("Row 29 - car #150, the game would number it #110", lines[1])
+        self.assertTrue(any("#111" in line for line in lines))
 
 
 class PinkSlipProvenanceTests(unittest.TestCase):

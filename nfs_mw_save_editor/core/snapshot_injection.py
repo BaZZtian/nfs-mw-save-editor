@@ -23,6 +23,9 @@ from core.models import (
 )
 
 
+_NO_NATIVE_ROW_REFUSAL = "No empty owned-car row inside the native car registry"
+
+
 class SnapshotInjectionFormat(Protocol):
     """Format constants required by snapshot injection helpers.
 
@@ -43,6 +46,8 @@ class SnapshotInjectionFormat(Protocol):
     CAREER_VEHICLE_PARTS_SLOT_OFFSET: int
     CAREER_VEHICLE_SLOT_OFFSET: int
     CAREER_VEHICLE_SENTINEL: bytes
+    CAREER_VEHICLE_SLOT_COUNT: int
+    CAR_NUMBER_SLOT_BASE: int
     PARTS_BLOCK_SIZE: int
     PARTS_MARKER_OFFSET: int
     EMPTY_PARTS_BLOCK_MARKER: bytes
@@ -52,10 +57,6 @@ class SnapshotInjectionSave(SnapshotInjectionFormat, Protocol):
     """SaveFile surface required to plan and perform snapshot injection."""
 
     data: bytearray
-
-    def get_owned_car_records(self) -> List[OwnedCarRecord]:
-        """Return currently detected non-empty owned-car records."""
-        ...
 
     def get_owned_car_slot_statuses(
         self,
@@ -175,6 +176,7 @@ def plan_snapshot_injection(
     target_career_slot: Optional[int] = None
     target_owned_abs_off: Optional[int] = None
     target_parts_slot: Optional[int] = None
+    target_car_number: Optional[int] = None
     target_sidecar_owned_abs_off: Optional[int] = None
     target_sidecar_parts_slot: Optional[int] = None
 
@@ -192,23 +194,45 @@ def plan_snapshot_injection(
 
         if refusal is None:
             owned_candidates = save.get_owned_car_slot_statuses(reserved_abs_offs=reserved_owned_abs_offs)
+            live_car_numbers = {
+                int(slot.car_number)
+                for slot in owned_candidates
+                if int(slot.car_number) != save.EMPTY_CAR_NUMBER
+            }
+            number_collides = False
             if snapshot.has_visual_sidecar:
-                primary_owned, sidecar_owned, saw_primary_owned = _find_adjacent_owned_slot_pair(save, owned_candidates)
+                pairs = _adjacent_owned_slot_pairs(save, owned_candidates)
+                primary_owned, sidecar_owned, target_car_number, number_collides = _choose_owned_target(
+                    save, pairs, live_car_numbers
+                )
                 if primary_owned is None or sidecar_owned is None:
-                    refusal = (
-                        "No adjacent empty owned-car slot for sidecar"
-                        if saw_primary_owned else
-                        "No validated empty owned-car slots available"
-                    )
+                    if pairs:
+                        refusal = _NO_NATIVE_ROW_REFUSAL
+                    elif any(slot.reusable for slot in owned_candidates[:-1]):
+                        refusal = "No adjacent empty owned-car slot for sidecar"
+                    else:
+                        refusal = "No validated empty owned-car slots available"
                 else:
                     target_owned_abs_off = primary_owned.abs_off
                     target_sidecar_owned_abs_off = sidecar_owned.abs_off
             else:
-                reusable_owned = [slot for slot in owned_candidates if slot.reusable]
-                if not reusable_owned:
-                    refusal = "No validated empty owned-car slots available"
+                singles = [(slot, None) for slot in owned_candidates if slot.reusable]
+                primary_owned, _unused, target_car_number, number_collides = _choose_owned_target(
+                    save, singles, live_car_numbers
+                )
+                if primary_owned is None:
+                    refusal = _NO_NATIVE_ROW_REFUSAL if singles else "No validated empty owned-car slots available"
                 else:
-                    target_owned_abs_off = reusable_owned[0].abs_off
+                    target_owned_abs_off = primary_owned.abs_off
+            if refusal is None and number_collides:
+                # Every free row's native number is held by a hand-numbered
+                # record. Writing anyway would duplicate a number, and the game
+                # resolves duplicates to the first match - one of the two cars
+                # becomes unreachable. No half-broken writes.
+                refusal = (
+                    f"Car number {target_car_number} belongs to owned-car row {primary_owned.slot_index} "
+                    "but a live record already uses it - free that number or repair the save"
+                )
 
         if refusal is None:
             parts_candidates = save.get_parts_slot_statuses(reserved_parts_slots=reserved_parts_slots)
@@ -272,6 +296,7 @@ def plan_snapshot_injection(
         target_career_slot=target_career_slot,
         refusal_reason=refusal,
         warnings=tuple(warnings),
+        target_car_number=(target_car_number if refusal is None else None),
         target_sidecar_owned_abs_off=target_sidecar_owned_abs_off,
         target_sidecar_parts_slot=target_sidecar_parts_slot,
     )
@@ -291,6 +316,8 @@ def inject_snapshot(
         raise ValueError(plan.refusal_reason)
     if plan.target_owned_abs_off is None or plan.target_parts_slot is None:
         raise ValueError("Snapshot injector plan did not produce target owned/parts slots")
+    if plan.target_car_number is None:
+        raise ValueError("Snapshot injector plan did not produce a native car number")
     sidecar = snapshot.optional_visual_sidecar if snapshot.has_visual_sidecar else None
     if target_mode == "career":
         if plan.target_career_slot is None:
@@ -311,11 +338,10 @@ def inject_snapshot(
             sidecar.normalized_sidecar_build_block,
             placeholder_marker=True,
         )
-    injected_car_number = _allocate_injected_car_number(save)
     _write_owned_car_record(
         save,
         plan.target_owned_abs_off,
-        car_number=injected_car_number,
+        car_number=plan.target_car_number,
         signature=snapshot.primary_owned_record_template.signature,
         location_bits=plan.target_location_bits,
         misc_bits=plan.target_misc_bits,
@@ -364,22 +390,49 @@ def _write_owned_car_record(
     save.data[abs_off:abs_off + save.CAREER_VEHICLE_SIZE] = payload
 
 
-def _allocate_injected_car_number(save: SnapshotInjectionSave) -> int:
-    """Return the next unused car_number value for an injected snapshot."""
+def native_car_number_for_slot(
+    save_format: SnapshotInjectionFormat,
+    slot_index: int,
+) -> Optional[int]:
+    """Return the car number the game would give a record in this registry row.
 
-    used = {
-        int(record.car_number)
-        for record in save.get_owned_car_records()
-        if int(record.car_number) != save.EMPTY_CAR_NUMBER
-    }
-    if not used:
-        return 1
-    candidate = max(used) + 1
-    while candidate in used:
-        candidate += 1
-    if candidate >= save.EMPTY_CAR_NUMBER:
-        raise ValueError("No safe car_number values remain for snapshot injection")
-    return candidate
+    The native allocator is positional: car_number = 81 + physical row, rows
+    0..118 -> 81..199. Returns None for rows outside that native range, which
+    the injector treats as "no legal number", never as a fallback counter.
+    """
+
+    slot = int(slot_index)
+    if slot < 0 or slot >= int(save_format.CAREER_VEHICLE_SLOT_COUNT):
+        return None
+    return int(save_format.CAR_NUMBER_SLOT_BASE) + slot
+
+
+def _choose_owned_target(
+    save_format: SnapshotInjectionFormat,
+    candidates: List[Tuple[OwnedCarSlotStatus, Optional[OwnedCarSlotStatus]]],
+    live_car_numbers: Set[int],
+) -> Tuple[Optional[OwnedCarSlotStatus], Optional[OwnedCarSlotStatus], Optional[int], bool]:
+    """Pick the first candidate row whose native number is free.
+
+    Returns ``(primary, sidecar, car_number, collides)``. Rows drift only on
+    saves an older editor (or ours) numbered by hand. When every legal row's
+    number is already taken, the first one is returned with ``collides=True``
+    so the caller can name the number it refuses on - it is never written.
+    """
+
+    fallback: Optional[Tuple[OwnedCarSlotStatus, Optional[OwnedCarSlotStatus], int, bool]] = None
+    for primary, sidecar in candidates:
+        car_number = native_car_number_for_slot(save_format, primary.slot_index)
+        if car_number is None:
+            continue
+        if car_number not in live_car_numbers:
+            return primary, sidecar, car_number, False
+        if fallback is None:
+            fallback = (primary, sidecar, car_number, True)
+    if fallback is not None:
+        return fallback
+    return None, None, None, False
+
 
 
 def _write_parts_block_for_slot_with_marker(
@@ -401,21 +454,20 @@ def _write_parts_block_for_slot_with_marker(
     save.data[abs_off:abs_off + save.PARTS_BLOCK_SIZE] = payload
 
 
-def _find_adjacent_owned_slot_pair(
+def _adjacent_owned_slot_pairs(
     save_format: SnapshotInjectionFormat,
     statuses: List[OwnedCarSlotStatus],
-) -> Tuple[Optional[OwnedCarSlotStatus], Optional[OwnedCarSlotStatus], bool]:
-    """Return the first adjacent reusable owned-slot pair for sidecar snapshots."""
+) -> List[Tuple[OwnedCarSlotStatus, Optional[OwnedCarSlotStatus]]]:
+    """Return every adjacent reusable owned-slot pair for sidecar snapshots."""
 
-    saw_primary = False
+    pairs: List[Tuple[OwnedCarSlotStatus, Optional[OwnedCarSlotStatus]]] = []
     for idx, status in enumerate(statuses[:-1]):
         if not status.reusable:
             continue
-        saw_primary = True
         nxt = statuses[idx + 1]
         if nxt.reusable and nxt.abs_off == status.abs_off + save_format.CAREER_VEHICLE_SIZE:
-            return status, nxt, saw_primary
-    return None, None, saw_primary
+            pairs.append((status, nxt))
+    return pairs
 
 
 def _find_adjacent_parts_slot_pair(

@@ -13,6 +13,7 @@ from core.cars import resolve_car_name
 from core.checksums import ea_crc32
 from core.junkman import JunkmanInventory
 from core.models import (
+    CarNumberRegistryAudit,
     CareerSlotStatus,
     CareerTransplantPlan,
     CareerVehicleRecord,
@@ -100,6 +101,15 @@ class SaveFile:
     CAREER_VEHICLE_PARTS_SLOT_OFFSET = 0x10
     CAREER_VEHICLE_SLOT_OFFSET = 0x11
     CAREER_VEHICLE_SENTINEL = b"\xCD\xCD"
+    # Native car_number allocator [verified-by-bytes, 486 saves + 7 local
+    # re-checks]: the registry at 0x6219 is a fixed 119-row prefix, and a
+    # record's number is its PHYSICAL row, not a running counter -
+    # car_number = 81 + slot index, so 81..199. Tombstoned rows are reused
+    # with their own slot number (never max+1, never a shared counter).
+    # 81 = CarTable[200] minus the 119 serialized rows [model-inference; the
+    # literal is not in the decomp, allocator bodies are empty].
+    CAREER_VEHICLE_SLOT_COUNT = 119
+    CAR_NUMBER_SLOT_BASE = 81
     EMPTY_CAR_NUMBER = 0xFFFFFFFF
     EMPTY_CAREER_SLOT = 0xFF
     CAREER_FLAG = 0x02
@@ -603,6 +613,65 @@ class SaveFile:
             base_off += self.CAREER_VEHICLE_SIZE
 
         return records
+
+    def audit_car_number_registry(self) -> CarNumberRegistryAudit:
+        """Check the car registry against the native rule car_number = 81 + row.
+
+        Pre-flight material for injection and the Compatibility page: rows that
+        disagree with their position were numbered by hand, and a native
+        purchase can later land on the same number. Read-only by design - a
+        drifted save still loads in game, so repairing it is the user's call.
+        """
+
+        live: List[int] = []
+        tombstones: List[int] = []
+        empties: List[int] = []
+        drifted: List[Tuple[int, int]] = []
+        out_of_range: List[Tuple[int, int]] = []
+        duplicates: List[int] = []
+        seen: Set[int] = set()
+        row = 0
+        base_off = self.CAREER_VEHICLE_BASE_OFFSET
+        highest_number = self.CAR_NUMBER_SLOT_BASE + self.CAREER_VEHICLE_SLOT_COUNT - 1
+
+        while base_off + self.CAREER_VEHICLE_SIZE <= len(self.data):
+            raw = bytes(self.data[base_off:base_off + self.CAREER_VEHICLE_SIZE])
+            if raw[0x12:0x14] != self.CAREER_VEHICLE_SENTINEL:
+                break
+            car_number = self._read_u32(base_off)
+            signature = raw[
+                self.CAREER_VEHICLE_SIGNATURE_OFFSET:
+                self.CAREER_VEHICLE_SIGNATURE_OFFSET + self.CAREER_VEHICLE_SIGNATURE_SIZE
+            ]
+            if car_number == self.EMPTY_CAR_NUMBER:
+                # A native sale only clears the number; the signature it leaves
+                # behind is what tells a sold car from a never-used row.
+                if signature == b"\x00" * self.CAREER_VEHICLE_SIGNATURE_SIZE:
+                    empties.append(row)
+                else:
+                    tombstones.append(row)
+            else:
+                live.append(row)
+                if car_number != self.CAR_NUMBER_SLOT_BASE + row:
+                    drifted.append((row, car_number))
+                if not (self.CAR_NUMBER_SLOT_BASE <= car_number <= highest_number):
+                    out_of_range.append((row, car_number))
+                if car_number in seen and car_number not in duplicates:
+                    duplicates.append(car_number)
+                seen.add(car_number)
+            row += 1
+            base_off += self.CAREER_VEHICLE_SIZE
+
+        return CarNumberRegistryAudit(
+            row_count=row,
+            expected_row_count=self.CAREER_VEHICLE_SLOT_COUNT,
+            live_rows=tuple(live),
+            tombstone_rows=tuple(tombstones),
+            empty_rows=tuple(empties),
+            drifted_rows=tuple(drifted),
+            out_of_range_rows=tuple(out_of_range),
+            duplicate_numbers=tuple(duplicates),
+        )
 
     def get_career_vehicle_records(self) -> List[CareerVehicleRecord]:
         return [
