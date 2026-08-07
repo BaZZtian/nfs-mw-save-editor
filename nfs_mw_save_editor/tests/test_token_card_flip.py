@@ -59,16 +59,35 @@ def test_flip_shows_front_back_and_edge_on():
     assert card.icon_label.pixmap().width() <= 3
 
 
-def test_hover_events_drive_the_flip_animation():
+def test_hovering_the_marker_drives_the_flip_animation():
+    app = _app()
+    card = _card(4)
+    pos = QPointF(1.0, 1.0)
+    app.sendEvent(card.icon_label, QEnterEvent(pos, pos, pos))
+    assert card._flip_anim.state() == QAbstractAnimation.Running
+    assert card._flip_anim.endValue() == 1.0
+    app.sendEvent(card.icon_label, QEvent(QEvent.Leave))
+    assert card._flip_anim.endValue() == 0.0
+    card._flip_anim.stop()
+
+
+def test_hovering_the_rest_of_the_card_leaves_the_marker_alone():
+    """The spin answers the marker, not the whole block.
+
+    Regression: entering any corner of the card - the name field, the counter,
+    the slider - spun the icon, which read as the card reacting to the cursor
+    rather than the marker being turned over.
+    """
+
     _app()
     card = _card(4)
     pos = QPointF(1.0, 1.0)
     card.enterEvent(QEnterEvent(pos, pos, pos))
-    assert card._flip_anim.state() == QAbstractAnimation.Running
-    assert card._flip_anim.endValue() == 1.0
+    assert card._flip_anim.state() != QAbstractAnimation.Running
+    assert card.property("hovered") is True  # the card still lights up
     card.leaveEvent(QEvent(QEvent.Leave))
-    assert card._flip_anim.endValue() == 0.0
-    card._flip_anim.stop()
+    assert card._flip_anim.state() != QAbstractAnimation.Running
+    assert card.property("hovered") is False
 
 
 def test_cards_without_back_icon_do_not_flip():

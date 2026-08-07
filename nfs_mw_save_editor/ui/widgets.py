@@ -857,6 +857,10 @@ class TokenCard(QWidget):
             self._flip_anim.setDuration(360)
             self._flip_anim.setEasingCurve(QEasingCurve.InOutQuad)
             self._flip_anim.valueChanged.connect(self._set_flip_progress)
+            # The spin answers the marker, not the card: crossing any corner of
+            # the block used to set it off. The label keeps a fixed size while
+            # the pixmap squeezes mid-spin, so the hover area cannot flicker.
+            self.icon_label.installEventFilter(self)
         icon_row = QHBoxLayout()
         icon_row.setAlignment(Qt.AlignCenter)
         icon_row.addWidget(self.icon_label)
@@ -988,18 +992,24 @@ class TokenCard(QWidget):
 
     # ── Hover effect ─────────────────────────────────────────────
 
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if watched is self.icon_label:
+            if event.type() == QEvent.Enter:
+                self._start_flip(to_back=True)
+            elif event.type() == QEvent.Leave:
+                self._start_flip(to_back=False)
+        return super().eventFilter(watched, event)
+
     def enterEvent(self, event) -> None:
         self.setProperty("hovered", True)
         self.style().unpolish(self)
         self.style().polish(self)
-        self._start_flip(to_back=True)
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         self.setProperty("hovered", False)
         self.style().unpolish(self)
         self.style().polish(self)
-        self._start_flip(to_back=False)
         super().leaveEvent(event)
 
 
