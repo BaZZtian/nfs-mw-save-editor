@@ -16,6 +16,44 @@ from pathlib import Path
 
 import pytest
 
+# Test modules that need a Qt environment: they import PySide6 (directly or
+# through ui.*), and several build a QApplication at import time — so a
+# marker filter alone cannot exclude them; they must be skipped at
+# collection. Keep this list current when adding Qt-dependent test modules;
+# `pytest -m "not qt"` runs the core + api contract suite without importing
+# Qt at all.
+QT_TEST_FILES = {
+    "test_apply_belt_sentinel.py",
+    "test_builds_reset_refresh.py",
+    "test_card_grid_fit.py",
+    "test_career_ui.py",
+    "test_footer_layout.py",
+    "test_garage_heat_ui.py",
+    "test_garage_registry_presentation.py",
+    "test_garage_staged_transfer_visibility.py",
+    "test_popup_theme_reentrancy.py",
+    "test_reload_from_disk.py",
+    "test_rendering.py",
+    "test_snapshot_provenance_display.py",
+    "test_token_card_flip.py",
+    "test_token_catalog.py",
+    "test_ui_smoke.py",
+}
+
+
+def pytest_ignore_collect(collection_path, config):
+    markexpr = getattr(config.option, "markexpr", "") or ""
+    if "not qt" in markexpr and collection_path.name in QT_TEST_FILES:
+        return True
+    return None
+
+
+def pytest_collection_modifyitems(config, items):
+    for item in items:
+        if Path(str(item.fspath)).name in QT_TEST_FILES:
+            item.add_marker(pytest.mark.qt)
+
+
 # The offscreen platform brings no fonts of its own. With no font directory
 # QFontDatabase comes up empty and every text metric collapses, so any test
 # that compares laid-out widths measures a layout that cannot happen in the
