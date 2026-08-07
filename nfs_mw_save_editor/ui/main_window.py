@@ -14,7 +14,7 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QDesktopServices, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
@@ -121,6 +121,39 @@ def _ensure_user_catalog_path() -> Path:
 
 class _FooterContextHost(QWidget):
     """Expose the active context hint without raising the window width floor."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._layout_request_hook: Optional[Callable[[], None]] = None
+        self._inside_hook = False
+
+    def set_layout_request_hook(self, hook: Callable[[], None]) -> None:
+        """Re-run the footer's fit math when the active strip's content changes.
+
+        The strip is capped at its own size hint, and that hint grows the moment
+        a save fills the totals in ("-" -> "100 / 173").  Resizing the window and
+        switching pages recomputed the cap; nothing else did, so opening a save
+        while already standing on Career left the cap at the empty-state width
+        and clipped the numbers ("100 / 1", "MILESTON") until the window was
+        nudged.
+        """
+
+        self._layout_request_hook = hook
+
+    def event(self, event) -> bool:
+        handled = super().event(event)
+        if (
+            event.type() == QEvent.LayoutRequest
+            and self._layout_request_hook is not None
+            and not self._inside_hook
+        ):
+            # The hook resizes this widget, which posts another LayoutRequest.
+            self._inside_hook = True
+            try:
+                self._layout_request_hook()
+            finally:
+                self._inside_hook = False
+        return handled
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
         hint = super().minimumSizeHint()
@@ -464,6 +497,7 @@ class MainWindow(
 
         self.footer_context = _FooterContextHost()
         self.footer_context.setObjectName("footerContext")
+        self.footer_context.set_layout_request_hook(self._sync_footer_context_visibility)
         self.footer_context.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         contexts = QHBoxLayout(self.footer_context)
         contexts.setContentsMargins(0, 0, 0, 0)

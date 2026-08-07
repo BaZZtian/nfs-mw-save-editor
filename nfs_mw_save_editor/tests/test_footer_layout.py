@@ -11,7 +11,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QGridLayout, QSizePolicy
+from PySide6.QtWidgets import QApplication, QGridLayout, QLabel, QSizePolicy
 
 from ui.main_window import MainWindow
 from ui.pages import constants
@@ -150,6 +150,37 @@ def test_footer_reset_slot_keeps_one_width_across_pages():
     geometry = {(width, apply_x) for _, width, apply_x in seen.values()}
     assert len(captions) == 2, "caption must actually change, or this proves nothing"
     assert len(geometry) == 1
+    _close_window(window)
+
+
+def test_footer_strip_regrows_when_its_numbers_arrive():
+    """Numbers landing in an already-visible strip must not be painted clipped.
+
+    Regression: the strip is capped at its own size hint, and only a window
+    resize or a page switch recomputed that cap.  Opening a save while already
+    standing on Career grew the totals from "—" to "100 / 173" against a cap
+    frozen at the empty-state width, so the footer read "100 / 1", "MILESTON".
+    """
+
+    window = _window()
+    window._select_page("Career")
+    APP.processEvents()
+    QTest.qWait(20)
+    strip = window.career_footer_context
+    empty_hint = strip.sizeHint().width()
+
+    window.career_total_races_value.setText("100 / 173")
+    window.career_total_milestones_value.setText("59 / 94")
+    window.career_total_bounty_value.setText("2.73M")
+    window.career_total_prologue_value.setText("5 / 5")
+    APP.processEvents()
+    QTest.qWait(20)
+
+    assert strip.sizeHint().width() > empty_hint, "the numbers must widen the strip"
+    assert window.footer_context.maximumWidth() >= strip.sizeHint().width()
+    assert strip.width() >= strip.sizeHint().width()
+    for label in strip.findChildren(QLabel):
+        assert label.width() >= label.sizeHint().width(), label.text()
     _close_window(window)
 
 
