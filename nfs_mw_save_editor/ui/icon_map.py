@@ -92,7 +92,10 @@ GAME_ICONS: Dict[str, str] = {
     "status_impounded": "status/impounded_eng.png",
     "status_alert": "status/generic_alert.png",
     "status_autosave": "status/generic_autosave.png",
+    "action_apply_memory": "action/apply_memory.png",
     "action_save": "action/save.png",
+    "action_open": "action/open.png",
+    "action_checksums": "action/checksums.png",
     "action_reset": "action/reset.png",
     "timeline_check": "timeline/check.png",
     "timeline_arrow": "timeline/arrow.png",
@@ -164,7 +167,10 @@ def rival_asset_path(stage: int, asset_kind: str = "portrait") -> Optional[Path]
 # All four faces are the game's own category markers from FRONTB, carried over
 # pixel for pixel: MARKER_ICON_PERFORMANCE / _PARTS / _VISUAL / _MISC. The "?"
 # on Bonus Markers is the game's surprise-marker glyph.
+# "All" has no marker of its own; it borrows the nav rail's Junkman face, so the
+# unfiltered row reads as "the whole page".
 CAT_ICONS: Dict[str, str] = {
+    "All":           "nav/nav_junkman.png",
     "Performance":   "cat/cat_performance.png",
     "Parts":         "cat/cat_parts.png",
     "Visual":        "cat/cat_visual.png",

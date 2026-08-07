@@ -355,6 +355,11 @@ class MainWindow(
         self.btn_fix = ShellActionButton("Fix checksums", height=36)
         self.btn_open.clicked.connect(self.on_open)
         self.btn_fix.clicked.connect(self.on_fix_checksums)
+        # The header pair reads as the game's own load/save pair: Open save takes
+        # GENERIC_ICON_LOAD, the footer's Save + backup already wears its sibling
+        # GENERIC_ICON_SAVE.
+        self._set_game_button_icon(self.btn_open, "action_open")
+        self._set_game_button_icon(self.btn_fix, "action_checksums")
 
         self.lbl_file = QLabel("File: (not opened)")
         self.lbl_file.setObjectName("filePath")
@@ -542,6 +547,7 @@ class MainWindow(
         self.btn_apply.clicked.connect(self.on_apply_changes)
         self.btn_save_footer.clicked.connect(self.on_save)
         self._set_game_button_icon(self.btn_reset_want, "action_reset")
+        self._set_game_button_icon(self.btn_apply, "action_apply_memory")
         self._set_game_button_icon(self.btn_save_footer, "action_save")
 
         self.footer_actions = QWidget()

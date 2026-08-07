@@ -137,14 +137,15 @@ def test_game_icons_are_wired_to_hero_actions_and_tuning_nav():
     assert window.career_view_transplant_btn.text() == "CHANGE RIVAL"
 
     for button in (
+        window.btn_open,
+        window.btn_fix,
         window.btn_reset_want,
+        window.btn_apply,
         window.btn_save_footer,
         window.nav_buttons["Tuning"],
         window.nav_buttons["Junkman"],
     ):
         assert not button.icon().isNull()
-
-    assert window.btn_apply.icon().isNull()
     assert nav_icon_path("Tuning").name == "nav_tuning.png"
     assert nav_icon_path("Junkman").name == "nav_junkman.png"
     assert game_icon_path("race").name == "race_events.png"
