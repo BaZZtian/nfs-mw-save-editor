@@ -1118,6 +1118,62 @@ def test_hero_blocks_hold_one_position_across_all_rivals():
     app.processEvents()
 
 
+def test_longest_tagline_stays_one_line_and_holds_the_banner_still():
+    """#2 Bull's sentence is the longest canon tagline (653px).
+
+    Regression: with word wrap it took a second line as soon as the banner was
+    narrower than that, and the plaques and the PROGRESS / CHANGE RIVAL switch
+    below it dropped by a line.  It now elides on a word boundary instead, and
+    the full sentence stays available via full_text() and the tooltip.
+    """
+
+    from core import rival_bios
+
+    app = _app()
+    window = MainWindow()
+    window.resize(1400, 812)
+    window.show()
+    # A shown window repaints its header on resize, which reads savefile.path.
+    window.savefile = SimpleNamespace(data=_synthetic_career(8), path="synthetic.sav")
+    window._refresh_career_page()
+    window._select_page("Career")
+    app.processEvents()
+
+    summary = career_progress.build_career_progress(bytes(_synthetic_career(8)))
+    window._update_career_hero(summary, 2)
+    app.processEvents()
+
+    tagline = window.career_hero_tagline
+    line_height = tagline.fontMetrics().height()
+    hero = window.career_hero
+    positions = set()
+    painted = {}
+    for width in (1400, 1182, 1050, 990):
+        window.resize(width, 812)
+        QTest.qWait(30)
+        app.processEvents()
+        assert tagline.height() <= line_height, width
+        assert tagline.full_text() == rival_bios.tagline(2)
+        painted[width] = tagline.text()
+        positions.add((
+            window.career_races_metric.mapTo(
+                hero, window.career_races_metric.rect().topLeft()
+            ).y(),
+            window.career_view_switch.mapTo(
+                hero, window.career_view_switch.rect().topLeft()
+            ).y(),
+        ))
+
+    assert len(positions) == 1, positions
+    assert painted[1400] == rival_bios.tagline(2)
+    narrow = painted[990]
+    assert narrow != rival_bios.tagline(2), "the narrow case must actually elide"
+    assert narrow.endswith("…") and not narrow.endswith(" …")
+    assert rival_bios.tagline(2).startswith(narrow[:-1])
+    window.close()
+    app.processEvents()
+
+
 def _float_bits(value: float) -> int:
     return struct.unpack("<I", struct.pack("<f", value))[0]
 

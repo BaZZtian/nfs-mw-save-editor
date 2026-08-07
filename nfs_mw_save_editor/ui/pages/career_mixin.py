@@ -33,6 +33,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import (
     QEasingCurve,
+    QEvent,
     QPoint,
     QPointF,
     QRect,
@@ -128,6 +129,82 @@ _TAGLINE_INK_SAMPLE = "Xg"
 # an optical correction inside the font - so measuring the actual "#7" vs "#8"
 # re-dealt the blocks below by that pixel.
 _RANK_INK_SAMPLE = "#0123456789"
+
+
+_ELLIPSIS = "…"
+
+
+class _HeroTagline(QLabel):
+    """The banner's one-line rival tagline: it elides instead of wrapping.
+
+    Wrapping was the original design, but the longest canon sentence (#2 Bull,
+    653px) takes a second line as soon as the window narrows, and everything
+    below it in the banner - the three plaques, PROGRESS / CHANGE RIVAL - drops
+    by that line.  Elision keeps the whole banner still at any width; the full
+    sentence stays one hover away in the tooltip.
+
+    ``sizeHint`` deliberately reports the *unelided* width so shortening the
+    painted string cannot feed back into the layout that decided the width.
+    """
+
+    _MIN_VISIBLE_WIDTH = 120
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._full_text = ""
+        self.setWordWrap(False)
+
+    def full_text(self) -> str:
+        return self._full_text
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt override
+        self._full_text = text or ""
+        self._sync_elided_text()
+
+    def clear(self) -> None:
+        self._full_text = ""
+        super().clear()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        hint = super().sizeHint()
+        return QSize(self.fontMetrics().horizontalAdvance(self._full_text), hint.height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        hint = super().minimumSizeHint()
+        return QSize(min(self._MIN_VISIBLE_WIDTH, hint.width()), hint.height())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        self._sync_elided_text()
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().changeEvent(event)
+        if event.type() == QEvent.FontChange:
+            self._sync_elided_text()
+
+    def _sync_elided_text(self) -> None:
+        elided = self.fontMetrics().elidedText(
+            self._full_text, Qt.ElideRight, max(0, self.width())
+        )
+        if elided != self._full_text:
+            elided = self._trim_to_whole_word(elided)
+        if elided != super().text():
+            super().setText(elided)
+
+    @staticmethod
+    def _trim_to_whole_word(elided: str) -> str:
+        """Step an elided sentence back to its last whole word.
+
+        Qt cuts at the pixel, which leaves a half-word before the ellipsis
+        ("...of the Blac...") and reads like a rendering glitch rather than a
+        deliberate trim. Sentences with no space to fall back to keep Qt's cut.
+        """
+
+        head = elided.rstrip(_ELLIPSIS).rstrip()
+        cut = head.rfind(" ")
+        if cut <= 0:
+            return elided
+        return head[:cut].rstrip(" ,;:") + _ELLIPSIS
 
 
 class _HeroRhythmColumn(QVBoxLayout):
@@ -1733,12 +1810,11 @@ class CareerMixin:
         hero_copy.set_ink_source(
             1, self.career_stage_value, sample=_RANK_INK_SAMPLE
         )
-        self.career_hero_tagline = QLabel("")
+        self.career_hero_tagline = _HeroTagline()
         self.career_hero_tagline.setObjectName("careerHeroTagline")
-        self.career_hero_tagline.setWordWrap(True)
-        # 680: Bull's canon sentence is the longest at 653px - at 640 it lost
-        # its last word ("...dreamin' of the [Blacklist.]") to an invisible
-        # wrapped line. Checked live against every rival's portrait zone.
+        # 680: Bull's canon sentence is the longest at 653px, so at the banner's
+        # full width every rival's tagline still shows whole. Below that the
+        # label elides rather than wrapping - see _HeroTagline.
         self.career_hero_tagline.setMaximumWidth(680)
         self.career_hero_tagline.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.career_hero_tagline.setVisible(False)
