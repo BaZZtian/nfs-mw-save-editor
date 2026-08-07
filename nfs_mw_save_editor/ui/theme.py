@@ -509,9 +509,14 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
         "HEAT_SEGMENT_ACTIVE_BG",
         _rgba(tokens["ACCENT"], 0.78),
     )
-    # Translucent "glass" card treatment; derived for every theme.
-    tokens.setdefault("BG_GLASS", _rgba(tokens["BG_CARD"], 0.62))
-    tokens.setdefault("BORDER_GLASS", _rgba(tokens["BORDER"], 0.70))
+    # The "glass" surfaces used to be translucent (BG_CARD at 62%, BORDER at
+    # 70%). Qt cannot blur what shows through, so the panels did not frost
+    # anything - they simply leaked whatever sat behind them, which is only
+    # invisible today because the backdrop happens to be a near-identical
+    # colour. The same two shades are now mixed against the backdrop up front:
+    # the surfaces keep their exact appearance and stop being see-through.
+    tokens.setdefault("BG_GLASS", _mix(tokens["BG"], tokens["BG_CARD"], 0.62))
+    tokens.setdefault("BORDER_GLASS", _mix(tokens["BG"], tokens["BORDER"], 0.70))
     dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
     if preset.text_on_accent_mode == "dark":
         tokens["TEXT_ON_ACCENT"] = dark_on_accent
