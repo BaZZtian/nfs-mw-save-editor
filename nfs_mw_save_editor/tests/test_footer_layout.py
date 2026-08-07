@@ -127,6 +127,32 @@ def test_footer_context_follows_page_and_actions_never_hide():
     _close_window(window)
 
 
+def test_footer_reset_slot_keeps_one_width_across_pages():
+    """The reset slot swaps its caption per page and must not resize doing it.
+
+    Regression: "Reload from disk" is 8px narrower than "Reset Want=Have", so the
+    Career footer's first button was visibly smaller than every other page's.
+    """
+
+    window = _window()
+    seen = {}
+    for page_name in ("Junkman", "Career", "Garage"):
+        window._select_page(page_name)
+        APP.processEvents()
+        QTest.qWait(20)
+        seen[page_name] = (
+            window.btn_reset_want.text(),
+            window.btn_reset_want.width(),
+            window.btn_apply.x(),
+        )
+
+    captions = {text for text, _, _ in seen.values()}
+    geometry = {(width, apply_x) for _, width, apply_x in seen.values()}
+    assert len(captions) == 2, "caption must actually change, or this proves nothing"
+    assert len(geometry) == 1
+    _close_window(window)
+
+
 def test_profile_and_career_totals_live_in_footer_without_moving_local_metrics():
     window = _window(1180)
     assert set(window._footer_contexts) == {"Junkman", "Profile", "Career"}

@@ -75,7 +75,22 @@ class ShellActionButton(QPushButton):
         super().__init__(text, parent)
         self.setObjectName("shellActionButton")
         self._height = int(height) if height is not None else self._HEIGHT
+        self._reserved_texts: tuple[str, ...] = ()
         self.setMinimumHeight(self._height)
+
+    def reserve_text_widths(self, *texts: str) -> None:
+        """Size the button for the widest label it will ever show.
+
+        A button whose caption changes with context (the footer reset slot reads
+        "Reload from disk" on Career and "Reset Want=Have" everywhere else) would
+        otherwise visibly change width as the caption swaps.  Reserving the
+        widths keeps the row steady, and because the reservation is measured in
+        ``sizeHint`` it follows the active theme's font instead of freezing a
+        pixel count.
+        """
+
+        self._reserved_texts = tuple(texts)
+        self.updateGeometry()
 
     def _content_rects(self) -> tuple[QRectF, QRectF]:
         inner = QRectF(self.rect()).adjusted(
@@ -99,7 +114,11 @@ class ShellActionButton(QPushButton):
         return icon_rect, text_rect
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
-        text_width = self.fontMetrics().horizontalAdvance(self.text())
+        metrics = self.fontMetrics()
+        text_width = max(
+            metrics.horizontalAdvance(text)
+            for text in (self.text(), *self._reserved_texts)
+        )
         width = self._SIDE_PADDING * 2 + text_width
         if not self.icon().isNull():
             width += self.iconSize().width() + self._ICON_TEXT_GAP

@@ -79,6 +79,11 @@ from ui.widgets import (
 
 logger = logging.getLogger(__name__)
 
+# The footer's first action swaps captions per page; both live here so the
+# button can reserve room for the longer one and keep a steady width.
+FOOTER_RESET_LABEL = "Reset Want=Have"
+FOOTER_RELOAD_LABEL = "Reload from disk"
+
 
 def _appdata_dir() -> Path:
     base = os.getenv("APPDATA")
@@ -495,7 +500,8 @@ class MainWindow(
         row.addWidget(self.footer_context, 0, Qt.AlignVCenter)
         row.addStretch(1)
 
-        self.btn_reset_want = ShellActionButton("Reset Want=Have")
+        self.btn_reset_want = ShellActionButton(FOOTER_RESET_LABEL)
+        self.btn_reset_want.reserve_text_widths(FOOTER_RESET_LABEL, FOOTER_RELOAD_LABEL)
         self.btn_apply = ShellActionButton("Apply (memory)")
         self.btn_save_footer = ShellActionButton("Save + backup")
         self.btn_reset_want.clicked.connect(self._on_footer_reset_clicked)
@@ -576,7 +582,7 @@ class MainWindow(
         # Career stages have no staged wants (transplants apply immediately),
         # so the reset slot serves the matching affordance there instead.
         self.btn_reset_want.setText(
-            "Reload from disk" if name == "Career" else "Reset Want=Have"
+            FOOTER_RELOAD_LABEL if name == "Career" else FOOTER_RESET_LABEL
         )
         for context_name, context in getattr(self, "_footer_contexts", {}).items():
             context.setVisible(context_name == name)
