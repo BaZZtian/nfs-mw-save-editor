@@ -77,7 +77,10 @@ class GarageCar(ApiModel):
     slot_index: int = Field(description="career_slot of the pursuit record")
     model_name: str = Field(description="resolved display name from core")
     bounty: int
-    heat: float = Field(description="raw heat float as stored in the save")
+    heat: Optional[float] = Field(
+        description="stored heat float; None when non-finite (JSON cannot "
+        "carry NaN/inf, and the core fails closed on such values anyway)"
+    )
     heat_level: Optional[int] = Field(
         description="whole heat level 1..5, None when the float is unreadable "
         "(core fails closed; the UI must show unknown, not reconstruct)"
@@ -213,12 +216,21 @@ def dump_schema() -> str:
     whitespace variance — the sha256 of this exact string is the contract
     fingerprint the web repo pins.
     """
-    raise NotImplementedError("stage A scaffold")
+    import json
+
+    from . import PROTOCOL_VERSION
+
+    combined = {"protocolVersion": PROTOCOL_VERSION}
+    for model in CONTRACT_MODELS:
+        combined[model.__name__] = model.model_json_schema(by_alias=True)
+    return json.dumps(combined, sort_keys=True, indent=2)
 
 
 def schema_sha256() -> str:
     """sha256 hex digest of dump_schema()."""
-    raise NotImplementedError("stage A scaffold")
+    import hashlib
+
+    return hashlib.sha256(dump_schema().encode("utf-8")).hexdigest()
 
 
 if __name__ == "__main__":
