@@ -23,6 +23,15 @@ SAFE_TYPE_MIN = 1
 SAFE_TYPE_MAX = 21
 PERF_IDS = (1, 2, 3, 4, 5, 6, 7)
 PERF_TOTAL = 7
+# One optical size for the app shell's own icons: the nav rail, the header
+# actions and the footer actions. The icons are trimmed to their ink first
+# (MainWindow._tight_icon), so this is what the glyph actually measures on
+# screen, not a box it floats in. 26 sits inside the shortest of the three
+# hosts, the 36px header button, with room to breathe; 28 crowds it.
+SHELL_ICON_PX = 26
+# The category filter column is its own family inside the page, not shell
+# chrome, and its QSS host is a 28px content box - so it keeps its own size.
+FILTER_ICON_PX = 24
 DEFAULT_CARDS_PER_ROW = 3
 MAX_CARDS_PER_ROW = 4
 U32_MAX = 0xFFFFFFFF

@@ -99,8 +99,19 @@ class ShellActionButton(QPushButton):
         if self.icon().isNull():
             return QRectF(), inner
         icon_size = self.iconSize()
+        # Centre the icon and the label as one block. A button is often wider
+        # than the two of them need - the 140px floor, or a reservation for a
+        # longer caption this page does not show - and anchoring the block to
+        # the left dumped all of that slack behind the text, so the margin on
+        # the right read as several times the one on the left.
+        content_width = (
+            icon_size.width()
+            + self._ICON_TEXT_GAP
+            + self.fontMetrics().horizontalAdvance(self.text())
+        )
+        left = inner.left() + max(0.0, (inner.width() - content_width) / 2.0)
         icon_rect = QRectF(
-            inner.left(),
+            left,
             inner.center().y() - icon_size.height() / 2.0,
             icon_size.width(),
             icon_size.height(),

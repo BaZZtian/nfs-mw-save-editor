@@ -7,6 +7,8 @@ import sys
 import time
 from types import SimpleNamespace
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -156,19 +158,29 @@ def test_game_icons_are_wired_to_hero_actions_and_tuning_nav():
     app.processEvents()
 
 
-def test_shell_action_button_uses_equal_left_padding_and_icon_text_gap():
+def test_shell_action_button_centres_its_icon_and_label_as_one_block():
+    """Icon + label sit centred, with the same margin left and right.
+
+    The button is often wider than the two of them need - a 140px floor, or a
+    width reserved for a caption this page does not show - and anchoring the
+    block to the left dumped every spare pixel behind the text.
+    """
+
     button = ShellActionButton("Save + backup")
     path = game_icon_path("action_save")
     assert path is not None
     button.setIcon(QIcon(str(path)))
     button.setIconSize(QSize(28, 28))
-    button.resize(button.sizeHint())
-    icon_rect, text_rect = button._content_rects()
 
-    assert button.height() >= 44
-    assert icon_rect.left() == 8
-    assert text_rect.left() - icon_rect.right() == 8
-    assert button.width() - text_rect.right() == 8
+    for width in (button.sizeHint().width(), 220, 320):
+        button.resize(width, button.sizeHint().height())
+        icon_rect, text_rect = button._content_rects()
+        text_end = text_rect.left() + button.fontMetrics().horizontalAdvance(button.text())
+
+        assert button.height() >= 44
+        assert text_rect.left() - icon_rect.right() == 8
+        assert icon_rect.left() == pytest.approx(button.width() - text_end)
+        assert icon_rect.left() >= 8
 
 
 def test_animated_segmented_control_rapid_switch_lands_on_last_choice():

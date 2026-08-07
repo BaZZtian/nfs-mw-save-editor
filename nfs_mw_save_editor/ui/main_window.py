@@ -435,13 +435,18 @@ class MainWindow(
         return pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
 
     def _set_game_button_icon(
-        self, button: QPushButton, icon_name: str, *, size: int = 28
+        self, button: QPushButton, icon_name: str, *, size: int = SHELL_ICON_PX
     ) -> None:
         path = game_icon_path(icon_name)
         if path is None:
             return
         icon_size = QSize(size, size)
-        button.setIcon(QIcon(str(path)))
+        # Trim the transparent frame first, the way the nav rail and the filter
+        # rows do. The game's own art does not agree on how much empty space to
+        # leave: GENERIC_ICON_SAVE and _LOAD carry a fifth of their width as
+        # padding on the right and almost none on the left, so pasted raw they
+        # sit off-centre in the button and read smaller than their neighbours.
+        button.setIcon(self._tight_icon(path, icon_size))
         button.setIconSize(icon_size)
 
     def _build_nav(self):
@@ -475,8 +480,9 @@ class MainWindow(
             # Load nav icon
             icon_p = nav_icon_path(name)
             if icon_p and icon_p.exists():
-                btn.setIcon(self._tight_icon(icon_p, QSize(28, 28)))
-                btn.setIconSize(QSize(28, 28))
+                nav_icon_size = QSize(SHELL_ICON_PX, SHELL_ICON_PX)
+                btn.setIcon(self._tight_icon(icon_p, nav_icon_size))
+                btn.setIconSize(nav_icon_size)
 
             btn.clicked.connect(lambda _, n=name: self._select_page(n))
             self.nav_buttons[name] = btn

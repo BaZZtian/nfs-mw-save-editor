@@ -207,8 +207,9 @@ class JunkmanMixin:
             # Category icon
             c_icon = cat_icon_path(cat)
             if c_icon:
-                btn.setIcon(self._tight_icon(c_icon, QSize(20, 20)))
-                btn.setIconSize(QSize(20, 20))
+                cat_icon_size = QSize(FILTER_ICON_PX, FILTER_ICON_PX)
+                btn.setIcon(self._tight_icon(c_icon, cat_icon_size))
+                btn.setIconSize(cat_icon_size)
             btn.clicked.connect(lambda _, c=cat: self._select_category(c))
             self.cat_buttons[cat] = btn
             self.cat_group.addButton(btn)
