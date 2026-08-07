@@ -11,7 +11,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QGridLayout
+from PySide6.QtWidgets import QApplication, QGridLayout, QSizePolicy
 
 from ui.main_window import MainWindow
 from ui.pages import constants
@@ -46,7 +46,11 @@ def test_footer_is_a_layout_row_and_preserves_public_controls():
     nav_index = layout.indexOf(window.nav_chrome)
     assert layout.getItemPosition(footer_index) == (2, 1, 1, 1)
     assert layout.getItemPosition(nav_index) == (0, 0, 3, 1)
-    assert window.footer_chrome.minimumHeight() == 60
+    # No explicit minimumHeight: Qt replaces the computed layout minimum with an
+    # explicit one instead of widening it, which used to let the grid squeeze the
+    # footer row and clip the action buttons.  See the short-window test below.
+    assert window.footer_chrome.minimumHeight() == 0
+    assert window.footer_chrome.sizePolicy().verticalPolicy() == QSizePolicy.Fixed
     assert window.footer_chrome.geometry().top() > window.stack.geometry().bottom()
 
     for name in (
@@ -60,6 +64,28 @@ def test_footer_is_a_layout_row_and_preserves_public_controls():
 
     assert window.footer_chrome in window._shell_theme_roots
     assert not hasattr(constants, "FOOTER_CLEARANCE")
+    _close_window(window)
+
+
+def test_short_window_never_clips_the_footer_actions():
+    """The window's vertical floor must not eat the footer's own height.
+
+    Regression: the footer carried a hardcoded ``setMinimumHeight(60)`` while its
+    layout wanted 64, so at the floor the grid handed the action row 42px for
+    46px buttons and their bottom edge (with the footer's border) was cut off.
+    """
+
+    window = _window()
+    for height in (780, 700, 600, 400):
+        window.resize(1180, height)
+        QTest.qWait(20)
+        APP.processEvents()
+        footer = window.footer_chrome
+        assert footer.height() == footer.sizeHint().height()
+        assert window.footer_actions.height() >= window.footer_actions.sizeHint().height()
+        for button in (window.btn_reset_want, window.btn_apply, window.btn_save_footer):
+            assert button.geometry().bottom() <= window.footer_actions.rect().bottom()
+            assert button.geometry().bottom() <= footer.rect().bottom()
     _close_window(window)
 
 

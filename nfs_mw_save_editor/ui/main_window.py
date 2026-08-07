@@ -446,7 +446,13 @@ class MainWindow(
     def _build_footer(self) -> QFrame:
         footer = QFrame()
         footer.setObjectName("footerChrome")
-        footer.setMinimumHeight(60)
+        # The shell footer is chrome, not content: it keeps its own layout height
+        # even when the window is dragged to its vertical floor.  A hardcoded
+        # 60px minimum used to live here, and Qt's qSmartMinSize *replaces* the
+        # computed minimum with an explicit one instead of taking the larger --
+        # so the grid squeezed the row to 60 while the action buttons kept their
+        # own minimum, clipping their bottom edge and the footer's bottom border.
+        footer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         row = QHBoxLayout(footer)
         row.setContentsMargins(10, 8, 10, 8)
         row.setSpacing(10)
