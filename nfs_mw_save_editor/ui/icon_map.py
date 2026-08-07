@@ -161,9 +161,9 @@ def rival_asset_path(stage: int, asset_kind: str = "portrait") -> Optional[Path]
 
 
 # -- Category -> representative icon --
-# Parts and Bonus Markers faces are the game's own category icons
-# (MARKER_ICON_PARTS / MARKER_ICON_MISC from FRONTB); the "?" on Bonus
-# Markers is the game's surprise-marker glyph.
+# All four faces are the game's own category markers from FRONTB, carried over
+# pixel for pixel: MARKER_ICON_PERFORMANCE / _PARTS / _VISUAL / _MISC. The "?"
+# on Bonus Markers is the game's surprise-marker glyph.
 CAT_ICONS: Dict[str, str] = {
     "Performance":   "cat/cat_performance.png",
     "Parts":         "cat/cat_parts.png",
