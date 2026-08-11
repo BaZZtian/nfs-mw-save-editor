@@ -40,6 +40,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSizePolicy,
     QSpinBox,
@@ -787,6 +788,71 @@ class ThemeTransitionOverlay(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.drawPixmap(self.rect(), self._snapshot)
+        painter.end()
+
+
+class ScrollTopFade(QWidget):
+    """Dissolves the top of a scrolled list into the page background.
+
+    Scrolled down, a list is cut by the viewport's top edge, and that edge
+    carries no pixels of its own: rows are sliced mid-height and the cut reads
+    as something invisible shaving them.  This paints the first band as a ramp
+    from the page background, so content enters the view instead of being
+    chopped.  No blur is involved - the pixels stay exactly as sharp, the
+    background is just mixed into them.  The colour is read at paint time, so
+    a runtime theme switch follows on its own.
+
+    The bottom edge needs none of this: the shell footer is painted over it,
+    and a solid panel explains its own edge.
+    """
+
+    BAND = 24
+    _STOPS = 8
+
+    def __init__(self, area: QScrollArea, *, band: int = BAND) -> None:
+        super().__init__(area.viewport())
+        self._area = area
+        self._band = band
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
+        area.viewport().installEventFilter(self)
+        scrollbar = area.verticalScrollBar()
+        scrollbar.valueChanged.connect(self.sync)
+        scrollbar.rangeChanged.connect(self.sync)
+        self.sync()
+
+    def sync(self, *_) -> None:
+        viewport = self._area.viewport()
+        scrollbar = self._area.verticalScrollBar()
+        scrolled = scrollbar.value() > scrollbar.minimum()
+        if not scrolled or viewport.width() <= 0 or viewport.height() < self._band:
+            self.hide()
+            return
+        self.setGeometry(0, 0, viewport.width(), self._band)
+        self.show()
+        self.raise_()
+        self.update()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if event.type() in (QEvent.Resize, QEvent.Show):
+            self.sync()
+        return False
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        _ = event
+        base = QColor(resolve_theme_tokens()["BG"])
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        for index in range(self._STOPS + 1):
+            position = index / self._STOPS
+            # Smoothstep: a straight alpha ramp leaves a visible seam where the
+            # band starts.
+            alpha = 1.0 - position * position * (3 - 2 * position)
+            stop = QColor(base)
+            stop.setAlpha(round(alpha * 255))
+            gradient.setColorAt(position, stop)
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), gradient)
         painter.end()
 
 

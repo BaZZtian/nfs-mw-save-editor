@@ -72,6 +72,7 @@ from ui.theme import (
     save_theme_name,
 )
 from ui.widgets import (
+    ScrollTopFade,
     ShellActionButton,
     SplitTextProgressBar,
     ThemeTransitionOverlay,
@@ -743,6 +744,7 @@ class MainWindow(
         """
         self._footer_scroll_targets: List[_FooterTail] = []
         self._footer_reserve_views: List[tuple[QWidget, int]] = []
+        self._scroll_top_fades: List[ScrollTopFade] = []
         hosts = [self.stack]
         seen_views: set[int] = set()
         seen_areas: set[int] = set()
@@ -765,6 +767,7 @@ class MainWindow(
                     seen_areas.add(id(area))
                     gap = _scrolled_card_gap(content.layout())
                     self._footer_scroll_targets.append(_FooterTail(self, area, gap))
+                    self._scroll_top_fades.append(ScrollTopFade(area))
                 if areas or nested or view.layout() is None:
                     continue
                 self._footer_reserve_views.append((view, view.layout().contentsMargins().bottom()))
