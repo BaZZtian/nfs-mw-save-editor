@@ -48,8 +48,10 @@ from PySide6.QtGui import (
     QBitmap,
     QBrush,
     QColor,
+    QFont,
     QFontDatabase,
     QFontMetrics,
+    QFontMetricsF,
     QImage,
     QImageReader,
     QLinearGradient,
@@ -1009,7 +1011,15 @@ class _BlacklistTimeline(QWidget):
         self._selection_animation.valueChanged.connect(self._set_selection_position)
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
-        return QSize(1000, 88)
+        return QSize(1000, self._card_height())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        # Losing the names costs a label line, and the card has to give that
+        # height back instead of leaving a hole under the numbers.
+        height = self._card_height()
+        if self.height() != height:
+            self.setFixedHeight(height)
 
     def set_progress(
         self,
@@ -1079,26 +1089,59 @@ class _BlacklistTimeline(QWidget):
     _SELECTED_RADIUS = _NODE_RADIUS + 5.5
     _LABEL_GAP = 4.0
     _LABEL_HEIGHT = 30.0
-    # Padding plus half of an outer label ("#15 SONNY"), so the ends of the
-    # strip keep the same margin as the rest.  Without it the first and last
-    # labels ran under the card's own edge.
+    # Padding plus half of an outer label, so the ends of the strip keep the
+    # same margin as the rest.  Two values because the outer label is either
+    # "#15 SONNY" or a bare "#15".
     _EDGE_INSET = 46.0
+    _EDGE_INSET_BARE = 32.0
+    # Names are shown at the largest size that still leaves a gap between
+    # neighbours; a hardcoded "wide enough" threshold used to hide them long
+    # before the room actually ran out.
+    _LABEL_SIZES = (9.0, 8.5, 8.0, 7.5)
+    _LABEL_MIN_GAP = 8.0
+    _LABEL_HEIGHT_BARE = 16.0
 
-    @classmethod
-    def _card_height(cls) -> int:
+    def _name_font_size(self) -> Optional[float]:
+        """Largest size at which every boss name fits between two nodes."""
+        span = max(1.0, self.width() - 2 * self._EDGE_INSET)
+        pitch = span / 14.0
+        names = [
+            BLACKLIST_BOSS_NAMES.get(stage, "?").upper() for stage in range(15, 0, -1)
+        ]
+        for size in self._LABEL_SIZES:
+            font = QFont(self.font())
+            font.setPointSizeF(size)
+            font.setBold(True)
+            metrics = QFontMetricsF(font)
+            widest = max(metrics.horizontalAdvance(name) for name in names)
+            if widest + self._LABEL_MIN_GAP <= pitch:
+                return size
+        return None
+
+    def _card_height(self) -> int:
         """Padding, the tallest thing above a node, the node, and its label."""
+        label = (
+            self._LABEL_HEIGHT
+            if self._name_font_size() is not None
+            else self._LABEL_HEIGHT_BARE
+        )
         return round(
-            cls._CARD_PADDING
-            + cls._SELECTED_RADIUS
-            + cls._NODE_RADIUS
-            + cls._LABEL_GAP
-            + cls._LABEL_HEIGHT
-            + cls._CARD_PADDING
+            self._CARD_PADDING
+            + self._SELECTED_RADIUS
+            + self._NODE_RADIUS
+            + self._LABEL_GAP
+            + label
+            + self._CARD_PADDING
         )
 
     def _nodes(self) -> list[tuple[int, QPointF]]:
-        left = self._EDGE_INSET
-        right = max(left, self.width() - self._EDGE_INSET)
+        inset = (
+            self._EDGE_INSET
+            if self._name_font_size() is not None
+            else self._EDGE_INSET_BARE
+        )
+        left = inset
+        right = max(left, self.width() - inset)
         span = max(1.0, right - left)
         centre_y = self._CARD_PADDING + self._SELECTED_RADIUS
         return [
@@ -1180,10 +1223,11 @@ class _BlacklistTimeline(QWidget):
             painter.setPen(progress_pen)
             painter.drawLine(*current_progress)
 
-        wide = self.width() >= 1180
-        node_radius = 12.5 if wide else 11.5
-        selected_radius = node_radius + 5.5
-        bracket_arm = 5.5 if wide else 5.0
+        name_size = self._name_font_size()
+        wide = name_size is not None
+        node_radius = self._NODE_RADIUS
+        selected_radius = self._SELECTED_RADIUS
+        bracket_arm = 5.5
         if self._selection_position is not None:
             position = max(0.0, min(14.0, self._selection_position))
             selection_x = nodes[0][1].x() + position * (
@@ -1237,7 +1281,7 @@ class _BlacklistTimeline(QWidget):
 
             font = painter.font()
             font.setBold(selected or state in {"current", "boss_ready"})
-            font.setPointSizeF(9.0 if wide else 8.5)
+            font.setPointSizeF(name_size if wide else 9.0)
             painter.setFont(font)
             label_color = QColor(tokens["TEXT"])
             if not selected:
