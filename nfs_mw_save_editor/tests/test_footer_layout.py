@@ -154,10 +154,11 @@ def test_footer_context_follows_page_and_actions_never_hide():
     assert not window.footer_context.isVisible()
     assert not window.footer_junkman_context.isVisible()
 
+    # Career keeps its lifetime totals on the page, so it contributes no
+    # footer context either -- Junkman is the only page that fills the slot.
     window._select_page("Career")
     APP.processEvents()
-    assert window.footer_context.isVisible()
-    assert window.career_footer_context.isVisible()
+    assert not window.footer_context.isVisible()
 
     window._select_page("Garage")
     APP.processEvents()
@@ -214,16 +215,13 @@ def test_footer_strip_regrows_when_its_numbers_arrive():
     """
 
     window = _window()
-    window._select_page("Career")
+    window._select_page("Junkman")
     APP.processEvents()
     QTest.qWait(20)
-    strip = window.career_footer_context
+    strip = window.footer_junkman_context
     empty_hint = strip.sizeHint().width()
 
-    window.career_total_races_value.setText("100 / 173")
-    window.career_total_milestones_value.setText("59 / 94")
-    window.career_total_bounty_value.setText("2.73M")
-    window.career_total_prologue_value.setText("5 / 5")
+    window.lbl_free.setText("Free slots: 34/63 - unlocked 63/63")
     APP.processEvents()
     QTest.qWait(20)
 
@@ -235,9 +233,9 @@ def test_footer_strip_regrows_when_its_numbers_arrive():
     _close_window(window)
 
 
-def test_career_totals_live_in_footer_without_moving_local_metrics():
+def test_career_totals_live_on_the_page_without_moving_local_metrics():
     window = _window(1180)
-    assert set(window._footer_contexts) == {"Junkman", "Career"}
+    assert set(window._footer_contexts) == {"Junkman"}
 
     assert set(window.profile_summary_values) == {
         "career_cars",
@@ -256,9 +254,9 @@ def test_career_totals_live_in_footer_without_moving_local_metrics():
         window.career_total_bounty_value,
         window.career_total_prologue_value,
     ):
-        assert window.career_footer_context.isAncestorOf(value)
-        assert window.footer_chrome.isAncestorOf(value)
-        assert not window.page_career.isAncestorOf(value)
+        assert window.career_totals_plate.isAncestorOf(value)
+        assert window.page_career.isAncestorOf(value)
+        assert not window.footer_chrome.isAncestorOf(value)
 
     for hero_value in (
         window.career_races_value,
@@ -295,7 +293,8 @@ def test_moved_totals_refresh_without_page_parent_dependencies():
     assert not window.footer_context.isVisible()
     window._select_page("Career")
     APP.processEvents()
-    assert window.career_footer_context.isVisible()
+    assert not window.footer_context.isVisible()
+    assert window.career_totals_plate.isVisible()
 
     _close_window(window)
 
@@ -325,22 +324,30 @@ def test_footer_context_width_hysteresis_is_40_pixels():
 
 
 def test_footer_recalculates_threshold_for_each_page_context():
-    window = _window(1920)
-    thresholds = {}
-    for page_name in ("Junkman", "Career"):
-        window._select_page(page_name)
-        APP.processEvents()
-        window._sync_footer_context_visibility(force=True)
-        thresholds[page_name] = window._footer_context_required_width()
-        assert window.footer_context.isVisible()
+    """The fit threshold is per page, not a constant of the footer."""
 
-    assert len(set(thresholds.values())) > 1
+    window = _window(1920)
+    window._select_page("Junkman")
+    APP.processEvents()
+    window._sync_footer_context_visibility(force=True)
+    with_context = window._footer_context_required_width()
+    assert window.footer_context.isVisible()
+
+    # Career contributes no context at all now, so its threshold is the bare
+    # actions row and the strip stays collapsed.
+    window._select_page("Career")
+    APP.processEvents()
+    window._sync_footer_context_visibility(force=True)
+    without_context = window._footer_context_required_width()
+    assert not window.footer_context.isVisible()
+
+    assert without_context < with_context
     _close_window(window)
 
 
 def test_visible_footer_context_does_not_raise_window_width_floor():
     window = _window(1920)
-    for page_name in ("Junkman", "Career"):
+    for page_name in window._footer_contexts:
         window._select_page(page_name)
         window._sync_footer_context_visibility(force=True)
         QTest.qWait(20)
@@ -400,9 +407,7 @@ def test_footer_uses_shell_theme_when_page_theme_is_lazy():
     window._select_page("Career")
     APP.processEvents()
 
-    assert window.career_footer_context.isVisible()
+    assert window.career_totals_plate.isVisible()
     assert window.footer_chrome.property("_scopedThemeName") == original
-    assert "QFrame#footerChrome QLabel#careerTotalsCaption" in (
-        window.footer_chrome.styleSheet()
-    )
+    assert "QLabel#footerMetricCaption" in window.footer_chrome.styleSheet()
     _close_window(window)

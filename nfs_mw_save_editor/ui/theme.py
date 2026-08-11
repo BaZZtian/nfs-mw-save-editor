@@ -665,7 +665,6 @@ QWidget#footerContext,
 QWidget#footerActions,
 QWidget#junkmanFooterContext,
 QFrame#profileFooterContext,
-QFrame#careerTotalsStrip,
 QFrame#footerMetric {{
     background: transparent;
     border: none;
@@ -1581,22 +1580,30 @@ QFrame#careerInspectorSection {{
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
-QFrame#footerChrome QFrame#careerTotalsStrip {{
+QFrame#careerTotalsPlate {{
+    background: {BG_CARD};
+    border: 1px solid {BORDER};
+    border-radius: {RADIUS_XL};
+}}
+/* The generic QWidget rule paints every plain container, so the cells would
+   stamp their own background over the plate. */
+QWidget#careerTotalsCell,
+QFrame#careerTotalsPlate QLabel {{
     background: transparent;
+}}
+QFrame#careerTotalsDivider {{
+    background: {BORDER};
     border: none;
 }}
-QFrame#footerChrome QFrame#careerTotalsStrip QLabel {{
-    background: transparent;
-}}
-QFrame#footerChrome QLabel#careerTotalsCaption {{
-    color: {MUTED_DARK};
-    font-size: 10px;
+QLabel#careerTotalsCaption {{
+    color: {MUTED};
+    font-size: 11px;
     font-weight: 700;
-    letter-spacing: 1.4px;
+    letter-spacing: 1.5px;
 }}
-QFrame#footerChrome QLabel#careerTotalsValue {{
+QLabel#careerTotalsValue {{
     color: {TEXT};
-    font-size: 17px;
+    font-size: 20px;
     font-weight: 700;
 }}
 QLabel#contentCardStatBadge {{

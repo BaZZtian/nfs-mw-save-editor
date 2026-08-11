@@ -659,9 +659,10 @@ class MainWindow(
         self.progress_bar.setFormat("0/7 Performance")
         tallies.addWidget(self.lbl_free)
         tallies.addWidget(self.progress_bar)
+        # Career's lifetime totals moved onto the Career page, so the footer's
+        # context slot belongs to Junkman alone.
         self._footer_contexts = {
             "Junkman": self.footer_junkman_context,
-            "Career": self.career_footer_context,
         }
         for name, context in self._footer_contexts.items():
             context.setVisible(name == "Junkman")

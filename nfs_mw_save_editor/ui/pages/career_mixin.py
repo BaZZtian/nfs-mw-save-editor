@@ -2114,9 +2114,8 @@ class CareerMixin:
             self.career_inspector_stack.addWidget(page)
         self.career_inspector_stack.setCurrentIndex(0)
         host_layout.addWidget(self.career_inspector_stack, 1)
-        # Keep the public total-label attributes alive during page construction;
-        # footerChrome adopts this parentless strip after all pages are built.
-        self.career_footer_context = self._build_career_totals_strip()
+        self.career_totals_plate = self._build_career_totals_plate()
+        host_layout.addWidget(self.career_totals_plate)
 
         scroll = QScrollArea()
         scroll.setObjectName("cardScroll")
@@ -2125,13 +2124,20 @@ class CareerMixin:
         scroll.setWidget(host)
         return scroll
 
-    def _build_career_totals_strip(self) -> QFrame:
-        strip = QFrame()
-        strip.setObjectName("careerTotalsStrip")
-        strip.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        row = QHBoxLayout(strip)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(10)
+    def _build_career_totals_plate(self) -> QFrame:
+        """Lifetime totals as the page's closing plate.
+
+        They used to ride in the shell footer, where they were chrome shared
+        with every other page's actions.  They belong to Career, so they sit at
+        the end of Career: one panel, four cells of equal width, hairlines
+        between them.
+        """
+        plate = QFrame()
+        plate.setObjectName("careerTotalsPlate")
+        plate.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row = QHBoxLayout(plate)
+        row.setContentsMargins(24, 22, 24, 22)
+        row.setSpacing(0)
         self.career_total_races_value = QLabel("—")
         self.career_total_milestones_value = QLabel("—")
         self.career_total_bounty_value = QLabel("—")
@@ -2142,22 +2148,30 @@ class CareerMixin:
             ("bounty", "BOUNTY", self.career_total_bounty_value),
             ("rival_race", "PROLOGUE", self.career_total_prologue_value),
         )
-        row.addStretch(1)
         for position, (icon_name, caption, value) in enumerate(cells):
             if position:
-                row.addStretch(2)
-            cell = QHBoxLayout()
-            cell.setSpacing(10)
+                divider = QFrame()
+                divider.setObjectName("careerTotalsDivider")
+                divider.setFrameShape(QFrame.NoFrame)
+                divider.setFixedWidth(1)
+                divider.setFixedHeight(38)
+                row.addWidget(divider, 0, Qt.AlignVCenter)
+            cell = QWidget()
+            cell.setObjectName("careerTotalsCell")
+            cell_row = QHBoxLayout(cell)
+            cell_row.setContentsMargins(0, 0, 0, 0)
+            cell_row.setSpacing(16)
+            cell_row.addStretch(1)
             icon_path = game_icon_path(icon_name)
             if icon_path is not None:
                 icon = QLabel()
                 icon.setObjectName("careerTotalsIcon")
-                icon.setFixedSize(26, 26)
+                icon.setFixedSize(32, 32)
                 icon.setAlignment(Qt.AlignCenter)
                 icon.setPixmap(self._tight_icon(
-                    icon_path, QSize(24, 24)
-                ).pixmap(24, 24))
-                cell.addWidget(icon, 0, Qt.AlignVCenter)
+                    icon_path, QSize(30, 30)
+                ).pixmap(30, 30))
+                cell_row.addWidget(icon, 0, Qt.AlignVCenter)
             copy = QVBoxLayout()
             copy.setContentsMargins(0, 0, 0, 0)
             copy.setSpacing(0)
@@ -2166,10 +2180,10 @@ class CareerMixin:
             value.setObjectName("careerTotalsValue")
             copy.addWidget(caption_label)
             copy.addWidget(value)
-            cell.addLayout(copy)
-            row.addLayout(cell)
-        row.addStretch(1)
-        return strip
+            cell_row.addLayout(copy)
+            cell_row.addStretch(1)
+            row.addWidget(cell, 1)
+        return plate
 
     def _on_career_view_changed(self, index: int) -> None:
         view_snapshot = self._career_crossfade_snapshot(

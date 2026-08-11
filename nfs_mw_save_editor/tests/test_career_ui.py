@@ -957,8 +957,12 @@ def test_career_totals_strip_lives_on_page_and_tracks_summary():
     app = _app()
     window = MainWindow()
     window.resize(1180, 780)
-    strip = window.findChild(QFrame, "careerTotalsStrip")
+    strip = window.findChild(QFrame, "careerTotalsPlate")
     assert strip is not None
+    # The totals belong to Career, not to the shell chrome shared with every
+    # other page's actions.
+    assert window.page_career.isAncestorOf(strip)
+    assert not window.footer_chrome.isAncestorOf(strip)
     assert window.findChild(QFrame, "careerLifetimeStrip") is None
     assert window.career_total_races_value.text() == "—"
 
