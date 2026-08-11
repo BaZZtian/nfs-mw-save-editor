@@ -123,6 +123,16 @@ def _ensure_user_catalog_path() -> Path:
     return user_path
 
 
+def _inside_scroll_area(view: QWidget, root: QWidget) -> bool:
+    """Does this view already scroll inside something, up to the page stack?"""
+    node = view.parentWidget()
+    while node is not None and node is not root:
+        if isinstance(node, QScrollArea):
+            return True
+        node = node.parentWidget()
+    return False
+
+
 def _scrolled_card_gap(layout) -> int:
     """The gap a list keeps between its own cards.
 
@@ -774,6 +784,12 @@ class MainWindow(
                     self._scroll_bottom_masks.append(
                         ScrollBottomMask(area, boundary=partial(self._footer_midline_inside, area))
                     )
+                if _inside_scroll_area(view, self.stack):
+                    # Already covered: the scroll's tail is what makes room for
+                    # the footer here.  Reserving again stacks a second bottom
+                    # margin under the content - 74px of dead space under the
+                    # Career cards until this was caught by eye.
+                    continue
                 if areas or nested or view.layout() is None:
                     continue
                 self._footer_reserve_views.append((view, view.layout().contentsMargins().bottom()))
