@@ -1001,6 +1001,8 @@ class _BlacklistTimeline(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._names_shown = False
+        self._resizing = False
         self.setFixedHeight(self._card_height())
         self._summary: Optional[career_progress.CareerProgressSummary] = None
         self._selected_stage: Optional[int] = None
@@ -1016,10 +1018,17 @@ class _BlacklistTimeline(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
         # Losing the names costs a label line, and the card has to give that
-        # height back instead of leaving a hole under the numbers.
-        height = self._card_height()
-        if self.height() != height:
-            self.setFixedHeight(height)
+        # height back instead of leaving a hole under the numbers.  The latch
+        # is required: setFixedHeight lands back here synchronously.
+        if self._resizing:
+            return
+        self._resizing = True
+        try:
+            height = self._card_height()
+            if self.height() != height:
+                self.setFixedHeight(height)
+        finally:
+            self._resizing = False
 
     def set_progress(
         self,
@@ -1102,9 +1111,17 @@ class _BlacklistTimeline(QWidget):
     _LABEL_HEIGHT_BARE = 16.0
 
     def _name_font_size(self) -> Optional[float]:
-        """Largest size at which every boss name fits between two nodes."""
+        """Largest size at which every boss name fits between two nodes.
+
+        Hysteresis, not a bare threshold: showing the names costs a label line,
+        which changes the card's height, which can raise or drop the page's
+        scrollbar, which changes this width again.  Without the extra margin to
+        switch names ON, that loop oscillates - it overflowed the stack the
+        first time the cards beside it changed the page's width.
+        """
         span = max(1.0, self.width() - 2 * self._EDGE_INSET)
         pitch = span / 14.0
+        needed_gap = self._LABEL_MIN_GAP + (0.0 if self._names_shown else 14.0)
         names = [
             BLACKLIST_BOSS_NAMES.get(stage, "?").upper() for stage in range(15, 0, -1)
         ]
@@ -1114,8 +1131,10 @@ class _BlacklistTimeline(QWidget):
             font.setBold(True)
             metrics = QFontMetricsF(font)
             widest = max(metrics.horizontalAdvance(name) for name in names)
-            if widest + self._LABEL_MIN_GAP <= pitch:
+            if widest + needed_gap <= pitch:
+                self._names_shown = True
                 return size
+        self._names_shown = False
         return None
 
     def _card_height(self) -> int:
@@ -1343,6 +1362,197 @@ class _InspectorRow:
     detail: str
     fraction: Optional[float]
     tooltip: str
+
+
+class _ChipPreviewCard(QFrame):
+    """One row of chips standing in for a chapter's events.
+
+    A preview, not a list: the boss chips are always shown and the rest of the
+    row is filled with races in list order, so the card reads as full at every
+    stage the game gives enough events for.  State is carried by fill, border
+    and icon opacity - the same language the dossier rows use - because hue
+    alone cannot survive 25 themes: in the yellow ones the boss gold and the
+    accent are the same colour.
+    """
+
+    _pixmap_cache: "OrderedDict[tuple[str, int, str], QPixmap]" = OrderedDict()
+    _PAD = 16
+    _GAP = 8
+    _HEADER = 24
+    _HEADER_GAP = 12
+    # The chip grows with the WINDOW, never with the card.  Deriving it from
+    # the card made the card's height depend on its width, and the page's
+    # scrollbar closes that loop: taller content raises the bar, the narrower
+    # viewport shrinks the chips, the shorter card drops the bar again - an
+    # oscillation that overflowed the stack.  A window is not resized by its
+    # own scrollbar, so reading it is safe.  Each step is sized so all seven
+    # milestones still fit their card at that width.
+    _CHIP_STEPS = ((1600, 80), (1350, 68), (0, 56))
+    _RADIUS = 12.0
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.setObjectName("careerInspectorSection")
+        self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._title = title
+        self._subtitle = ""
+        self._rows: Tuple[_InspectorRow, ...] = ()
+        self._boss_rows: Tuple[_InspectorRow, ...] = ()
+        self._chip_rects: list[tuple[QRect, _InspectorRow]] = []
+        self.setFixedHeight(self._card_height())
+
+    def _chip(self) -> int:
+        window = self.window()
+        width = window.width() if window is not None else 0
+        for threshold, size in self._CHIP_STEPS:
+            if width >= threshold:
+                return size
+        return self._CHIP_STEPS[-1][1]
+
+    def _slots(self) -> int:
+        """How many chips the row holds - the card is meant to look full."""
+        room = self.width() - 2 * self._PAD
+        return max(1, (room + self._GAP) // (self._chip() + self._GAP))
+
+    def _card_height(self) -> int:
+        return self._PAD + self._HEADER + self._HEADER_GAP + self._chip() + self._PAD
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(520, self._card_height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(340, self._card_height())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        height = self._card_height()
+        if self.height() != height:
+            self.setFixedHeight(height)
+
+    def set_items(
+        self,
+        subtitle: str,
+        rows: Sequence[_InspectorRow],
+        boss_rows: Sequence[_InspectorRow] = (),
+    ) -> None:
+        self._subtitle = subtitle
+        self._rows = tuple(rows)
+        self._boss_rows = tuple(boss_rows)
+        self.update()
+
+    def _tinted(self, path: Optional[Path], size: int, colour: Optional[QColor]) -> QPixmap:
+        if path is None:
+            return QPixmap()
+        key = (str(path), size, colour.name() if colour is not None else "-")
+        cached = self._pixmap_cache.get(key)
+        if cached is not None:
+            self._pixmap_cache.move_to_end(key)
+            return cached
+        source = QPixmap(str(path))
+        if source.isNull():
+            return source
+        source = source.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        if colour is not None:
+            layer = QPixmap(source.size())
+            layer.fill(Qt.transparent)
+            painter = QPainter(layer)
+            painter.drawPixmap(0, 0, source)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(layer.rect(), colour)
+            painter.end()
+            source = layer
+        self._pixmap_cache[key] = source
+        while len(self._pixmap_cache) > 96:
+            self._pixmap_cache.popitem(last=False)
+        return source
+
+    def _draw_chip(self, painter: QPainter, rect: QRect, row: _InspectorRow, tokens) -> None:
+        boss = row.kind == "boss"
+        accent = "BOSS_GOLD" if boss else "ACCENT"
+        bright = "BOSS_GOLD_BRIGHT" if boss else "ACCENT_BRIGHT"
+        icon_colour: Optional[QColor] = None
+        opacity = 1.0
+        if row.state == "done":
+            fill = QColor(tokens[accent])
+            border = QColor(tokens[bright])
+            # The theme itself says what reads on top of its accent; without
+            # this the icon vanished into the fill on the yellow themes.
+            icon_colour = QColor(tokens["TEXT_ON_ACCENT"])
+        elif row.state == "open":
+            fill = QColor(tokens["BG_INPUT"])
+            border = QColor(tokens[accent])
+        else:
+            fill = QColor(tokens["BG_INPUT"])
+            border = QColor(tokens["BOSS_GOLD_DIM" if boss else "BORDER"])
+            opacity = 0.38
+        painter.setBrush(fill)
+        painter.setPen(QPen(border, 1.4))
+        painter.drawRoundedRect(QRectF(rect), self._RADIUS, self._RADIUS)
+        icon = self._tinted(row.icon_path, round(rect.width() * 0.62), icon_colour)
+        if not icon.isNull():
+            painter.setOpacity(opacity)
+            painter.drawPixmap(
+                rect.left() + (rect.width() - icon.width()) // 2,
+                rect.top() + (rect.height() - icon.height()) // 2,
+                icon,
+            )
+            painter.setOpacity(1.0)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
+        super().paintEvent(_event)
+        tokens = resolve_theme_tokens()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        header = QRect(
+            self._PAD, self._PAD - 2, self.width() - 2 * self._PAD, self._HEADER
+        )
+        font = painter.font()
+        font.setPointSizeF(10.5)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(QColor(tokens["TEXT"]))
+        painter.drawText(header, Qt.AlignLeft | Qt.AlignVCenter, self._title)
+        font.setPointSizeF(8.5)
+        font.setBold(False)
+        painter.setFont(font)
+        painter.setPen(QColor(tokens["MUTED"]))
+        painter.drawText(header, Qt.AlignRight | Qt.AlignVCenter, self._subtitle)
+
+        size = self._chip()
+        top = self._PAD + self._HEADER + self._HEADER_GAP
+        shown = self._rows[: max(0, self._slots() - len(self._boss_rows))]
+        self._chip_rects = []
+
+        x = self._PAD
+        for row in shown:
+            rect = QRect(x, top, size, size)
+            self._draw_chip(painter, rect, row, tokens)
+            self._chip_rects.append((rect, row))
+            x += size + self._GAP
+
+        if self._boss_rows:
+            # Boss chips hug the right edge; the slack lands between the
+            # groups instead of trailing off the end of the row.
+            count = len(self._boss_rows)
+            x = self.width() - self._PAD - count * size - (count - 1) * self._GAP
+            for row in self._boss_rows:
+                rect = QRect(x, top, size, size)
+                self._draw_chip(painter, rect, row, tokens)
+                self._chip_rects.append((rect, row))
+                x += size + self._GAP
+        painter.end()
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.ToolTip:
+            for rect, row in self._chip_rects:
+                if rect.contains(event.pos()):
+                    self.setToolTip(f"{row.title}\n{row.tooltip}")
+                    break
+            else:
+                self.setToolTip("")
+        return super().event(event)
 
 
 class _ProgressRowList(QFrame):
@@ -1635,12 +1845,19 @@ class _ChapterInspectorPage(QFrame):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(12)
-        self.race_list = _ProgressRowList("RACE SCHEDULE")
-        self.milestone_list = _ProgressRowList("MILESTONES")
+        self.race_list = _ChipPreviewCard("RACE SCHEDULE")
+        self.milestone_list = _ChipPreviewCard("MILESTONES")
+        # The cards carry their own height now, so the pair must not stretch:
+        # with fill=True the spare room was shared out around them and left
+        # holes above and below.
+        # Chips need far less width than the dossier rows did, so the pair
+        # splits into two columns long before it used to (1150 kept them
+        # stacked in a 1182 window, where they now fit side by side).
         self._body = _ResponsivePanelPair(
-            self.race_list, self.milestone_list, breakpoint=1150, fill=True
+            self.race_list, self.milestone_list, breakpoint=820
         )
         root.addWidget(self._body)
+        root.addStretch(1)
 
     def set_progress(
         self,
@@ -2182,12 +2399,20 @@ class CareerMixin:
         )
         self._career_inspector_transition: Optional[ThemeTransitionOverlay] = None
         self.career_inspector_stack.setSizePolicy(
-            QSizePolicy.Expanding, QSizePolicy.Expanding
+            QSizePolicy.Expanding, QSizePolicy.Preferred
         )
         self.career_inspector_pages = (_ChapterInspectorPage(), _ChapterInspectorPage())
         for page in self.career_inspector_pages:
             self.career_inspector_stack.addWidget(page)
         self.career_inspector_stack.setCurrentIndex(0)
+        self.career_inspector_stack.currentChanged.connect(
+            self._sync_career_inspector_height
+        )
+        self._sync_career_inspector_height(0)
+        # The stack takes the spare room so the plate can close the page from
+        # the bottom.  A stretch in the host layout instead would push the
+        # plate past the footer: with nothing to scroll, the content widget is
+        # stretched to a viewport that runs under it.
         host_layout.addWidget(self.career_inspector_stack, 1)
         self.career_totals_plate = self._build_career_totals_plate()
         host_layout.addWidget(self.career_totals_plate)
@@ -2198,6 +2423,22 @@ class CareerMixin:
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setWidget(host)
         return scroll
+
+    def _sync_career_inspector_height(self, index: int) -> None:
+        """Let the stack follow the page on screen.
+
+        The inspector exists twice so stages can crossfade, and a stack asks
+        every page for its hint and keeps the tallest.  The off-screen twin has
+        never had a real width, so its panel pair still thinks it is stacked and
+        asks for two rows - which showed up as a hole between the cards and the
+        totals plate.
+        """
+        for position, page in enumerate(self.career_inspector_pages):
+            page.setSizePolicy(
+                QSizePolicy.Expanding,
+                QSizePolicy.Preferred if position == index else QSizePolicy.Ignored,
+            )
+            page.updateGeometry()
 
     def _build_career_totals_plate(self) -> QFrame:
         """Lifetime totals as the page's closing plate.
