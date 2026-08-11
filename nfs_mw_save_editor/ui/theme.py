@@ -883,6 +883,13 @@ QScrollArea#cardScroll {{
     border-radius: {RADIUS_XL};
     background: {BG};
 }}
+/* Settings carries its own boxed groups, so the generic scroll frame wrapped
+   them in a second one - a rectangle around the whole page that no other tab
+   has.  The groups are the panels here; the scroll is just the surface. */
+QScrollArea#settingsScroll {{
+    border: none;
+    background: {BG};
+}}
 
 /* Misc */
 QToolButton {{
