@@ -219,9 +219,21 @@ class _FooterTail(QObject):
         if overlap <= 0:
             wanted = self.original
         else:
-            bare = content.sizeHint().height() - margins.bottom()
-            room = viewport.height() - overlap - self.gap
-            wanted = self.original if bare + self.original <= room else overlap + self.gap
+            # Pad when the content actually reaches the footer, not only when
+            # it overflows: a page that pins something to its bottom (Career's
+            # totals plate) reaches it without any scroll range at all.
+            # Measured with the current tail added back, so the answer does not
+            # depend on the tail it decides - otherwise it oscillates.
+            lowest = max(
+                (
+                    child.mapTo(window, QPoint(0, 0)).y() + child.height()
+                    for child in content.findChildren(QWidget)
+                    if child.parentWidget() is content and child.isVisible()
+                ),
+                default=0,
+            )
+            reach = lowest + margins.bottom()
+            wanted = overlap + self.gap if reach > footer_top - self.gap else self.original
         if margins.bottom() == wanted:
             return
         # Growing the content can raise a scrollbar, which resizes the viewport,
