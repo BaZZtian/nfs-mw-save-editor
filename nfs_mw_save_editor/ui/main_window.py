@@ -16,7 +16,7 @@ import shutil
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QDesktopServices, QIcon, QImage, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -117,6 +118,106 @@ def _ensure_user_catalog_path() -> Path:
         except Exception:
             logger.warning("Failed to copy default catalog to %s", user_path, exc_info=True)
     return user_path
+
+
+def _scrolled_card_gap(layout) -> int:
+    """The gap a list keeps between its own cards.
+
+    Some lists wrap their grid in a plain host with zero spacing (Junkman
+    centres its fixed-width grid that way), so a zero here means "look one
+    level deeper", not "cards touch".
+    """
+    while layout is not None:
+        gap = layout.verticalSpacing() if hasattr(layout, "verticalSpacing") else -1
+        if gap < 0:
+            gap = layout.spacing()
+        if gap > 0:
+            return gap
+        widgets = [
+            layout.itemAt(index).widget()
+            for index in range(layout.count())
+            if layout.itemAt(index).widget() is not None
+        ]
+        if len(widgets) != 1:
+            return max(0, gap)
+        layout = widgets[0].layout()
+    return 0
+
+
+class _FooterTail(QObject):
+    """Bottom padding that keeps a scrolled list clear of the floating footer.
+
+    The footer is painted over the bottom of the content stack, so the last
+    band of every viewport is hidden behind it.  The tail is that hidden band
+    plus the list's own gap between cards: at the bottom of a list the final
+    card then stands the same distance from the footer as cards stand from
+    each other.  Lists short enough to finish above the footer keep their
+    authored padding and gain no scroll range.
+
+    The maths needs the viewport's real geometry, and a page inside a
+    QStackedWidget only gets that once the stack has laid it out - which is
+    after the page switch returns.  So the tail listens to its own viewport
+    instead of trusting the moment it is asked.
+    """
+
+    def __init__(self, window: QWidget, area: QScrollArea, gap: int) -> None:
+        super().__init__(area)
+        self._window = window
+        self._applying = False
+        self._watched_content: Optional[QWidget] = None
+        self.area = area
+        self.gap = gap
+        self.original = area.widget().layout().contentsMargins().bottom()
+        area.viewport().installEventFilter(self)
+        self._watch_content()
+
+    def _watch_content(self) -> None:
+        """Follow the scrolled widget: card grids fill in on lazy timers, long
+        after the viewport got its size, and that growth is the only signal
+        that a list which used to fit no longer does."""
+        content = self.area.widget()
+        if content is self._watched_content:
+            return
+        if self._watched_content is not None:
+            self._watched_content.removeEventFilter(self)
+        self._watched_content = content
+        if content is not None:
+            content.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if event.type() in (QEvent.Resize, QEvent.Show):
+            self.apply()
+        return False
+
+    def apply(self) -> None:
+        if self._applying:
+            return
+        self._watch_content()
+        window = self._window
+        footer = getattr(window, "footer_chrome", None)
+        content = self.area.widget()
+        layout = content.layout() if content is not None else None
+        if footer is None or layout is None or not self.area.isVisible():
+            return
+        viewport = self.area.viewport()
+        margins = layout.contentsMargins()
+        footer_top = footer.mapTo(window, QPoint(0, 0)).y()
+        overlap = viewport.mapTo(window, QPoint(0, 0)).y() + viewport.height() - footer_top
+        if overlap <= 0:
+            wanted = self.original
+        else:
+            bare = content.sizeHint().height() - margins.bottom()
+            room = viewport.height() - overlap - self.gap
+            wanted = self.original if bare + self.original <= room else overlap + self.gap
+        if margins.bottom() == wanted:
+            return
+        # Growing the content can raise a scrollbar, which resizes the viewport,
+        # which lands back here.
+        self._applying = True
+        try:
+            layout.setContentsMargins(margins.left(), margins.top(), margins.right(), wanted)
+        finally:
+            self._applying = False
 
 
 class _FooterContextHost(QWidget):
@@ -284,9 +385,16 @@ class MainWindow(
         self.stack = QStackedWidget()
         self.stack.setObjectName("contentStack")
         self.stack.setAutoFillBackground(True)
-        base.addWidget(self.stack, 1, 1)
+        # The stack spans the footer's row: the footer is no longer laid out
+        # below the content but painted over it, so lists scroll under it
+        # instead of dying against an invisible viewport edge above it.
+        base.addWidget(self.stack, 1, 1, 2, 1)
         base.setColumnStretch(1, 1)
         base.setRowStretch(1, 1)
+        # The footer is parked on the stack's rect, and MainWindow.resizeEvent
+        # fires *before* the grid has moved the stack -- reading it there hands
+        # out last frame's geometry.  The stack's own resize is the truth.
+        self.stack.installEventFilter(self)
 
         self.page_junk = self._build_junk_page()
         self.page_profile = self._build_profile_page()
@@ -315,12 +423,16 @@ class MainWindow(
             self.stack.addWidget(p)
 
         self.footer_chrome = self._build_footer()
-        base.addWidget(self.footer_chrome, 2, 1)
+        self.footer_chrome.setParent(root)
+        self.footer_chrome.show()
+        self.footer_chrome.raise_()
         self._shell_theme_roots.append(self.footer_chrome)
         self._footer_page_name = "Junkman"
         self._footer_context_expanded = False
+        self._collect_footer_overlay_targets()
         self._set_footer_page("Junkman")
         self._select_page("Junkman")
+        self._sync_footer_overlay()
 
         # -- Keyboard shortcuts --
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.on_open)
@@ -622,6 +734,68 @@ class MainWindow(
         self._footer_context_expanded = expanded
         self.footer_context.setVisible(expanded)
 
+    def _collect_footer_overlay_targets(self) -> None:
+        """Register everything the floating footer now covers.
+
+        Scrolled lists get a tail (see _FooterTail) so their content can clear
+        the footer.  Views that scroll nothing keep the room the footer used to
+        occupy as a grid row, so what was visible before stays visible.
+        """
+        self._footer_scroll_targets: List[_FooterTail] = []
+        self._footer_reserve_views: List[tuple[QWidget, int]] = []
+        hosts = [self.stack]
+        seen_views: set[int] = set()
+        seen_areas: set[int] = set()
+        while hosts:
+            host = hosts.pop()
+            for index in range(host.count()):
+                view = host.widget(index)
+                if view is None or id(view) in seen_views:
+                    continue
+                seen_views.add(id(view))
+                nested = view.findChildren(QStackedWidget)
+                hosts.extend(nested)
+                areas = [view] if isinstance(view, QScrollArea) else view.findChildren(QScrollArea)
+                for area in areas:
+                    if id(area) in seen_areas:
+                        continue
+                    content = area.widget()
+                    if content is None or content.layout() is None:
+                        continue
+                    seen_areas.add(id(area))
+                    gap = _scrolled_card_gap(content.layout())
+                    self._footer_scroll_targets.append(_FooterTail(self, area, gap))
+                if areas or nested or view.layout() is None:
+                    continue
+                self._footer_reserve_views.append((view, view.layout().contentsMargins().bottom()))
+
+    def _sync_footer_overlay(self) -> None:
+        """Park the footer over the bottom of the content stack and pad for it."""
+        footer = getattr(self, "footer_chrome", None)
+        if footer is None or not hasattr(self, "stack"):
+            return
+        if getattr(self, "_footer_overlay_syncing", False):
+            return
+        self._footer_overlay_syncing = True
+        try:
+            area = self.stack.geometry()
+            height = max(footer.sizeHint().height(), footer.minimumSizeHint().height())
+            footer.setGeometry(area.x(), area.bottom() + 1 - height, area.width(), height)
+            footer.raise_()
+            base = self.centralWidget().layout()
+            spacing = base.verticalSpacing() if isinstance(base, QGridLayout) else 0
+            reserve = height + spacing
+            for view, original_bottom in getattr(self, "_footer_reserve_views", []):
+                layout = view.layout()
+                margins = layout.contentsMargins()
+                wanted = original_bottom + reserve
+                if margins.bottom() != wanted:
+                    layout.setContentsMargins(margins.left(), margins.top(), margins.right(), wanted)
+            for tail in getattr(self, "_footer_scroll_targets", []):
+                tail.apply()
+        finally:
+            self._footer_overlay_syncing = False
+
     def _set_footer_page(self, name: str) -> None:
         self._footer_page_name = name
         # Career stages have no staged wants (transplants apply immediately),
@@ -635,6 +809,7 @@ class MainWindow(
         self.footer_context.updateGeometry()
         self.footer_chrome.layout().invalidate()
         self._sync_footer_context_visibility()
+        self._sync_footer_overlay()
 
     def _select_page(self, name: str):
         if self._current_stack_page_name() == name:
@@ -668,6 +843,7 @@ class MainWindow(
             self._refresh_parts_page(reason="page_enter")
         elif name == "Builds":
             self._refresh_presets_page(reason="page_enter")
+        self._sync_footer_overlay()
         if overlay is not None:
             overlay.start()
 
@@ -1200,6 +1376,7 @@ class MainWindow(
         self.refresh_cards()
         if hasattr(self, "_schedule_parts_pool_prewarm"):
             self._schedule_parts_pool_prewarm(delay_ms=0)
+        self._sync_footer_overlay()
 
     def _has_pending_changes(self) -> bool:
         return (
@@ -1261,6 +1438,7 @@ class MainWindow(
         ToastNotification.reposition_active(self)
         self._update_header_path()
         self._sync_footer_context_visibility()
+        self._sync_footer_overlay()
         if hasattr(self, "scroll") and hasattr(self, "cards_container"):
             prev = getattr(self, "_cards_per_row", DEFAULT_CARDS_PER_ROW)
             now = self._detect_cards_per_row()
@@ -1319,6 +1497,14 @@ class MainWindow(
             overlay.start()
 
     def eventFilter(self, watched, event):
+        if watched is getattr(self, "stack", None):
+            if event is not None and event.type() in (
+                QEvent.Type.Resize,
+                QEvent.Type.Move,
+                QEvent.Type.Show,
+            ):
+                self._sync_footer_overlay()
+            return False
         if not isinstance(watched, (QDialog, QMessageBox)):
             return False
         if isinstance(watched, QFileDialog):

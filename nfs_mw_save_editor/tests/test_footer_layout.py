@@ -9,11 +9,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QGridLayout, QLabel, QSizePolicy
+from PySide6.QtWidgets import QApplication, QGridLayout, QLabel, QSizePolicy, QWidget
 
-from ui.main_window import MainWindow
+from ui.main_window import MainWindow, _scrolled_card_gap
 from ui.pages import constants
 from ui.theme import available_theme_names
 
@@ -37,21 +37,32 @@ def _close_window(window: MainWindow) -> None:
     APP.processEvents()
 
 
-def test_footer_is_a_layout_row_and_preserves_public_controls():
+def test_footer_floats_over_the_stack_and_preserves_public_controls():
     window = _window()
     layout = window.centralWidget().layout()
     assert isinstance(layout, QGridLayout)
 
-    footer_index = layout.indexOf(window.footer_chrome)
+    # The footer left the grid.  It is parked on the bottom of the content
+    # stack, which now spans its row, so lists scroll *under* the footer
+    # instead of being sliced by an invisible viewport edge 19px above it.
+    assert layout.indexOf(window.footer_chrome) == -1
+    assert window.footer_chrome.parentWidget() is window.centralWidget()
+    stack_index = layout.indexOf(window.stack)
     nav_index = layout.indexOf(window.nav_chrome)
-    assert layout.getItemPosition(footer_index) == (2, 1, 1, 1)
+    assert layout.getItemPosition(stack_index) == (1, 1, 2, 1)
     assert layout.getItemPosition(nav_index) == (0, 0, 3, 1)
     # No explicit minimumHeight: Qt replaces the computed layout minimum with an
     # explicit one instead of widening it, which used to let the grid squeeze the
     # footer row and clip the action buttons.  See the short-window test below.
     assert window.footer_chrome.minimumHeight() == 0
     assert window.footer_chrome.sizePolicy().verticalPolicy() == QSizePolicy.Fixed
-    assert window.footer_chrome.geometry().top() > window.stack.geometry().bottom()
+
+    footer_rect = window.footer_chrome.geometry()
+    stack_rect = window.stack.geometry()
+    assert footer_rect.left() == stack_rect.left()
+    assert footer_rect.width() == stack_rect.width()
+    assert footer_rect.bottom() == stack_rect.bottom()
+    assert footer_rect.top() > stack_rect.top()
 
     for name in (
         "btn_save_footer",
@@ -64,6 +75,46 @@ def test_footer_is_a_layout_row_and_preserves_public_controls():
 
     assert window.footer_chrome in window._shell_theme_roots
     assert not hasattr(constants, "FOOTER_CLEARANCE")
+    _close_window(window)
+
+
+def test_scrolled_page_runs_under_the_footer_and_stops_one_gap_short():
+    """The tail contract: a list ends the same distance from the footer as its
+    own items stand from each other, and nothing of it is unreachable.
+
+    Before the footer floated, every scrolling page died against the viewport
+    edge 19px above the footer - an edge with no pixels of its own, which read
+    as an invisible visor shaving the cards.
+    """
+
+    window = _window()
+    window.resize(1180, 700)
+    window._select_page("Settings")
+    QTest.qWait(40)
+    APP.processEvents()
+
+    area = window.page_settings
+    content = area.widget()
+    gap = _scrolled_card_gap(content.layout())
+    assert gap > 0
+
+    bar = area.verticalScrollBar()
+    assert bar.maximum() > 0, "settings must overflow for this contract to mean anything"
+    bar.setValue(bar.maximum())
+    QTest.qWait(20)
+    APP.processEvents()
+
+    viewport = area.viewport()
+    footer_top = window.footer_chrome.mapTo(window, QPoint(0, 0)).y()
+    viewport_bottom = viewport.mapTo(window, QPoint(0, 0)).y() + viewport.height()
+    assert viewport_bottom > footer_top, "the list must reach under the footer"
+
+    last_bottom = max(
+        child.mapTo(window, QPoint(0, 0)).y() + child.height()
+        for child in content.findChildren(QWidget)
+        if child.parentWidget() is content and child.isVisible()
+    )
+    assert footer_top - last_bottom == gap
     _close_window(window)
 
 
