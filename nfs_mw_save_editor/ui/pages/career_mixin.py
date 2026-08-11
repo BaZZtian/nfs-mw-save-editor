@@ -999,7 +999,7 @@ class _BlacklistTimeline(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMinimumHeight(104)
+        self.setFixedHeight(self._card_height())
         self._summary: Optional[career_progress.CareerProgressSummary] = None
         self._selected_stage: Optional[int] = None
         self._selection_position: Optional[float] = None
@@ -1071,17 +1071,36 @@ class _BlacklistTimeline(QWidget):
         path.lineTo(right - arm, bottom)
         return path
 
-    # Node ring plus the two label lines under it; the card centres this block
-    # rather than pinning it to the top, so the timeline reads as a card with
-    # breathing room instead of a strip its content is flush against.
-    _BLOCK_HEIGHT = 64.0
+    # Card geometry.  Everything is measured from the content so the card hugs
+    # the strip: the same padding above the selection bracket, below the label
+    # lines, and beyond the outer labels.
+    _CARD_PADDING = 20.0
+    _NODE_RADIUS = 12.5
+    _SELECTED_RADIUS = _NODE_RADIUS + 5.5
+    _LABEL_GAP = 4.0
+    _LABEL_HEIGHT = 30.0
+    # Padding plus half of an outer label ("#15 SONNY"), so the ends of the
+    # strip keep the same margin as the rest.  Without it the first and last
+    # labels ran under the card's own edge.
+    _EDGE_INSET = 46.0
+
+    @classmethod
+    def _card_height(cls) -> int:
+        """Padding, the tallest thing above a node, the node, and its label."""
+        return round(
+            cls._CARD_PADDING
+            + cls._SELECTED_RADIUS
+            + cls._NODE_RADIUS
+            + cls._LABEL_GAP
+            + cls._LABEL_HEIGHT
+            + cls._CARD_PADDING
+        )
 
     def _nodes(self) -> list[tuple[int, QPointF]]:
-        left = 26.0
-        right = max(left, self.width() - 26.0)
+        left = self._EDGE_INSET
+        right = max(left, self.width() - self._EDGE_INSET)
         span = max(1.0, right - left)
-        top = max(0.0, (self.height() - self._BLOCK_HEIGHT) / 2.0)
-        centre_y = top + 14.0
+        centre_y = self._CARD_PADDING + self._SELECTED_RADIUS
         return [
             (stage, QPointF(left + index * span / 14.0, centre_y))
             for index, stage in enumerate(range(15, 0, -1))
@@ -1176,7 +1195,7 @@ class _BlacklistTimeline(QWidget):
             selection_pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
             painter.setPen(selection_pen)
             painter.drawPath(self._selection_bracket_path(
-                QPointF(selection_x, 30.0), selected_radius, bracket_arm
+                QPointF(selection_x, nodes[0][1].y()), selected_radius, bracket_arm
             ))
         for stage, point in nodes:
             state = self._state(stage)
