@@ -78,8 +78,10 @@ from PySide6.QtWidgets import (
 )
 
 from core import (
+    blacklist_rewards,
     career_progress,
     career_transplant,
+    marker_names,
     milestone_names,
     race_display_names,
     rival_bios,
@@ -92,7 +94,7 @@ from core.career_donor_library import (
     default_user_career_donor_root,
     load_career_donor_library,
 )
-from ui.icon_map import game_icon_path, rival_asset_path
+from ui.icon_map import game_icon_path, rival_asset_path, token_icon_path
 from ui.pages.constants import BLACKLIST_BOSS_NAMES
 from ui.theme import resolve_theme_tokens
 from ui.widgets import (
@@ -1555,6 +1557,214 @@ class _ChipPreviewCard(QFrame):
         return super().event(event)
 
 
+class _RewardOffersCard(QFrame):
+    """What a rival puts on the table: his six marker cards, evenly spaced.
+
+    Deliberately stateless.  The player takes TWO of the six and nothing in the
+    save records which two, so painting them as claimed because the rival is
+    beaten would be a guess; reading it off the player's inventory would be a
+    worse one (markers get spent, pink-slipped cars get sold).  These are
+    offers, and the card says so.
+    """
+
+    _pixmap_cache: "OrderedDict[tuple[str, int], QPixmap]" = OrderedDict()
+    _PAD = 16
+    _HEADER = 24
+    _HEADER_GAP = 12
+    # The card takes the page's spare height and the tokens grow into it, so
+    # the room under the two preview cards stops being a hole.  Icon size is
+    # read from the card's own height, which the layout hands down - never
+    # from its width, which would feed back through the page's scrollbar.
+    _ICON_MIN = 44
+    _ICON_MAX = 66
+    _RADIUS = 12.0
+    _FLIP_MS = 360
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.setObjectName("careerInspectorSection")
+        self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._title = title
+        self._subtitle = ""
+        self._markers: Tuple[int, ...] = ()
+        self._empty_note = ""
+        self._cells: list[tuple[QRect, int]] = []
+        self._hovered: Optional[int] = None
+        self._flip = 0.0
+        self._flip_anim = QVariantAnimation(self)
+        self._flip_anim.setDuration(self._FLIP_MS)
+        self._flip_anim.setEasingCurve(QEasingCurve.InOutQuad)
+        self._flip_anim.valueChanged.connect(self._set_flip)
+
+    def _chrome_height(self) -> int:
+        return self._PAD + self._HEADER + self._HEADER_GAP + self._PAD
+
+    def _icon_size(self) -> int:
+        band = self.height() - self._chrome_height()
+        return max(self._ICON_MIN, min(self._ICON_MAX, band))
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(520, self._chrome_height() + self._ICON_MIN)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(300, self._chrome_height() + self._ICON_MIN)
+
+    def set_offers(self, subtitle: str, markers: Sequence[int], empty_note: str = "") -> None:
+        self._subtitle = subtitle
+        self._markers = tuple(markers)
+        self._empty_note = empty_note
+        self._hovered = None
+        self._flip_anim.stop()
+        self._flip = 0.0
+        self.update()
+
+    def _set_flip(self, value) -> None:
+        self._flip = float(value)
+        self.update()
+
+    def _icon(self, marker: int, size: int) -> QPixmap:
+        key = (str(marker), size)
+        cached = self._pixmap_cache.get(key)
+        if cached is not None:
+            self._pixmap_cache.move_to_end(key)
+            return cached
+        path = token_icon_path(marker)
+        pixmap = QPixmap(str(path)) if path is not None else QPixmap()
+        if not pixmap.isNull():
+            pixmap = pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self._pixmap_cache[key] = pixmap
+        while len(self._pixmap_cache) > 48:
+            self._pixmap_cache.popitem(last=False)
+        return pixmap
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
+        super().paintEvent(_event)
+        tokens = resolve_theme_tokens()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+
+        header = QRect(self._PAD, self._PAD - 2, self.width() - 2 * self._PAD, self._HEADER)
+        font = painter.font()
+        font.setPointSizeF(10.5)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(QColor(tokens["TEXT"]))
+        painter.drawText(header, Qt.AlignLeft | Qt.AlignVCenter, self._title)
+        title_right = self._PAD + painter.fontMetrics().horizontalAdvance(self._title)
+        font.setPointSizeF(8.5)
+        font.setBold(False)
+        painter.setFont(font)
+        painter.setPen(QColor(tokens["MUTED"]))
+        painter.drawText(header, Qt.AlignRight | Qt.AlignVCenter, self._subtitle)
+        meta_left = (
+            self.width() - self._PAD - painter.fontMetrics().horizontalAdvance(self._subtitle)
+        )
+
+        icon_size = self._icon_size()
+        band = self.height() - self._chrome_height()
+        top = self._PAD + self._HEADER + self._HEADER_GAP + max(0, (band - icon_size) // 2)
+        if self._markers:
+            # Centre the row on the whole card, not just on the space under the
+            # header - but only where the outer tokens clear the header text.
+            # In a narrow card the first one would sit on top of "REWARDS".
+            cell_width = (self.width() - 2 * self._PAD) / len(self._markers)
+            first_left = self._PAD + (cell_width - icon_size) / 2
+            last_right = self.width() - self._PAD - (cell_width - icon_size) / 2
+            clears_header = (
+                first_left > title_right + 12 and last_right < meta_left - 12
+            )
+            if clears_header:
+                top = max(self._PAD, (self.height() - icon_size) // 2)
+        self._cells = []
+        if not self._markers:
+            painter.setPen(QColor(tokens["MUTED_DARK"]))
+            font.setPointSizeF(9.5)
+            painter.setFont(font)
+            painter.drawText(
+                QRect(self._PAD, top, self.width() - 2 * self._PAD, icon_size),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                self._empty_note,
+            )
+            painter.end()
+            return
+
+        divider_height = round(icon_size * 0.78)
+        inner = self.width() - 2 * self._PAD
+        cell_width = inner / len(self._markers)
+        for index, marker in enumerate(self._markers):
+            left = self._PAD + cell_width * index
+            cell = QRect(round(left), top, round(cell_width), icon_size)
+            self._cells.append((cell, marker))
+            if index:
+                # Same hairline rhythm as the totals plate.
+                painter.setPen(QPen(QColor(tokens["BORDER"]), 1.0))
+                divider_top = top + (icon_size - divider_height) // 2
+                painter.drawLine(
+                    cell.left(), divider_top, cell.left(), divider_top + divider_height
+                )
+            icon = self._icon(marker, icon_size)
+            if icon.isNull():
+                continue
+            scale = 1.0
+            if self._hovered == index:
+                # Half-spin about the vertical axis: the token turns edge-on
+                # and comes back to its own face.
+                scale = max(abs(math.cos(math.pi * self._flip)), 0.04)
+            width = max(1, round(icon.width() * scale))
+            drawn = icon if scale == 1.0 else icon.scaled(
+                width, icon.height(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation
+            )
+            painter.drawPixmap(
+                cell.center().x() - drawn.width() // 2,
+                top + (icon_size - drawn.height()) // 2,
+                drawn,
+            )
+        painter.end()
+
+    def _cell_at(self, pos) -> Optional[int]:
+        for index, (rect, _marker) in enumerate(self._cells):
+            if rect.contains(pos):
+                return index
+        return None
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        index = self._cell_at(event.pos())
+        if index != self._hovered:
+            self._hovered = index
+            self._flip_anim.stop()
+            if index is not None:
+                self._flip_anim.setStartValue(0.0)
+                self._flip_anim.setEndValue(1.0)
+                self._flip_anim.start()
+            else:
+                self._flip = 0.0
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._hovered = None
+        self._flip_anim.stop()
+        self._flip = 0.0
+        self.update()
+        super().leaveEvent(event)
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.ToolTip:
+            index = self._cell_at(event.pos())
+            if index is None:
+                self.setToolTip("")
+            else:
+                marker = self._cells[index][1]
+                canon = marker_names.MARKER_CANON.get(marker)
+                if canon is None:
+                    self.setToolTip(f"Marker {marker}")
+                else:
+                    self.setToolTip(f"{canon.name}\n{canon.description}")
+        return super().event(event)
+
+
 class _ProgressRowList(QFrame):
     """Painted dossier list: one readable row per event with state and result."""
 
@@ -1857,7 +2067,10 @@ class _ChapterInspectorPage(QFrame):
             self.race_list, self.milestone_list, breakpoint=820
         )
         root.addWidget(self._body)
-        root.addStretch(1)
+        # Full width of its own: the offers are a short row, and the two cards
+        # above already need every pixel they can get to keep their slots.
+        self.reward_list = _RewardOffersCard("REWARDS")
+        root.addWidget(self.reward_list, 1)
 
     def set_progress(
         self,
@@ -1867,6 +2080,7 @@ class _ChapterInspectorPage(QFrame):
         if summary is None or stage is None:
             self.race_list.set_items("No race table loaded", ())
             self.milestone_list.set_items("No milestone table loaded", ())
+            self.reward_list.set_offers("", (), "No career data loaded")
             return
 
         chapter = summary.chapter(stage)
@@ -1968,6 +2182,13 @@ class _ChapterInspectorPage(QFrame):
             f"{chapter.milestone_wins}/{requirement.milestones} wins  ·  "
             f"{chapter.milestone_total} available",
             milestone_rows,
+        )
+
+        offers = blacklist_rewards.reward_markers(stage)
+        self.reward_list.set_offers(
+            f"take {blacklist_rewards.CARDS_TAKEN} of {len(offers)}" if offers else "",
+            offers,
+            "Final Pursuit ends the career - this rival offers no markers",
         )
 
 
