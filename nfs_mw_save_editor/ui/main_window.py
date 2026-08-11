@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+from functools import partial
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -72,6 +73,7 @@ from ui.theme import (
     save_theme_name,
 )
 from ui.widgets import (
+    ScrollBottomMask,
     ScrollTopFade,
     ShellActionButton,
     SplitTextProgressBar,
@@ -745,6 +747,7 @@ class MainWindow(
         self._footer_scroll_targets: List[_FooterTail] = []
         self._footer_reserve_views: List[tuple[QWidget, int]] = []
         self._scroll_top_fades: List[ScrollTopFade] = []
+        self._scroll_bottom_masks: List[ScrollBottomMask] = []
         hosts = [self.stack]
         seen_views: set[int] = set()
         seen_areas: set[int] = set()
@@ -768,9 +771,26 @@ class MainWindow(
                     gap = _scrolled_card_gap(content.layout())
                     self._footer_scroll_targets.append(_FooterTail(self, area, gap))
                     self._scroll_top_fades.append(ScrollTopFade(area))
+                    self._scroll_bottom_masks.append(
+                        ScrollBottomMask(area, boundary=partial(self._footer_midline_inside, area))
+                    )
                 if areas or nested or view.layout() is None:
                     continue
                 self._footer_reserve_views.append((view, view.layout().contentsMargins().bottom()))
+
+    def _footer_midline_inside(self, area: QScrollArea) -> int:
+        """The footer's middle, in this viewport's coordinates.
+
+        Where a list stops being drawn.  The wedge left by the footer's
+        rounded corners lives in its last 12px, so any line above that clears
+        it; the middle keeps the most room on either side of the choice.
+        """
+        footer = getattr(self, "footer_chrome", None)
+        viewport = area.viewport()
+        if footer is None:
+            return viewport.height()
+        midline = footer.mapTo(self, QPoint(0, 0)).y() + footer.height() // 2
+        return midline - viewport.mapTo(self, QPoint(0, 0)).y()
 
     def _sync_footer_overlay(self) -> None:
         """Park the footer over the bottom of the content stack and pad for it."""
@@ -796,6 +816,9 @@ class MainWindow(
                     layout.setContentsMargins(margins.left(), margins.top(), margins.right(), wanted)
             for tail in getattr(self, "_footer_scroll_targets", []):
                 tail.apply()
+            # The footer moved, so the line the lists stop at moved with it.
+            for mask in getattr(self, "_scroll_bottom_masks", []):
+                mask.sync()
         finally:
             self._footer_overlay_syncing = False
 

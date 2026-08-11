@@ -856,6 +856,51 @@ class ScrollTopFade(QWidget):
         painter.end()
 
 
+class ScrollBottomMask(QWidget):
+    """Stops a scrolled list from being drawn below a boundary.
+
+    Lists run under the shell footer, and the footer's rounded corners leave a
+    wedge the panel does not cover - so beside the curve the last rows peek
+    out, and the corner reads as broken.  A scroll area has no "draw no
+    further" switch, so the band below the boundary is painted in the page
+    background instead.  Everything but the wedge is behind the footer, so
+    nothing else on screen changes.
+    """
+
+    def __init__(self, area: QScrollArea, *, boundary: Callable[[], int]) -> None:
+        super().__init__(area.viewport())
+        self._area = area
+        self._boundary = boundary
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
+        area.viewport().installEventFilter(self)
+        self.sync()
+
+    def sync(self, *_) -> None:
+        viewport = self._area.viewport()
+        top = self._boundary()
+        if viewport.width() <= 0 or top >= viewport.height():
+            self.hide()
+            return
+        top = max(0, top)
+        self.setGeometry(0, top, viewport.width(), viewport.height() - top)
+        self.show()
+        self.raise_()
+        self.update()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if event.type() in (QEvent.Resize, QEvent.Show):
+            self.sync()
+        return False
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        _ = event
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(resolve_theme_tokens()["BG"]))
+        painter.end()
+
+
 class TokenCard(QWidget):
     """A dark card representing a single Junkman token."""
 
