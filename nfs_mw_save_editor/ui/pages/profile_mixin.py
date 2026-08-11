@@ -6,7 +6,6 @@ from typing import Dict, Optional
 from PySide6.QtCore import QRegularExpression, Qt
 from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
-    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -102,18 +101,34 @@ class ProfileMixin:
 
         layout.addLayout(bounty_strip)
         hint = QLabel(
-            "Money is edited here. This page shows the editable identity and save totals."
+            "Money is edited here. This page shows save totals and a compact garage summary."
         )
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
         hint.setAlignment(Qt.AlignCenter)
         layout.addWidget(hint)
 
-        # ── Footer garage summary context ───────────────────────
-        # Construct the summary labels with the page so refresh attributes
-        # exist immediately. footerChrome adopts this parentless context after
-        # all pages have been built.
-        self.profile_footer_context = self._build_profile_summary_context()
+        # ── Compact garage summary ──────────────────────────────
+        summary_strip = QHBoxLayout()
+        summary_strip.setSpacing(10)
+        self.profile_summary_values: Dict[str, QLabel] = {}
+        summary_defs = [
+            ("Career Cars", "career_cars"),
+            ("Pink Slips", "pink_slips"),
+            ("My Cars", "my_cars"),
+            ("Free Career Slots", "free_career_slots"),
+        ]
+        for title, key in summary_defs:
+            value = QLabel("-")
+            value.setObjectName("statTileValue")
+            value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+            value.setAlignment(Qt.AlignCenter)
+            sub = QLabel("Current save")
+            sub.setObjectName("statTileSub")
+            sub.setAlignment(Qt.AlignCenter)
+            self.profile_summary_values[key] = value
+            summary_strip.addWidget(self._build_stat_tile(title, value, sub), 1)
+        layout.addLayout(summary_strip)
 
         # ── Integrity (togglable) ──────────────────────────────
         self.integrity_section_label = self._section_label("Integrity")
@@ -127,39 +142,6 @@ class ProfileMixin:
 
         self._sync_integrity_visibility()
         return w
-
-    def _build_profile_summary_context(self) -> QFrame:
-        context = QFrame()
-        context.setObjectName("profileFooterContext")
-        context.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        summary_strip = QHBoxLayout(context)
-        summary_strip.setContentsMargins(0, 0, 0, 0)
-        summary_strip.setSpacing(18)
-        self.profile_summary_values: Dict[str, QLabel] = {}
-        summary_defs = (
-            ("CAREER CARS", "career_cars"),
-            ("PINK SLIPS", "pink_slips"),
-            ("MY CARS", "my_cars"),
-            ("FREE SLOTS", "free_career_slots"),
-        )
-        for title, key in summary_defs:
-            cell = QFrame()
-            cell.setObjectName("footerMetric")
-            copy = QVBoxLayout(cell)
-            copy.setContentsMargins(0, 0, 0, 0)
-            copy.setSpacing(0)
-            caption = QLabel(title)
-            caption.setObjectName("footerMetricCaption")
-            caption.setAlignment(Qt.AlignCenter)
-            value = QLabel("-")
-            value.setObjectName("footerMetricValue")
-            value.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-            value.setAlignment(Qt.AlignCenter)
-            self.profile_summary_values[key] = value
-            copy.addWidget(caption)
-            copy.addWidget(value)
-            summary_strip.addWidget(cell)
-        return context
 
     def _sync_integrity_visibility(self) -> None:
         visible = bool(self.show_integrity_panel)
@@ -269,14 +251,10 @@ class ProfileMixin:
         if not loaded:
             for label in self.profile_summary_values.values():
                 label.setText("-")
-            if hasattr(self, "_sync_footer_context_visibility"):
-                self._sync_footer_context_visibility()
             return
         if self.garage_detection_error:
             for label in self.profile_summary_values.values():
                 label.setText("N/A")
-            if hasattr(self, "_sync_footer_context_visibility"):
-                self._sync_footer_context_visibility()
             return
 
         entries = self._current_transfer_entries()
@@ -299,8 +277,6 @@ class ProfileMixin:
         self.profile_summary_values["pink_slips"].setText(self._format_u32(pink_slips))
         self.profile_summary_values["my_cars"].setText(self._format_u32(my_cars))
         self.profile_summary_values["free_career_slots"].setText(self._format_u32(free_career_slots))
-        if hasattr(self, "_sync_footer_context_visibility"):
-            self._sync_footer_context_visibility()
 
     def _refresh_garage_totals(self, loaded: bool) -> None:
         if not loaded:

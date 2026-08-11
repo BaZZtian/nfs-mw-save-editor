@@ -96,17 +96,17 @@ def test_footer_context_follows_page_and_actions_never_hide():
     assert window.footer_context.isVisible()
     assert window.footer_junkman_context.isVisible()
 
+    # Profile keeps its garage summary on the page, so it contributes no
+    # footer context at all -- the strip collapses like on a plain page.
     window._select_page("Profile")
     APP.processEvents()
-    assert window.footer_context.isVisible()
-    assert window.profile_footer_context.isVisible()
+    assert not window.footer_context.isVisible()
     assert not window.footer_junkman_context.isVisible()
 
     window._select_page("Career")
     APP.processEvents()
     assert window.footer_context.isVisible()
     assert window.career_footer_context.isVisible()
-    assert not window.profile_footer_context.isVisible()
 
     window._select_page("Garage")
     APP.processEvents()
@@ -184,9 +184,9 @@ def test_footer_strip_regrows_when_its_numbers_arrive():
     _close_window(window)
 
 
-def test_profile_and_career_totals_live_in_footer_without_moving_local_metrics():
+def test_career_totals_live_in_footer_without_moving_local_metrics():
     window = _window(1180)
-    assert set(window._footer_contexts) == {"Junkman", "Profile", "Career"}
+    assert set(window._footer_contexts) == {"Junkman", "Career"}
 
     assert set(window.profile_summary_values) == {
         "career_cars",
@@ -194,10 +194,10 @@ def test_profile_and_career_totals_live_in_footer_without_moving_local_metrics()
         "my_cars",
         "free_career_slots",
     }
+    # The garage summary reads as tiles on the Profile page itself.
     for value in window.profile_summary_values.values():
-        assert window.profile_footer_context.isAncestorOf(value)
-        assert window.footer_chrome.isAncestorOf(value)
-        assert not window.page_profile.isAncestorOf(value)
+        assert window.page_profile.isAncestorOf(value)
+        assert not window.footer_chrome.isAncestorOf(value)
 
     for value in (
         window.career_total_races_value,
@@ -241,7 +241,7 @@ def test_moved_totals_refresh_without_page_parent_dependencies():
 
     window._select_page("Profile")
     APP.processEvents()
-    assert window.profile_footer_context.isVisible()
+    assert not window.footer_context.isVisible()
     window._select_page("Career")
     APP.processEvents()
     assert window.career_footer_context.isVisible()
@@ -276,7 +276,7 @@ def test_footer_context_width_hysteresis_is_40_pixels():
 def test_footer_recalculates_threshold_for_each_page_context():
     window = _window(1920)
     thresholds = {}
-    for page_name in ("Junkman", "Profile", "Career"):
+    for page_name in ("Junkman", "Career"):
         window._select_page(page_name)
         APP.processEvents()
         window._sync_footer_context_visibility(force=True)
@@ -289,7 +289,7 @@ def test_footer_recalculates_threshold_for_each_page_context():
 
 def test_visible_footer_context_does_not_raise_window_width_floor():
     window = _window(1920)
-    for page_name in ("Junkman", "Profile", "Career"):
+    for page_name in ("Junkman", "Career"):
         window._select_page(page_name)
         window._sync_footer_context_visibility(force=True)
         QTest.qWait(20)
