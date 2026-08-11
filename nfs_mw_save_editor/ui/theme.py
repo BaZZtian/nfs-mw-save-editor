@@ -736,7 +736,7 @@ QPushButton#iconBtn {{
 
 /* Token Card */
 QWidget#tokenCard {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
     padding: 0px;
@@ -1036,13 +1036,13 @@ QLabel#toastError {{
 
 /* Stat Tiles (Profile summary strip) */
 QFrame#statTile {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
     padding: 0px;
 }}
 QFrame#pageControlsRow {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
     padding: 0px;
@@ -1098,7 +1098,7 @@ QLabel#statTileSub[status="error"] {{
 
 /* Garage Car Cards */
 QFrame#garageCard {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1110,7 +1110,7 @@ QFrame#garageCard[occupied="false"] {{
     opacity: 0.6;
 }}
 QFrame#contentCard {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1364,7 +1364,7 @@ QWidget#careerTransplantView, QWidget#careerStageGrid {{
     background: transparent;
 }}
 QFrame#careerTargetPanel, QFrame#careerReviewPanel {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1567,7 +1567,7 @@ QLabel#careerHeroStatus[state="defeated"] {{
     color: {MUTED};
 }}
 QWidget#careerTimeline {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1576,7 +1576,7 @@ QFrame#careerInspector {{
     border: none;
 }}
 QFrame#careerInspectorSection {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
@@ -1723,7 +1723,7 @@ QLabel#activeCarBadge {{
 
 /* Settings Page Group Cards */
 QFrame#settingsGroup {{
-    background: {BG_GLASS};
+    background: {BG_CARD};
     border: 1px solid {BORDER};
     border-radius: {RADIUS_XL};
 }}
