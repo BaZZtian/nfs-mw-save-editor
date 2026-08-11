@@ -990,11 +990,16 @@ class _BlacklistTimeline(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("careerTimeline")
+        # A plain QWidget subclass drops the stylesheet's background and border
+        # unless it opts in; QFrame does this for itself, which is why every
+        # other card renders without the flag.  Without it the timeline's card
+        # rule sat in the theme doing nothing.
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMinimumHeight(82)
+        self.setMinimumHeight(104)
         self._summary: Optional[career_progress.CareerProgressSummary] = None
         self._selected_stage: Optional[int] = None
         self._selection_position: Optional[float] = None
@@ -1066,12 +1071,19 @@ class _BlacklistTimeline(QWidget):
         path.lineTo(right - arm, bottom)
         return path
 
+    # Node ring plus the two label lines under it; the card centres this block
+    # rather than pinning it to the top, so the timeline reads as a card with
+    # breathing room instead of a strip its content is flush against.
+    _BLOCK_HEIGHT = 64.0
+
     def _nodes(self) -> list[tuple[int, QPointF]]:
         left = 26.0
         right = max(left, self.width() - 26.0)
         span = max(1.0, right - left)
+        top = max(0.0, (self.height() - self._BLOCK_HEIGHT) / 2.0)
+        centre_y = top + 14.0
         return [
-            (stage, QPointF(left + index * span / 14.0, 30.0))
+            (stage, QPointF(left + index * span / 14.0, centre_y))
             for index, stage in enumerate(range(15, 0, -1))
         ]
 
