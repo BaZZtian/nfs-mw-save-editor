@@ -45,7 +45,9 @@ def _display_rank(marker: int) -> int:
     """Marker-select order: bonus cards, then visual, parts, performance."""
     if marker in BONUS_MARKERS:
         return 0
-    # The FE category uses singular "Part"; plural matching is incorrect.
+    # The FE category uses singular "Part".  Matching "Parts" never fires and
+    # fails silently: every part card then falls through to the performance
+    # rank and the row still looks plausible.
     category = MARKER_CANON[marker].fe_category if marker in MARKER_CANON else ""
     if "Visual" in category:
         return 1
@@ -59,6 +61,9 @@ def reward_markers(stage: int) -> Tuple[int, ...]:
 
     Three bonus cards lead, followed by visual, part, and performance upgrades.
     Upgrade categories may repeat; each offer contains one performance card.
+
+    The sort is not redundant: the table above keeps the vault's own order,
+    where the pink slip sits fourth for nine rivals out of fourteen.
     """
     cards = BLACKLIST_REWARD_MARKERS.get(stage, ())
     return tuple(sorted(cards, key=_display_rank))

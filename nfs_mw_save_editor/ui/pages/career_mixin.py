@@ -482,6 +482,13 @@ def _blue_noise_tile() -> QImage:
     The high-pass, median-thresholded grain breaks visible structure in shallow
     8-bit gradients. ``CompositionMode_Plus`` adds one level to exactly half
     the pixels without introducing chroma noise.
+
+    What it is there to defeat: Qt's own gradient dither repeats per column, so
+    on a shallow dark field it reads as vertical stripes, and neither that nor
+    the banding left by an upscale goes away by drawing the gradient more
+    carefully.  The tile breaks the column coherence and masks those edges in
+    the pure-Python fallback, which is its only caller - with numpy the compose
+    dithers before rounding instead (see ``_build_backdrop``).
     """
     global _noise_tile
     if _noise_tile is not None:
