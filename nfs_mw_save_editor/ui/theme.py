@@ -887,6 +887,13 @@ QScrollArea#settingsScroll {{
     background: {BG};
 }}
 
+/* The dossier overlay's viewport: the list inside already draws the card, so
+   the scroll must add neither frame nor surface of its own. */
+QScrollArea#careerDetailScroll, QScrollArea#careerDetailScroll > QWidget {{
+    border: none;
+    background: transparent;
+}}
+
 /* Misc */
 QToolButton {{
     background-color: {BG_BUTTON};

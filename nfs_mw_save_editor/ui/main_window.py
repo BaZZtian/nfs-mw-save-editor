@@ -837,6 +837,9 @@ class MainWindow(
             # Keep bottom masks aligned with the footer's current boundary.
             for mask in getattr(self, "_scroll_bottom_masks", []):
                 mask.sync()
+            # The detail overlay shares the stack's rect and must stay above
+            # the footer that was just raised.
+            self._sync_career_detail_overlay()
         finally:
             self._footer_overlay_syncing = False
 
@@ -870,6 +873,8 @@ class MainWindow(
             "Settings": self.page_settings,
             "About": self.page_about,
         }
+        # A dossier left open would hang over whatever page comes next.
+        self.close_career_detail()
         overlay = self._start_page_transition_overlay()
         self.stack.setCurrentWidget(mapping[name])
         self._ensure_page_theme(name)

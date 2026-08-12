@@ -65,6 +65,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -97,7 +98,7 @@ from core.career_donor_library import (
 )
 from ui.icon_map import game_icon_path, rival_asset_path, token_icon_path
 from ui.pages.constants import BLACKLIST_BOSS_NAMES
-from ui.theme import resolve_theme_tokens
+from ui.theme import build_page_stylesheet, resolve_theme_tokens
 from ui.widgets import (
     AnimatedSegmentedControl,
     AnimatedStackedWidget,
@@ -1387,6 +1388,10 @@ class _ChipPreviewCard(QFrame):
     # oscillation that overflowed the stack.  A window is not resized by its
     # own scrollbar, so reading it is safe.  Each step is sized so all seven
     # milestones still fit their card at that width.
+    # Carries the rect the detail overlay should grow from: the chip that was
+    # clicked, or the card itself when the click missed the row.
+    activated = Signal(QRect)
+
     _CHIP_STEPS = ((1600, 80), (1350, 68), (0, 56))
     _RADIUS = 12.0
     # The glyph fills the chip; at 0.62 the big steps had a ring of dead air
@@ -1397,6 +1402,7 @@ class _ChipPreviewCard(QFrame):
         super().__init__()
         self.setObjectName("careerInspectorSection")
         self.setMouseTracking(True)
+        self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._title = title
         self._subtitle = ""
@@ -1558,6 +1564,18 @@ class _ChipPreviewCard(QFrame):
             else:
                 self.setToolTip("")
         return super().event(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.button() == Qt.LeftButton and self._rows + self._boss_rows:
+            position = event.position().toPoint()
+            origin = self.rect()
+            for rect, _row in self._chip_rects:
+                if rect.contains(position):
+                    origin = rect
+                    break
+            self.activated.emit(origin)
+            return
+        super().mouseReleaseEvent(event)
 
 
 class _RewardOffersCard(QFrame):
@@ -1983,6 +2001,189 @@ class _ProgressRowList(QFrame):
     def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
         QToolTip.hideText()
         super().leaveEvent(event)
+
+
+class _DetailOverlay(QWidget):
+    """One preview card's full dossier, opened over the page it belongs to.
+
+    The panel starts as the chip that was clicked and grows into place with its
+    width finishing before its height, so the shape never reads as inflating -
+    the container transform every current toolkit ships.  The list is laid out
+    at its final width and revealed by the panel rather than scaled: stretched
+    text is what gives a fake transform away.
+    """
+
+    _MARGIN = 30            # least air between panel and the page's edges
+    _MAX_WIDTH = 760
+    _OPEN_MS = 380
+    _CLOSE_MS = 250
+    # The width is home this far into the run; the height keeps going.
+    _WIDTH_DONE = 0.55
+    _CONTENT_FROM = 0.45
+    _SCRIM_ALPHA = 150
+    _HINT_BAND = 26
+
+    closed = Signal()
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("careerDetailOverlay")
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setVisible(False)
+
+        self.scroll = QScrollArea(self)
+        self.scroll.setObjectName("careerDetailScroll")
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setWidgetResizable(False)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.listing = _ProgressRowList("")
+        self.scroll.setWidget(self.listing)
+        self._fade = QGraphicsOpacityEffect(self.scroll)
+        self._fade.setOpacity(0.0)
+        self.scroll.setGraphicsEffect(self._fade)
+
+        self._animation = QVariantAnimation(self)
+        self._animation.setEasingCurve(QEasingCurve.Linear)
+        self._animation.valueChanged.connect(self._apply_progress)
+        self._animation.finished.connect(self._on_finished)
+        self._origin = QRect()
+        self._target = QRect()
+        self._progress = 0.0
+        self._closing = False
+
+    @staticmethod
+    def _ease(t: float) -> float:
+        return 1.0 - (1.0 - t) ** 3
+
+    def _panel_rect(self, progress: float) -> QRect:
+        """Where the panel sits at ``progress``; width and height run on
+        separate clocks, which is what keeps the shape from ballooning."""
+        wide = self._ease(min(1.0, progress / self._WIDTH_DONE))
+        tall = self._ease(progress)
+        start, end = self._origin, self._target
+        return QRect(
+            round(start.left() + (end.left() - start.left()) * wide),
+            round(start.top() + (end.top() - start.top()) * tall),
+            round(start.width() + (end.width() - start.width()) * wide),
+            round(start.height() + (end.height() - start.height()) * tall),
+        )
+
+    def _measure(self, width: int) -> QRect:
+        """Final panel rect: as tall as the list wants, capped by the page."""
+        area = self.rect()
+        panel_w = max(320, min(self._MAX_WIDTH, area.width() - 2 * self._MARGIN, width))
+        self.listing.setFixedWidth(panel_w)
+        wanted = self.listing._content_height()
+        ceiling = area.height() - 2 * self._MARGIN - self._HINT_BAND
+        panel_h = max(120, min(wanted, ceiling))
+        self.listing.resize(panel_w, wanted)
+        return QRect(
+            area.left() + (area.width() - panel_w) // 2,
+            area.top() + (area.height() - self._HINT_BAND - panel_h) // 2,
+            panel_w,
+            panel_h,
+        )
+
+    def open_for(
+        self,
+        origin: QRect,
+        title: str,
+        subtitle: str,
+        rows: Sequence[_InspectorRow],
+        boss_rows: Sequence[_InspectorRow] = (),
+    ) -> None:
+        self.listing._title = title
+        self.listing.set_items(subtitle, rows, boss_rows)
+        self.raise_()
+        self.setVisible(True)
+        self._target = self._measure(self._MAX_WIDTH)
+        self._origin = origin if origin.isValid() else self._target
+        self._closing = False
+        self.scroll.verticalScrollBar().setValue(0)
+        self._animation.stop()
+        self._animation.setDuration(self._OPEN_MS)
+        self._animation.setStartValue(float(self._progress))
+        self._animation.setEndValue(1.0)
+        self._animation.start()
+        self.setFocus(Qt.OtherFocusReason)
+
+    def close_overlay(self) -> None:
+        if not self.isVisible() or self._closing:
+            return
+        self._closing = True
+        self._animation.stop()
+        self._animation.setDuration(self._CLOSE_MS)
+        self._animation.setStartValue(float(self._progress))
+        self._animation.setEndValue(0.0)
+        self._animation.start()
+
+    def resync(self, area: QRect) -> None:
+        """Follow the content area; an open panel is re-measured in place."""
+        if self.geometry() == area:
+            return
+        self.setGeometry(area)
+        if self.isVisible():
+            self._target = self._measure(self._MAX_WIDTH)
+            self._apply_progress(self._progress)
+
+    def _apply_progress(self, value) -> None:
+        self._progress = float(value)
+        rect = self._panel_rect(self._progress)
+        self.scroll.setGeometry(rect)
+        span = 1.0 - self._CONTENT_FROM
+        self._fade.setOpacity(
+            max(0.0, min(1.0, (self._progress - self._CONTENT_FROM) / span))
+        )
+        self.update()
+
+    def _on_finished(self) -> None:
+        if self._closing:
+            self._closing = False
+            self.setVisible(False)
+            self.closed.emit()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
+        tokens = resolve_theme_tokens()
+        painter = QPainter(self)
+        scrim = QColor(0, 0, 0)
+        scrim.setAlpha(round(self._SCRIM_ALPHA * min(1.0, self._progress * 1.6)))
+        painter.fillRect(self.rect(), scrim)
+
+        # The surface is drawn here, opaque, and only the list on top of it
+        # fades in: fading the whole panel left a hole travelling across the
+        # page instead of a card opening.  Same colour underneath, so the two
+        # never disagree.
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        panel = self.scroll.geometry()
+        painter.setBrush(QColor(tokens["BG_CARD"]))
+        painter.setPen(QPen(QColor(tokens["BORDER"]), 1.0))
+        painter.drawRoundedRect(QRectF(panel), 12.0, 12.0)
+
+        if self._progress > self._CONTENT_FROM:
+            font = painter.font()
+            font.setPointSizeF(8.5)
+            painter.setFont(font)
+            colour = QColor(tokens["MUTED"])
+            colour.setAlphaF(min(1.0, (self._progress - self._CONTENT_FROM) * 2))
+            painter.setPen(colour)
+            painter.drawText(
+                QRect(panel.left(), panel.bottom() + 4, panel.width(), self._HINT_BAND),
+                Qt.AlignCenter,
+                "Esc — close",
+            )
+        painter.end()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.key() == Qt.Key_Escape:
+            self.close_overlay()
+            return
+        super().keyPressEvent(event)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if not self.scroll.geometry().contains(event.position().toPoint()):
+            self.close_overlay()
+            return
+        super().mousePressEvent(event)
 
 
 class _ResponsivePanelPair(QWidget):
@@ -2640,6 +2841,10 @@ class CareerMixin:
         self.career_inspector_pages = (_ChapterInspectorPage(), _ChapterInspectorPage())
         for page in self.career_inspector_pages:
             self.career_inspector_stack.addWidget(page)
+            for card in (page.race_list, page.milestone_list):
+                card.activated.connect(
+                    lambda origin, card=card: self._open_career_detail(card, origin)
+                )
         self.career_inspector_stack.setCurrentIndex(0)
         self.career_inspector_stack.currentChanged.connect(
             self._sync_career_inspector_height
@@ -2659,6 +2864,57 @@ class CareerMixin:
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setWidget(host)
         return scroll
+
+    def _ensure_career_detail_overlay(self) -> Optional[_DetailOverlay]:
+        """The overlay lives beside the footer, over the whole content stack -
+        a child of the Career page could not cover the footer floating on top
+        of it, and a modal that leaves live buttons showing is not modal."""
+        overlay = getattr(self, "career_detail_overlay", None)
+        if overlay is not None:
+            return overlay
+        footer = getattr(self, "footer_chrome", None)
+        host = footer.parentWidget() if footer is not None else None
+        host = host or getattr(self, "page_career", None)
+        if host is None:
+            return None
+        overlay = _DetailOverlay(host)
+        self.career_detail_overlay = overlay
+        self._sync_career_detail_overlay()
+        return overlay
+
+    def _sync_career_detail_overlay(self) -> None:
+        overlay = getattr(self, "career_detail_overlay", None)
+        if overlay is None or not hasattr(self, "stack"):
+            return
+        overlay.resync(self.stack.geometry())
+        if overlay.isVisible():
+            overlay.raise_()
+
+    def _open_career_detail(self, card, origin: QRect) -> None:
+        overlay = self._ensure_career_detail_overlay()
+        if overlay is None:
+            return
+        # Theme styling is scoped to roots, and the overlay is a root of its
+        # own: without this the dossier paints on the bare palette colour, with
+        # no card surface and no border.  Re-applied per opening so a theme
+        # switch while it was closed cannot leave it stale.
+        self._apply_stylesheet_to_root(
+            overlay, build_page_stylesheet(self.theme_name), theme_name=self.theme_name
+        )
+        self._sync_career_detail_overlay()
+        corner = overlay.mapFromGlobal(card.mapToGlobal(origin.topLeft()))
+        overlay.open_for(
+            QRect(corner, origin.size()),
+            card._title,
+            card._subtitle,
+            card._rows,
+            card._boss_rows,
+        )
+
+    def close_career_detail(self) -> None:
+        overlay = getattr(self, "career_detail_overlay", None)
+        if overlay is not None:
+            overlay.close_overlay()
 
     def roll_reward_offer_order(self) -> None:
         """Re-deal the bonus cards, once per opened save.

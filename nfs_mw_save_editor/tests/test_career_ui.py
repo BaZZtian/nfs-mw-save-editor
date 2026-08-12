@@ -14,7 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QAbstractAnimation, QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QAbstractAnimation, QPoint, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -1430,3 +1430,153 @@ def test_a_rival_without_offers_survives_the_shuffle():
     page.set_reward_seed(7)
     assert page.reward_offers(1) == ()
     page.deleteLater()
+
+
+def _chip_rows(count: int, *, boss: int = 0):
+    from ui.pages.career_mixin import _InspectorRow
+
+    def row(index: int, kind: str) -> _InspectorRow:
+        return _InspectorRow(
+            title=f"Event {index}",
+            tag="",
+            state="done",
+            kind=kind,
+            icon_path=game_icon_path("race_circuit"),
+            detail="WON · 1:00.00",
+            fraction=None,
+            tooltip=f"Event {index} — completed",
+        )
+
+    return (
+        tuple(row(i, "race") for i in range(count)),
+        tuple(row(100 + i, "boss") for i in range(boss)),
+    )
+
+
+def _career_window_with_chips(app, rows, boss_rows, size=(1182, 812)):
+    window = MainWindow()
+    window.resize(*size)
+    window.show()
+    app.processEvents()
+    window._select_page("Career")
+    app.processEvents()
+    page = window.career_inspector_pages[window.career_inspector_stack.currentIndex()]
+    card = page.race_list
+    card.set_items("8/5 wins · 8 events", rows, boss_rows)
+    card.grab()  # chip rects are filled in while the card paints
+    app.processEvents()
+    return window, card
+
+
+def _land_animation(overlay):
+    """Run the overlay's animation to its end without waiting on the clock."""
+    animation = overlay._animation
+    animation.setCurrentTime(animation.duration())
+    QApplication.instance().processEvents()
+
+
+def test_clicking_a_chip_opens_the_dossier_it_stands_for():
+    """The chip is a preview; the click is the only way to the results behind
+    it, so the overlay must carry the same rows the card was given."""
+    app = _app()
+    rows, boss_rows = _chip_rows(8, boss=2)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+
+    chip_rect, chip_row = card._chip_rects[3]
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, chip_rect.center())
+    app.processEvents()
+
+    overlay = window.career_detail_overlay
+    assert overlay.isVisible()
+    assert overlay._animation.state() == QAbstractAnimation.Running
+    assert overlay._animation.endValue() == 1.0
+    # It grows from the chip that was clicked, not from the card.
+    assert overlay._origin.size() == chip_rect.size()
+    assert overlay.listing._rows == rows
+    assert overlay.listing._boss_rows == boss_rows
+    assert chip_row.title in {row.title for row in overlay.listing._rows}
+    _land_animation(overlay)
+    window.close()
+
+
+def test_escape_and_a_click_outside_close_the_dossier():
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    overlay = window.career_detail_overlay if hasattr(window, "career_detail_overlay") else None
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+
+    # A click on the panel itself is not a click on the way out.
+    QTest.mouseClick(
+        overlay, Qt.LeftButton, Qt.NoModifier, overlay.scroll.geometry().center()
+    )
+    app.processEvents()
+    assert overlay.isVisible()
+
+    QTest.keyClick(overlay, Qt.Key_Escape)
+    assert overlay._animation.endValue() == 0.0
+    _land_animation(overlay)
+    assert not overlay.isVisible()
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    _land_animation(overlay)
+    # Not the rect's top-left: a null QPoint means "centre" to QTest, which
+    # would land inside the panel and prove the opposite of the point.
+    outside = QPoint(6, 6)
+    assert not overlay.scroll.geometry().contains(outside)
+    QTest.mouseClick(overlay, Qt.LeftButton, Qt.NoModifier, outside)
+    assert overlay._animation.endValue() == 0.0
+    _land_animation(overlay)
+    assert not overlay.isVisible()
+    window.close()
+
+
+def test_a_long_chapter_scrolls_inside_the_panel_instead_of_overflowing():
+    """Razor's chapter is the tall one; in a short window the dossier has to
+    stay inside the page and hand the rest to its own scrollbar."""
+    app = _app()
+    rows, boss_rows = _chip_rows(24, boss=2)
+    window, card = _career_window_with_chips(app, rows, boss_rows, size=(1182, 620))
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+
+    assert overlay.rect().contains(overlay.scroll.geometry())
+    assert overlay.listing.height() > overlay.scroll.height()
+    assert overlay.scroll.verticalScrollBar().maximum() > 0
+    window.close()
+
+
+def test_leaving_the_career_page_closes_the_dossier():
+    app = _app()
+    rows, boss_rows = _chip_rows(5)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+    assert overlay.isVisible()
+
+    window._select_page("Profile")
+    app.processEvents()
+    _land_animation(overlay)
+    assert not overlay.isVisible()
+    window.close()
+
+
+def test_an_empty_card_has_nothing_to_open():
+    app = _app()
+    window, card = _career_window_with_chips(app, (), ())
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card.rect().center())
+    app.processEvents()
+    assert getattr(window, "career_detail_overlay", None) is None
+    window.close()
