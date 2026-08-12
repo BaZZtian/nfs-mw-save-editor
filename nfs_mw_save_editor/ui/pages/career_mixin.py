@@ -2071,6 +2071,21 @@ class _ChapterInspectorPage(QFrame):
         # above already need every pixel they can get to keep their slots.
         self.reward_list = _RewardOffersCard("REWARDS")
         root.addWidget(self.reward_list, 1)
+        self._reward_seed = random.randrange(1 << 30)
+
+    def set_reward_seed(self, seed: int) -> None:
+        """Which deal of the bonus trio this page shows (see the mixin's roll)."""
+        self._reward_seed = seed
+
+    def reward_offers(self, stage: int) -> Tuple[int, ...]:
+        offers = list(blacklist_rewards.reward_markers(stage))
+        if not offers:
+            return ()
+        # Only the bonus trio moves; the upgrade three keep the game's order.
+        bonus = offers[: blacklist_rewards.CARDS_PER_OFFER // 2]
+        random.Random(self._reward_seed ^ stage).shuffle(bonus)
+        offers[: len(bonus)] = bonus
+        return tuple(offers)
 
     def set_progress(
         self,
@@ -2184,7 +2199,7 @@ class _ChapterInspectorPage(QFrame):
             milestone_rows,
         )
 
-        offers = blacklist_rewards.reward_markers(stage)
+        offers = self.reward_offers(stage)
         self.reward_list.set_offers(
             f"take {blacklist_rewards.CARDS_TAKEN} of {len(offers)}" if offers else "",
             offers,
@@ -2644,6 +2659,19 @@ class CareerMixin:
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setWidget(host)
         return scroll
+
+    def roll_reward_offer_order(self) -> None:
+        """Re-deal the bonus cards, once per opened save.
+
+        The game rolls their order fresh every run, so it is session state,
+        not a property of the rival.  Rolling per save (rather than per repaint
+        or per stage switch) keeps the row stable while you compare rivals -
+        the pink slip does not move under the cursor - and still comes up
+        different next time.
+        """
+        seed = random.randrange(1 << 30)
+        for page in getattr(self, "career_inspector_pages", ()):
+            page.set_reward_seed(seed)
 
     def _sync_career_inspector_height(self, index: int) -> None:
         """Let the stack follow the page on screen.

@@ -11,6 +11,10 @@ Facts worth keeping in mind when showing these:
 - The player takes TWO of the six.  Which two is not recorded anywhere the
   editor can read, so these are offers, never possessions - do not paint them
   as claimed because the rival is beaten.
+- The three bonus cards are dealt in a random order by the game, rolled fresh
+  each run.  The order here is the canonical one; the UI reshuffles that trio
+  once per opened save (see the Career page), which is session state, not a
+  property of the rival - hence it does not live in this table.
 - A card can repeat: Vic (#13) offers two separate cash bonuses.
 - Razor (#1) offers nothing.  His chapter ends in the Final Pursuit, which is
   not a marker race, so the vault carries no rewards for him at all.

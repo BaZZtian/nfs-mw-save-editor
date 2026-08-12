@@ -1401,3 +1401,33 @@ def test_race_display_names_cover_every_career_event():
                       "milestone_tollbooth", "trap", "race_drag"):
         path = game_icon_path(icon_name)
         assert path is not None and path.is_file(), icon_name
+
+
+def test_bonus_markers_are_re_dealt_per_opened_save():
+    """The game rolls the bonus trio fresh every run, so the editor rolls it
+    per opened save - but never while you are comparing rivals, or the pink
+    slip would move under the cursor."""
+    from core.blacklist_rewards import BONUS_MARKERS, reward_markers
+    from ui.pages.career_mixin import _ChapterInspectorPage
+
+    page = _ChapterInspectorPage()
+    seen = set()
+    for seed in range(12):
+        page.set_reward_seed(seed)
+        order = page.reward_offers(5)
+        assert order == page.reward_offers(5)  # stable while the seed holds
+        assert set(order[:3]) <= BONUS_MARKERS
+        assert order[3:] == reward_markers(5)[3:]  # upgrades keep their order
+        assert sorted(order) == sorted(reward_markers(5))
+        seen.add(order)
+    assert len(seen) > 1, "the deal never changed across rolls"
+    page.deleteLater()
+
+
+def test_a_rival_without_offers_survives_the_shuffle():
+    from ui.pages.career_mixin import _ChapterInspectorPage
+
+    page = _ChapterInspectorPage()
+    page.set_reward_seed(7)
+    assert page.reward_offers(1) == ()
+    page.deleteLater()

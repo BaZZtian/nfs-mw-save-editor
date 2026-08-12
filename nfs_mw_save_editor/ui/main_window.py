@@ -1588,6 +1588,9 @@ class MainWindow(
             self.savefile = SaveFile.load(path)
             self._reset_want_edit_state()
             self.garage_detection_error = None
+            # The game deals a rival's bonus markers in a fresh random order
+            # every run; opening a save is this editor's equivalent of a run.
+            self.roll_reward_offer_order()
             self.refresh_state()
             ToastNotification.show_toast(self, "Save loaded")
         except Exception as e:
