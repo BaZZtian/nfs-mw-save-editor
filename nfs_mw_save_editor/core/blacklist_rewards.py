@@ -1,25 +1,10 @@
-"""Marker cards a Blacklist rival offers after the final race of his chapter.
+"""Marker-card offers decoded from the career vaults in ``gameplay.bin``.
 
-Source: the game's own career vaults in ``gameplay.bin``, decoded by
-``RE/tools/dump_career_bins.py`` (dump kept at ``RE/career_bins_decoded.txt``).
-That tool self-checks what it reads: 15 chapter roots, boss races agreeing
-with ``core/rival_challenge`` 15/15, and every offer holding exactly six cards
-with exactly one pink slip.
-
-Facts worth keeping in mind when showing these:
-
-- The player takes TWO of the six.  Which two is not recorded anywhere the
-  editor can read, so these are offers, never possessions - do not paint them
-  as claimed because the rival is beaten.
-- The three bonus cards are dealt in a random order by the game, rolled fresh
-  each run.  The order here is the canonical one; the UI reshuffles that trio
-  once per opened save (see the Career page), which is session state, not a
-  property of the rival - hence it does not live in this table.
-- A card can repeat: Vic (#13) offers two separate cash bonuses.
-- Razor (#1) offers nothing.  His chapter ends in the Final Pursuit, which is
-  not a marker race, so the vault carries no rewards for him at all.
-- Ids are ``ePossibleMarker`` (see ``core/junkman.py`` and
-  ``core/marker_names.py``), so the editor's own token icons and names apply.
+Each eligible rival offers six cards and the player takes two. The save does
+not record which cards were selected, so this module describes offers only.
+Bonus-card order is session state; upgrade-card order is canonical. Vic has a
+duplicate cash card, and Razor has no offer because his chapter ends in the
+Final Pursuit.
 """
 from __future__ import annotations
 
@@ -60,8 +45,7 @@ def _display_rank(marker: int) -> int:
     """Marker-select order: bonus cards, then visual, parts, performance."""
     if marker in BONUS_MARKERS:
         return 0
-    # The FE category is "Unique Part Upgrades" - singular; matching "Parts"
-    # silently sorted every part card in with performance.
+    # The FE category uses singular "Part"; plural matching is incorrect.
     category = MARKER_CANON[marker].fe_category if marker in MARKER_CANON else ""
     if "Visual" in category:
         return 1
@@ -71,18 +55,10 @@ def _display_rank(marker: int) -> int:
 
 
 def reward_markers(stage: int) -> Tuple[int, ...]:
-    """Marker ids offered by ``stage`` (15 = Sonny, 1 = Razor).
+    """Return marker ids in display order for ``stage``.
 
-    Ordered the way the marker-select screen deals them: the three bonus
-    cards first (the pink slip is always one of them), then the three upgrade
-    cards by category - visual, parts, performance.  The vault stores its own
-    order, where the pink slip sits fourth for nine rivals out of fourteen.
-
-    The bonus/upgrade split is exact - three of each, every rival - and every
-    rival offers exactly ONE performance card, which is why it always lands
-    last.  The other two are not one-per-category: Big Lou hands out spoiler,
-    rims and tires (two Parts, no Visual), Bull hands out gauge, vinyl and a
-    supercharger (two Visual, no Parts).
+    Three bonus cards lead, followed by visual, part, and performance upgrades.
+    Upgrade categories may repeat; each offer contains one performance card.
     """
     cards = BLACKLIST_REWARD_MARKERS.get(stage, ())
     return tuple(sorted(cards, key=_display_rank))

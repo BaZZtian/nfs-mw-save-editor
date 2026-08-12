@@ -61,9 +61,8 @@ MAX_MILESTONE_COUNT = 256
 MAX_SPEEDTRAP_COUNT = 128
 
 SPEEDTRAP_RECORD_SIZE = 0x14
-# Ladder-verified (reverse-engineering analysis, 2026-07-07): the packed low word is a
-# monotonic 0..5 progress counter shared by all of a bin's speedtrap records;
-# 5 = the bin's speedtrap milestones are complete. The game displays "n/5".
+# The packed low word is a monotonic 0..5 counter shared by every speedtrap
+# record in a bin; 5 means the bin's speedtrap milestones are complete.
 SPEEDTRAP_COMPLETE_COUNT = 5
 
 # GMilestone.State observed across the 32-save ladder: 1 = active (recorded
@@ -74,10 +73,9 @@ MILESTONE_STATE_AWARDED = 4
 # GRaceSaveInfo.mFlags is the engine's ScoreFlags enum (PS2 decomp,
 # PS2_types.nothpp): 0x01 kCompleted_ContextQuickRace, 0x02
 # kCompleted_ContextCareer, 0x04 kUnlocked_QuickRace, 0x08 kUnlocked_Career,
-# 0x10 kUnlocked_Online. Ladder-verified (2026-07-16): a chapter's world
-# races gain Career|QuickRace together the moment the chapter opens, boss-
-# series races only once the rival gate is met, and Online is a static
-# roster fixed at START GAME — it says nothing about career availability.
+# 0x10 kUnlocked_Online. World races gain Career|QuickRace when a chapter
+# opens, boss-series races gain them at the rival gate, and Online is a static
+# roster flag unrelated to career availability.
 # Prologue events (chapter 16) end 0x02 only — hence their completion test.
 RACE_FLAG_PROLOGUE_DONE = 0x02
 RACE_FLAG_UNLOCKED_CAREER = 0x08

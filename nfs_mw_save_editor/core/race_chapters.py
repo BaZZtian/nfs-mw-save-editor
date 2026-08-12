@@ -1,11 +1,8 @@
 ﻿"""Offering chapter for career race events: lookup2 hash -> (chapter, is_boss).
 
-Derived from the 32-save blacklist ladder by first-touch analysis
-(RE/tools/derive_offering_chapters.py) and validated against the in-game
-per-chapter race counts validated in-game on 2026-07-07: all 15 chapters
-match exactly (131/131 regular events; 37 boss/finale races are flagged and
-excluded from the in-game counter). The EventID chapter prefix encodes the
-route family, NOT the offering chapter - do not group by prefix.
+Derived from a complete Blacklist progression ladder and matched against the
+in-game chapter counts: 131 regular events plus 37 boss/finale events. The
+EventID prefix identifies a route family, not the offering chapter.
 
 Generated - do not edit by hand.
 """

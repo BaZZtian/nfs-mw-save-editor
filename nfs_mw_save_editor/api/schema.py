@@ -25,7 +25,7 @@ def _to_camel(name: str) -> str:
 
 
 class ApiModel(BaseModel):
-    """Base for all wire models: camelCase aliases, strict by default."""
+    """Base model with camelCase aliases and unknown-field rejection."""
 
     model_config = ConfigDict(
         alias_generator=_to_camel,
@@ -181,19 +181,13 @@ class SaveResult(ApiModel):
 
 
 class HelloResult(ApiModel):
-    """Handshake payload.
-
-    python_exe = sys.executable of the running server; the frontend logs it
-    so venv mixups (known project gotcha) are visible in one glance.
-    """
+    """Handshake payload with protocol version and server executable path."""
 
     protocol_version: str
     python_exe: str
 
 
-#: Models that participate in the public contract, in wire order. The dump
-#: iterates this list — adding a model without listing it here is a bug the
-#: schema test must catch.
+#: Public contract models in deterministic wire-schema order.
 CONTRACT_MODELS = [
     RapSheet,
     GarageCar,

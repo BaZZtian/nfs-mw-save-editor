@@ -1,9 +1,8 @@
 """Canonical marker names (core/marker_names.py) must match the engine.
 
-Anchors come from the MarkerSelectInfo table in speed.exe v1.3 resolved
-through Labels.bin/English.bin — see RE/tools/gen_token_names.py. The
-18/19 anchor doubles as the guard against the historical pink-slip/cash
-swap ever coming back.
+Anchors come from the MarkerSelectInfo table in speed.exe v1.3, resolved
+through Labels.bin/English.bin. The 18/19 anchor guards the canonical
+pink-slip/cash ordering.
 """
 import sys
 from pathlib import Path

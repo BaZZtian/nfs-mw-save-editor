@@ -79,9 +79,8 @@ class JunkmanMixin:
         if len(real) != len(self.tokens):
             self.tokens = real
             changed = True
-        # Names earlier editor versions shipped as defaults: these upgrade to
-        # the current canon defaults; anything else is a user rename and is
-        # left alone.
+        # Recognized legacy defaults upgrade to canonical names. Anything else
+        # is treated as a user rename and left unchanged.
         legacy_names: Dict[int, set[str]] = {
             1: {"Brakes"}, 2: {"Engine"}, 3: {"NOS"}, 4: {"Turbo"},
             5: {"Suspension"}, 6: {"Tires"}, 7: {"Transmission"},

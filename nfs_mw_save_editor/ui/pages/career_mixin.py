@@ -1,6 +1,6 @@
 """Career page: current progression overview + career stage transplant.
 
-Interaction contract (agreed 2026-07-07, see AGENT_CONTEXT.md):
+Interaction contract:
 - Transplant is immediate-with-confirm and writes to the in-memory buffer
   only, mirroring the app's "Apply (memory) -> Save + backup" model. The
   actual disk write stays with the standard Save + backup button.
@@ -465,14 +465,9 @@ _noise_tile: Optional[QImage] = None
 def _blue_noise_tile() -> QImage:
     """Binary +1-level tile, high-frequency, half the pixels set.
 
-    Any 8-bit rendering of the banner's shallow gradients leaves vertical
-    structure the eye latches onto: Qt's own dither repeats per column
-    (the originally reported stripes), and a clean quantization leaves
-    step edges.
-    Composited with Plus over the finished backdrop, this tile breaks that
-    coherence with a half-level grain that does not line up into anything -
-    white noise minus its local mean, thresholded at the median, so the
-    energy is high-frequency and the density is exactly one half.
+    The high-pass, median-thresholded grain breaks visible structure in shallow
+    8-bit gradients. ``CompositionMode_Plus`` adds one level to exactly half
+    the pixels without introducing chroma noise.
     """
     global _noise_tile
     if _noise_tile is not None:
@@ -504,17 +499,10 @@ def _blue_noise_tile() -> QImage:
 def _render_hero_backdrop_dithered(
     width: int, height: int, tokens: Mapping[str, str]
 ) -> QImage:
-    """Full-resolution float compose with noise added BEFORE the rounding.
+    """Compose at full float precision and decorrelate final quantization.
 
-    Every earlier attempt left something vertical for the eye: Qt's own
-    dither repeats per column, a clean quantization leaves step edges, and
-    quantizing a quarter-res reference before upscaling stretches its steps
-    into soft 10-15px bands (seen live in amplified screenshots). Randomized
-    rounding -
-    uniform half-level noise added to the float value, then rounded, fixed
-    seed - decorrelates the quantization error completely: no stripes, no
-    glow rings, only half-level grain with no structure. Needs numpy;
-    ~30ms at banner size, cached per size and theme by the caller.
+    A fixed half-level luminance-noise field is added before rounding. The
+    caller caches the resulting image by size and theme. Requires NumPy.
     """
     w, h = max(2, width), max(2, height)
 
@@ -563,17 +551,10 @@ def _render_hero_backdrop_dithered(
 
 
 def _render_hero_backdrop(width: int, height: int, tokens: Mapping[str, str]) -> QImage:
-    """The banner's three background gradients composed in float, quantized once.
+    """Compose the banner gradients in float and quantize once.
 
-    Qt dithers every gradient fill and the three layers dither independently
-    (the old left_shade even re-covered the base it was cancelling, adding
-    the two patterns) - and because that dither repeats per column it reads
-    as vertical stripes on the shallow dark field. Composed in float there
-    is nothing to dither. Rendered at quarter resolution - the compose is
-    smooth, so the upscale adds nothing visible, and the pure-python cost
-    drops to ~20ms once per size and theme. The caller upscales and lays
-    the blue-noise tile over the result (see _blue_noise_tile): without it
-    the quantization step edges are their own, cleaner, stripes.
+    The pure-Python fallback renders at quarter resolution. The caller
+    upscales it and overlays ``_blue_noise_tile`` to soften quantization bands.
     """
     w = max(2, width // 4)
     h = max(2, height // 4)
@@ -809,9 +790,7 @@ class _CareerHero(QFrame):
         self.update()
 
     def _shade_faded(self, color: QColor, width: int) -> QBrush:
-        """The old left_shade dimmed the grid and diagonal on its way out;
-        with the shade baked into the backdrop, the same piecewise-linear
-        attenuation is applied through the line color instead."""
+        """Apply backdrop attenuation directly to grid and diagonal lines."""
         gradient = QLinearGradient(0, 0, width, 0)
         for pos, factor in ((0.0, 0.0), (0.374, 0.196), (0.72, 1.0), (1.0, 1.0)):
             stop = QColor(color)
@@ -1105,9 +1084,7 @@ class _BlacklistTimeline(QWidget):
     # "#15 SONNY" or a bare "#15".
     _EDGE_INSET = 46.0
     _EDGE_INSET_BARE = 32.0
-    # Names are shown at the largest size that still leaves a gap between
-    # neighbours; a hardcoded "wide enough" threshold used to hide them long
-    # before the room actually ran out.
+    # Show names at the largest size that preserves the inter-label gap.
     _LABEL_SIZES = (9.0, 8.5, 8.0, 7.5)
     _LABEL_MIN_GAP = 8.0
     _LABEL_HEIGHT_BARE = 16.0
@@ -2057,12 +2034,8 @@ class _ChapterInspectorPage(QFrame):
         root.setSpacing(12)
         self.race_list = _ChipPreviewCard("RACE SCHEDULE")
         self.milestone_list = _ChipPreviewCard("MILESTONES")
-        # The cards carry their own height now, so the pair must not stretch:
-        # with fill=True the spare room was shared out around them and left
-        # holes above and below.
-        # Chips need far less width than the dossier rows did, so the pair
-        # splits into two columns long before it used to (1150 kept them
-        # stacked in a 1182 window, where they now fit side by side).
+        # The cards own their height, so the pair must not stretch into spare
+        # vertical space. Compact chips permit a two-column layout at 820 px.
         self._body = _ResponsivePanelPair(
             self.race_list, self.milestone_list, breakpoint=820
         )
@@ -2690,13 +2663,7 @@ class CareerMixin:
             page.updateGeometry()
 
     def _build_career_totals_plate(self) -> QFrame:
-        """Lifetime totals as the page's closing plate.
-
-        They used to ride in the shell footer, where they were chrome shared
-        with every other page's actions.  They belong to Career, so they sit at
-        the end of Career: one panel, four cells of equal width, hairlines
-        between them.
-        """
+        """Build the Career-only totals plate with four equal cells."""
         plate = QFrame()
         plate.setObjectName("careerTotalsPlate")
         plate.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -2966,10 +2933,7 @@ class CareerMixin:
             return self._career_defeated_stamp
 
         # Keep the game texture at native resolution through tinting and rotation.
-        # The previous 146x36 intermediate was later enlarged to 175/210 px in the
-        # Hero, so its already-antialiased edges became visibly soft.  These
-        # reference dimensions now define composition only; all raster work stays
-        # at the source texture's substantially larger native scale.
+        # The reference dimensions define composition only.
         source_texture = QPixmap(str(path))
         if source_texture.isNull():
             self._career_defeated_stamp = QPixmap()
@@ -3003,10 +2967,8 @@ class CareerMixin:
             layer_painter.end()
             return layer
 
-        # The game stamp is not a flat red mask: weak ink reads almost black while
-        # dense lettering and frame edges carry the brighter crimson.  Layering the
-        # same worn mask in two tones recreates that range on our uniform navy Hero
-        # instead of making every variation look like blue background transparency.
+        # The stamp uses dark and bright ink layers so worn areas retain contrast
+        # against the uniform Hero backdrop.
         dark_ink = tinted_layer("#430506")
         bright_ink = tinted_layer("#930A0A")
         inked = QPixmap(source.size())

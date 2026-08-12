@@ -42,9 +42,8 @@ def test_footer_floats_over_the_stack_and_preserves_public_controls():
     layout = window.centralWidget().layout()
     assert isinstance(layout, QGridLayout)
 
-    # The footer left the grid.  It is parked on the bottom of the content
-    # stack, which now spans its row, so lists scroll *under* the footer
-    # instead of being sliced by an invisible viewport edge 19px above it.
+    # The floating footer overlays the bottom of the content stack, which spans
+    # the row and lets lists scroll beneath the overlay.
     assert layout.indexOf(window.footer_chrome) == -1
     assert window.footer_chrome.parentWidget() is window.centralWidget()
     stack_index = layout.indexOf(window.stack)
@@ -52,8 +51,8 @@ def test_footer_floats_over_the_stack_and_preserves_public_controls():
     assert layout.getItemPosition(stack_index) == (1, 1, 2, 1)
     assert layout.getItemPosition(nav_index) == (0, 0, 3, 1)
     # No explicit minimumHeight: Qt replaces the computed layout minimum with an
-    # explicit one instead of widening it, which used to let the grid squeeze the
-    # footer row and clip the action buttons.  See the short-window test below.
+    # explicit one instead of widening it. The footer must still respect the
+    # action buttons' minimum height; see the short-window test below.
     assert window.footer_chrome.minimumHeight() == 0
     assert window.footer_chrome.sizePolicy().verticalPolicy() == QSizePolicy.Fixed
 
@@ -333,8 +332,8 @@ def test_footer_recalculates_threshold_for_each_page_context():
     with_context = window._footer_context_required_width()
     assert window.footer_context.isVisible()
 
-    # Career contributes no context at all now, so its threshold is the bare
-    # actions row and the strip stays collapsed.
+    # Career has no footer context, so its threshold contains only the actions
+    # row and the context strip remains collapsed.
     window._select_page("Career")
     APP.processEvents()
     window._sync_footer_context_visibility(force=True)

@@ -289,7 +289,7 @@ class SaveFile:
     def _init_empty_pursuit_counters_into(cls, payload: bytearray) -> None:
         # Explicit zero-record init for impound/infraction counters; MaxBusted
         # (+0x02) is gameplay data owned by the caller. EvadeCount is a
-        # one-byte char (+0x07 is Pad1, not ours to write).
+        # one-byte char; +0x07 is Pad1 and remains untouched.
         payload[cls.GARAGE_IMPOUND_TIMES_BUSTED_OFFSET] = 0
         payload[cls.GARAGE_IMPOUND_STATE_OFFSET] = 0
         payload[cls.GARAGE_IMPOUND_DAYS_BEFORE_RELEASE_OFFSET] = 0
@@ -516,8 +516,8 @@ class SaveFile:
         # Native fresh FECareerRecord, mirroring the inlined Default body of
         # CreateNewCareerRecord: handle = slot, MaxBusted base, every counter
         # and the heat float zero. Native leaves the alignment bytes
-        # +0x01/+0x0A..0B as prior memory; their corpus-universal value is CD
-        # and our own live-record pad gate requires it, so we write it.
+        # +0x01/+0x0A..0B unchanged. Serialized records use CD there, and the
+        # editor's live-record gate requires the same canonical padding.
         payload = bytearray(self.GARAGE_SLOT_SIZE)
         payload[0] = int(career_slot) & 0xFF
         payload[1] = 0xCD

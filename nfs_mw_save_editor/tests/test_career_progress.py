@@ -12,7 +12,7 @@ from core.race_chapters import RACE_OFFERING, resolve_offering
 from core.race_names import RACE_EVENT_IDS, resolve_event_id
 
 
-# Real hashes from the decoded race table (RE/race_table_decoded.txt).
+# Anchors from the decoded game race table.
 HASH_1_1_1 = 0xF97E66FB       # career event "1.1.1"
 HASH_16_1_1_R = 0x69360B36    # prologue event "16.1.1.r"
 HASH_CHALLENGE = 0xFE87E90B   # challenge-series slot "19.9.70"
@@ -113,7 +113,7 @@ def test_parse_milestones_absorbs_floating_prefix():
 def test_parse_milestones_anchor_requires_nul_terminator():
     ms = (_pack_milestone(1, 2, 4, 0, 7, 1.0, 2.0),)
     data = _progress_buffer(prefix=0x390, milestones=ms)
-    # Decoy substring without the char[20] NUL, earlier in the section.
+    # A preceding decoy substring lacks the required char[20] NUL.
     decoy = career_progress.ANCHOR_TIMER_NAME + b"X"
     data[career_transplant.GAME_SECTION_START + 0x40:
          career_transplant.GAME_SECTION_START + 0x40 + len(decoy)] = decoy
@@ -236,7 +236,7 @@ def test_parse_speedtraps_rejects_table_past_section_end():
 
 
 def test_race_offering_map_matches_in_game_counts():
-    # In-game per-chapter race counts (2026-07-07), #15..#1.
+    # In-game per-chapter race counts, #15..#1.
     in_game = [3, 6, 7, 7, 8, 8, 8, 7, 10, 11, 10, 11, 12, 12, 11]
     regular = {c: 0 for c in range(1, 16)}
     boss = {c: 0 for c in range(1, 16)}

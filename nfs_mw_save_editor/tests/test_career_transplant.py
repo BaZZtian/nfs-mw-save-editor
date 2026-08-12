@@ -16,8 +16,8 @@ KEEP_USER_HOLES = (
     (0x42A9, 0x42B9, "case_file_name"),
     (0x5739, 0x5B41, "junkman_inventory_and_alias_region"),
     (0x5B42, 0x5B62, "gap_after_tbd_5b41"),
-    # 0x5B64.. includes the FE car table (0x5BC5) and pending parts blocks:
-    # user property plus Showcase-bug artifact fields dropped 2026-07-18.
+    # 0x5B64.. includes the FE car table (0x5BC5), user property, and pending
+    # parts blocks, including fields affected by the Showcase bug.
     (0x5B64, career_transplant.EXPECTED_SAVE_SIZE, "fe_table_property_and_tail_region"),
 )
 
@@ -294,8 +294,7 @@ def test_read_current_bin_and_race_count_helpers() -> None:
 def test_apply_preserves_junkman_token_array() -> None:
     """Assert the Junkman slot array (63 x 12 bytes at 0x5739) never takes donor bytes.
 
-    Regression guard for the first belt cut, which leaked donor tokens
-    (caught in-game 2026-07-07): the post_race_belt span must stop at 0x5739.
+    The post_race_belt span must stop at 0x5739 to preserve user tokens.
     """
 
     user = _valid_user_buffer()

@@ -214,10 +214,9 @@ class OwnedCarSlotStatus:
 class CarNumberRegistryAudit:
     """Read-only verdict on the car registry against the native numbering rule.
 
-    The game numbers a car by its physical registry row (81 + row), so a row
-    whose number says otherwise was written by hand - by an old editor, or by
-    us before this rule was known. The audit reports; repairing is the user's
-    call, never a silent fix.
+    The game numbers a car by its physical registry row (81 + row). A mismatch
+    indicates a hand-numbered record. The audit is read-only; repair always
+    requires an explicit user action.
     """
 
     row_count: int

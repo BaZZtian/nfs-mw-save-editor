@@ -1,20 +1,9 @@
-"""Per-model perf tuning caps = the game's own upgrade ladders.
+"""Generated per-model performance caps from the game's upgrade ladders.
 
-GENERATED FILE - regenerate with RE/tools/gen_tuning_limits.py, do not
-edit rows by hand. Source: the seven *_upgrades step counts in each car's
-pvehicle collection layout in GLOBAL/attributes.bin, one row per display
-name the editor can produce (core/cars.py signatures; the vehicle half of
-a signature IS the pvehicle collection key).
-
-Reading a row: an all-zero row is game truth - that car has no upgrade
-ladder at all (911 GT2 is the only player car like this); race/bonus cars
-are nos-only (0/0/0/0/0/0/3). A model absent from this dict has no
-pvehicle record in the vault and get_model_tuning_limits() returns None
-("no confirmed caps"), which keeps perf editing locked for it.
-
-Validation chain (2026-07-17): frozen empirical March table matches the vault
-32/32; triple lock min(presetride, ladder) == save pending-build packages
-on all 28 slots (see RE/tools/dump_upgrade_ladders.py gates).
+Rows contain Tires, Brakes, Suspension, Transmission, Engine, Turbo, and NOS
+step counts from ``GLOBAL/attributes.bin``. An all-zero row is a valid vehicle
+with no upgrade ladder. Missing models remain read-only because no cap is
+confirmed. Do not edit generated rows by hand.
 """
 from __future__ import annotations
 

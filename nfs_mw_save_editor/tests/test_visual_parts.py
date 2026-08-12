@@ -24,7 +24,7 @@ from core.visual_parts import (
     slot_name,
 )
 
-# Anchors verified 2026-07-12 against controlled Ford GT saves.
+# Anchors verified against controlled Ford GT saves.
 FORD_GT_GLOSS_A = 0x0E2E
 FORD_GT_CHROME_B = 0x0ED3
 FORD_GT_BODY_VINYL = 0x120D
@@ -57,7 +57,7 @@ def test_ford_gt_anchors_resolve():
 
 
 def test_paint_swatches_and_label_hashes():
-    # RGB anchors from RE/paint_attrs_decoded.txt (2026-07-12).
+    # RGB anchors from decoded paint attributes.
     assert part_at(FORD_GT_GLOSS_A).rgb == (191, 38, 38)
     assert part_at(0x0E34).rgb == (110, 255, 0)          # gloss_B: bright green
     assert part_at(FORD_GT_GLOSS_A).gloss == 128
@@ -85,8 +85,7 @@ def test_paint_swatches_and_label_hashes():
 
 
 def test_canon_display_names_resolve():
-    # LANGUAGEHASH -> English.bin resolution, generated into the catalog
-    # (gen_visual_parts.py name anchors, probe session 2026-07-16).
+    # LANGUAGEHASH -> English.bin resolution generated into the catalog.
     assert part_at(126).name == "HOOD 6"
     assert part_at(126).display_name == "Overdial"
     assert part_at(FORD_GT_BODY_VINYL).display_name == "Body 2"

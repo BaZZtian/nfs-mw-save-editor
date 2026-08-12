@@ -1,9 +1,8 @@
 """Junkman token belt: fixed engine location, ghost-slot tolerance.
 
 The belt is FEMarkerManager::OwnedMarkers[63] at absolute 0x5739 (0x5705
-relative to saved_data) in the PC v1.3 save. The old heuristic scan
-mis-anchored on saves carrying hand-written ghost slots (state byte > 1)
-from the early token experiments, hiding real tokens before the ghost.
+relative to saved_data) in the PC v1.3 save. Ghost slots with state bytes
+greater than one ensure parsing does not depend on a slot-like-record scan.
 """
 import struct
 import sys
@@ -38,7 +37,7 @@ def _write_slot(data: bytearray, index: int, type_id: int, state: int, param: in
 
 def _make_save_with_ghost() -> bytearray:
     data = bytearray(SAVE_SIZE)
-    # Real tokens ahead of the ghost (the old scan lost exactly these).
+    # Real tokens preceding the ghost must remain visible.
     _write_slot(data, 0, 17, 1)
     _write_slot(data, 1, 17, 1)
     _write_slot(data, 2, 17, 1)

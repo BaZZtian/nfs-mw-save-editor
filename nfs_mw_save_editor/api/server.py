@@ -23,9 +23,8 @@ schema.JSONRPC_ERROR_CODES; `error.data.errorCode` carries the ApiErrorCode
 string so clients switch on names, not numbers. Pydantic param validation
 failures map to the standard -32602 (invalid params) with
 errorCode=INVALID_VALUE. Unknown method -> standard -32601; malformed JSON
-line -> -32700 with id null. The loop catches everything: bad input NEVER
-kills the process — only `shutdown` (or EOF on stdin, which means the
-parent died) ends it.
+line -> -32700 with id null. Request errors are isolated to their response;
+only `shutdown` or stdin EOF ends the process.
 
 Entry point: `python -m api.server`, run with `nfs_mw_save_editor/` as the
 working directory — same top-level package layout (`core`, `ui`, `api`) the
@@ -55,17 +54,14 @@ logger = logging.getLogger("api.server")
 
 
 def _hello_result() -> Dict[str, Any]:
-    """protocol_version + sys.executable (venv sanity, known gotcha)."""
+    """Return the protocol version and active Python executable."""
     return HelloResult(
         protocol_version=PROTOCOL_VERSION, python_exe=sys.executable
     ).model_dump(by_alias=True)
 
 
 def dispatch(service: EditorService, method: str, params: Optional[dict]) -> Any:
-    """Route one request: validate params via the schema model, call the
-    service, dump the result model by alias (camelCase). Raises ApiError /
-    ValidationError / KeyError for the loop to translate; never writes to
-    stdout itself."""
+    """Validate and dispatch one request without writing to stdout."""
     p = params or {}
     if method == "hello":
         return _hello_result()

@@ -1054,7 +1054,7 @@ def test_hero_backdrop_has_no_coherent_stripes_and_is_cached():
 
     img = render()
 
-    # The enemy is vertical coherence, not noise: Qt's gradient dither
+    # The relevant artifact is vertical coherence, not noise: Qt's gradient dither
     # repeats per column and reads as stripes (~0.28 on this metric in the
     # steep mid zone), and a clean quantization leaves step edges. The
     # composed backdrop plus the blue-noise tile keeps the column-mean
@@ -1086,8 +1086,8 @@ def test_hero_backdrop_has_no_coherent_stripes_and_is_cached():
     render()
     assert next(iter(_CareerHero._backdrop_cache.values())) is first
 
-    # A resize paints from the stretched stale reference, then settles into
-    # an exact re-render for the new size shortly after.
+    # Resize may paint a stretched cached reference before the delayed exact
+    # render replaces it.
     hero.resize(1094, 300)
     render()
     assert not any(key[0] == 1094 for key in _CareerHero._backdrop_cache)
@@ -1097,9 +1097,8 @@ def test_hero_backdrop_has_no_coherent_stripes_and_is_cached():
 
 
 def test_hero_blocks_hold_one_position_across_all_rivals():
-    # At real app widths every canon tagline is a single line, so the only
-    # per-rival variable the rhythm ever saw was which glyphs the sentence
-    # uses - and that is exactly what the fixed ink sample removes.
+    # At application widths every canonical tagline is one line. A fixed ink
+    # sample prevents glyph shapes from changing the vertical rhythm.
     app = _app()
     window = MainWindow()
     window.resize(1600, 900)
@@ -1256,7 +1255,7 @@ def test_race_rows_use_canon_track_names_types_and_boss_kind():
     assert row.icon_path is not None and row.icon_path.name == "speedtrap.png"
 
     # kUnlocked_Online alone (engine ScoreFlags 0x10) says nothing about
-    # career availability — the pre-2026-07-16 UI mistook it for AVAILABLE.
+    # career availability and must not produce an AVAILABLE row.
     online_only = career_progress.RaceRecord(
         index=1,
         race_hash=2,

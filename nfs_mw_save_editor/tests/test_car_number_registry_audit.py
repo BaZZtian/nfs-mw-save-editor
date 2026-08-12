@@ -91,7 +91,7 @@ class CarNumberRegistryAuditTests(unittest.TestCase):
 
     def test_number_outside_the_native_range_is_reported(self) -> None:
         sf = _registry_savefile()
-        _fill_row(sf, 0, car_number=1)  # what the old max+1 allocator wrote on a fresh save
+        _fill_row(sf, 0, car_number=1)  # representative non-native allocation
 
         audit = sf.audit_car_number_registry()
 

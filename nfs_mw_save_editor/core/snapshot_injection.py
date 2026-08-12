@@ -309,7 +309,7 @@ def inject_snapshot(
     *,
     desired_career_slot: Optional[int] = None,
 ) -> SnapshotInjectionPlan:
-    """Apply a previously plannable snapshot injection to the save buffer."""
+    """Apply a validated snapshot-injection plan to the save buffer."""
 
     plan = save.plan_snapshot_injection(snapshot, target_mode, desired_career_slot=desired_career_slot)
     if plan.refusal_reason:
@@ -414,10 +414,9 @@ def _choose_owned_target(
 ) -> Tuple[Optional[OwnedCarSlotStatus], Optional[OwnedCarSlotStatus], Optional[int], bool]:
     """Pick the first candidate row whose native number is free.
 
-    Returns ``(primary, sidecar, car_number, collides)``. Rows drift only on
-    saves an older editor (or ours) numbered by hand. When every legal row's
-    number is already taken, the first one is returned with ``collides=True``
-    so the caller can name the number it refuses on - it is never written.
+    Returns ``(primary, sidecar, car_number, collides)``. Drifted saves may
+    contain hand-numbered rows. If every legal number is occupied, the first
+    candidate is returned with ``collides=True`` for a specific refusal.
     """
 
     fallback: Optional[Tuple[OwnedCarSlotStatus, Optional[OwnedCarSlotStatus], int, bool]] = None

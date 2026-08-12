@@ -815,9 +815,8 @@ class SnapshotInjectionWriteTests(unittest.TestCase):
         self.assertEqual(bytes(sf.data), original)
 
     def test_injection_writes_only_its_own_row_and_parts_block(self) -> None:
-        # 0x0A57 / 0x41FF / 0xF29A all looked like allocator state while car
-        # numbering was being reverse-engineered, and none of them is.
-        # Nothing outside the planned targets may move.
+        # Candidate offsets 0x0A57, 0x41FF, and 0xF29A are not allocator state.
+        # Injection must modify only the planned record and parts block.
         sf = _new_savefile_buffer()
         sf.data.extend(b"\xEE" * (0x10000 - len(sf.data)))
         before = bytes(sf.data)

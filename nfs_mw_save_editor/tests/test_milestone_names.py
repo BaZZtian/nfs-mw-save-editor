@@ -18,7 +18,7 @@ from core.milestone_names import (
     type_label_and_unit,
 )
 
-# Real keys from the decoded tables (RE/milestones_decoded.txt).
+# Anchors from the decoded game milestone tables.
 TYPE_COPS_DAMAGED = 0x850A64BC
 TYPE_BOUNTY = 0x2377E50D
 TYPE_HEAT_METER = 0xE9A4423C          # tracked stat, never a career milestone

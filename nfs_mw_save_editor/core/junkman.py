@@ -34,12 +34,9 @@ class JunkmanInventory:
     SAVED_DATA_START = 0x34  # fixed for PC v1.3 header
     SLOT_STRIDE = 0x0C
     SLOT_SIZE = 0x0C
-    # Engine ground truth: FEMarkerManager::OwnedMarkers[63] lives at a fixed
-    # position in the PC v1.3 save - absolute 0x5739, i.e. 0x5705 relative to
-    # saved_data. The old heuristic scan (longest run of slot-like records)
-    # mis-anchored on saves carrying hand-written ghost slots from the early
-    # token experiments (state bytes > 1 broke the run), silently hiding real
-    # tokens. The belt is a fixed struct; treat it as one.
+    # FEMarkerManager::OwnedMarkers[63] is fixed at absolute 0x5739 in PC v1.3,
+    # or 0x5705 relative to saved_data. Treat the belt as a fixed struct: ghost
+    # state bytes can invalidate heuristic searches for slot-like records.
     BASE_REL = 0x5705
     SLOT_COUNT = 63
 

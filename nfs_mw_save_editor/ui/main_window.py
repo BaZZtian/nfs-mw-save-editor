@@ -185,9 +185,7 @@ class _FooterTail(QObject):
         self._watch_content()
 
     def _watch_content(self) -> None:
-        """Follow the scrolled widget: card grids fill in on lazy timers, long
-        after the viewport got its size, and that growth is the only signal
-        that a list which used to fit no longer does."""
+        """Follow lazy content growth that can make a fitted list scrollable."""
         content = self.area.widget()
         if content is self._watched_content:
             return
@@ -410,15 +408,13 @@ class MainWindow(
         self.stack = QStackedWidget()
         self.stack.setObjectName("contentStack")
         self.stack.setAutoFillBackground(True)
-        # The stack spans the footer's row: the footer is no longer laid out
-        # below the content but painted over it, so lists scroll under it
-        # instead of dying against an invisible viewport edge above it.
+        # The stack spans the footer row while the floating footer overlays its
+        # bottom edge, allowing lists to scroll beneath the footer.
         base.addWidget(self.stack, 1, 1, 2, 1)
         base.setColumnStretch(1, 1)
         base.setRowStretch(1, 1)
-        # The footer is parked on the stack's rect, and MainWindow.resizeEvent
-        # fires *before* the grid has moved the stack -- reading it there hands
-        # out last frame's geometry.  The stack's own resize is the truth.
+        # MainWindow.resizeEvent fires before the grid updates stack geometry;
+        # the stack's resize event therefore drives footer placement.
         self.stack.installEventFilter(self)
 
         self.page_junk = self._build_junk_page()
@@ -632,12 +628,9 @@ class MainWindow(
     def _build_footer(self) -> QFrame:
         footer = QFrame()
         footer.setObjectName("footerChrome")
-        # The shell footer is chrome, not content: it keeps its own layout height
-        # even when the window is dragged to its vertical floor.  A hardcoded
-        # 60px minimum used to live here, and Qt's qSmartMinSize *replaces* the
-        # computed minimum with an explicit one instead of taking the larger --
-        # so the grid squeezed the row to 60 while the action buttons kept their
-        # own minimum, clipping their bottom edge and the footer's bottom border.
+        # The shell footer is chrome, not content. A fixed vertical policy lets
+        # its layout determine the height and keeps action buttons unclipped at
+        # the window's minimum height.
         footer.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         row = QHBoxLayout(footer)
         row.setContentsMargins(10, 8, 10, 8)
@@ -671,8 +664,7 @@ class MainWindow(
         self.progress_bar.setFormat("0/7 Performance")
         tallies.addWidget(self.lbl_free)
         tallies.addWidget(self.progress_bar)
-        # Career's lifetime totals moved onto the Career page, so the footer's
-        # context slot belongs to Junkman alone.
+        # The footer context slot belongs to Junkman; Career totals live in-page.
         self._footer_contexts = {
             "Junkman": self.footer_junkman_context,
         }
@@ -761,11 +753,10 @@ class MainWindow(
         self.footer_context.setVisible(expanded)
 
     def _collect_footer_overlay_targets(self) -> None:
-        """Register everything the floating footer now covers.
+        """Reserve clearance for content covered by the floating footer.
 
-        Scrolled lists get a tail (see _FooterTail) so their content can clear
-        the footer.  Views that scroll nothing keep the room the footer used to
-        occupy as a grid row, so what was visible before stays visible.
+        Scrolled lists use a ``_FooterTail``; non-scrolling views reserve an
+        equivalent bottom margin.
         """
         self._footer_scroll_targets: List[_FooterTail] = []
         self._footer_reserve_views: List[tuple[QWidget, int]] = []
@@ -798,10 +789,8 @@ class MainWindow(
                         ScrollBottomMask(area, boundary=partial(self._footer_midline_inside, area))
                     )
                 if _inside_scroll_area(view, self.stack):
-                    # Already covered: the scroll's tail is what makes room for
-                    # the footer here.  Reserving again stacks a second bottom
-                    # margin under the content - 74px of dead space under the
-                    # Career cards until this was caught by eye.
+                    # The scroll tail already provides footer clearance; adding
+                    # a view margin here would reserve the space twice.
                     continue
                 if areas or nested or view.layout() is None:
                     continue
@@ -845,7 +834,7 @@ class MainWindow(
                     layout.setContentsMargins(margins.left(), margins.top(), margins.right(), wanted)
             for tail in getattr(self, "_footer_scroll_targets", []):
                 tail.apply()
-            # The footer moved, so the line the lists stop at moved with it.
+            # Keep bottom masks aligned with the footer's current boundary.
             for mask in getattr(self, "_scroll_bottom_masks", []):
                 mask.sync()
         finally:

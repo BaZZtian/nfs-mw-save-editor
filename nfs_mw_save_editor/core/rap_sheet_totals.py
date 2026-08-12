@@ -1,12 +1,9 @@
 """One shared way to count Rap Sheet totals: bounty, escapes, busts.
 
-The game's lifetime totals aggregate live garage records PLUS the sold-car
-history block (engine trio FEPlayerCarDB::GetTotalBounty /
-GetTotalEvadedPursuits / GetTotalBustedPursuits; sold-history summing is
-verified by bytes for bounty and is a model inference for the two pursuit
-counters — the corpus shows the counters accumulate exactly alongside
-SoldHistoryBounty). Every page must use this module so Profile and Career can
-never disagree again.
+The game's lifetime totals aggregate live garage records and the sold-car
+history block. Sold bounty is verified by bytes; sold escape and bust totals
+follow the corresponding engine aggregation model. All UI consumers use this
+module so displayed totals share one rule.
 """
 
 from dataclasses import dataclass

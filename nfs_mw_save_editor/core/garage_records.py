@@ -8,11 +8,10 @@ whole. Occupancy is decided by the Handle byte at +0x00 alone:
                            stale sold-car record) and is invisible to the game.
 - Handle == slot index  -> live record.
 
-Any other Handle value is unexplained data and must be rejected (never
-observed across the 721-save corpus). Live records additionally must pass the
-canonical pad-byte gate below; that is the editor's extra fail-closed policy,
-not native semantics. MaxBusted/TimesBusted are real gameplay fields
-(impound strikes), never detection criteria.
+Any other Handle value is unexplained and must be rejected. Live records also
+pass the canonical pad-byte gate below as an editor-side fail-closed policy;
+padding is not part of native occupancy. MaxBusted and TimesBusted are gameplay
+fields, never detection criteria.
 
 Shared by savefile.py and career_transplant.py so the occupancy rule exists
 in exactly one place.
@@ -32,12 +31,8 @@ GARAGE_RECORD_BOUNTY_REL = 0x10
 GARAGE_RECORD_ESCAPED_REL = 0x14
 GARAGE_RECORD_BUSTED_REL = 0x16
 
-# VehicleDB's sold-car history block is serialized immediately after the
-# CareerRecords array, mirroring the memory layout (CareerRecords[25] @0x8728
-# ends exactly at SoldHistoryBounty @0x8CA0 in VehicleDB.hpp; in the save
-# 0xE2ED + 25*0x38 = 0xE865). Field placement verified across the
-# 721-path/549-unique corpus: all 365 saves with SoldHistoryBounty == 0 carry
-# zero counters, all 184 others carry plausible pursuit counts.
+# VehicleDB's sold-car history follows CareerRecords[25], matching the memory
+# layout: 0xE2ED + 25*0x38 = 0xE865 in the save.
 SOLD_HISTORY_BOUNTY_OFFSET = 0xE865
 SOLD_HISTORY_EVADED_OFFSET = 0xE869
 SOLD_HISTORY_BUSTED_OFFSET = 0xE86B

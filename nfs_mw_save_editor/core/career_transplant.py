@@ -1,32 +1,12 @@
-"""Career progression transplant.
+"""Career progression transplant with a strict progression/property boundary.
 
-This module owns the future donor-save -> user-save career progression path.
-It is deliberately scoped around the progression-vs-property split: donor bytes
-come only from named progression spans, while user-owned property such as active
-car identity, cash, alias, vehicles, parts, garage, Junkman inventory, and
-save-tail integrity remains outside this module's copy map.
+Only named progression spans come from the donor. Cash, alias, vehicles,
+parts, garage records, Junkman inventory, and save-tail integrity remain user
+property. The post-race span ends at 0x5739, immediately before the fixed
+63-record Junkman belt, and excludes car-table and pending-parts artifacts.
 
-The span map comes from the 2026-07-07 reverse-engineering pass over the
-32-save blacklist ladder and engine symbol/decompilation notes captured in
-AGENT_CONTEXT.md. The "post_race_belt" span (uncharted bytes after the race
-table plus the global visual table) was added after the first in-game test:
-performance-shop tier unlocks did not follow the transplant without it.
-Copying the visual table is harmless per the April 2026 injection fidelity
-tests. The belt deliberately STOPS at 0x5739: the Junkman token inventory is
-a fixed array of 63 12-byte slots at 0x5739..0x5A2D (empirically stable
-across all saves) and is user property — the first cut of the belt leaked
-donor tokens into it (caught during in-game validation). The former "tbd_57b1"/
-"tbd_57b9" singles were that array's slot 10 (type/count bytes) and were
-removed from the copy map for the same reason. The former "tbd_5c71"/
-"tbd_5c73" singles and "tbd_793d_block" were removed 2026-07-18: they are
-Ronnie's FECarRecord FilterBits (car table at 0x5BC5) and his pending
-parts-block package, which get zeroed by a stock Showcase duplicate-handle
-bug whenever the rival's car is previewed from the Reputation screen -
-a bug artifact, not career progression, so copying them injected the
-donor's artifact into the user save. Two invariants are fixed here for future tests and review:
-the game-section MD5 at 0x34 travels with the copied game section verbatim, and
-this module never recomputes checksums. The existing editor save path remains
-responsible for the file-tail MD5 when the user writes the modified save.
+The game-section MD5 at 0x34 travels with the copied section. File-tail
+integrity is repaired only by the normal save path.
 """
 
 from __future__ import annotations

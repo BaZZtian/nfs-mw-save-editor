@@ -7,9 +7,9 @@ with 17 GET_OUT_OF_JAIL, 18 PINK_SLIP, 19 CASH, 20 ADD_IMPOUND_BOX,
 for nonexistent IDs (22+); _normalize_catalog_defaults must migrate the
 swap and purge the ghosts.
 
-Since 2026-07-12 the default card names are the game's own marker-select
-strings (core/marker_names.py); every default an earlier editor version
-shipped is treated as legacy and upgraded, user renames are left alone.
+Default card names use the game's marker-select strings
+(``core/marker_names.py``). Recognized legacy defaults are upgraded; user
+renames are left alone.
 """
 import sys
 from pathlib import Path
@@ -80,7 +80,7 @@ def test_normalize_purges_nonexistent_ids():
 
 
 def test_normalize_upgrades_pre_canon_defaults():
-    # Every default name an earlier editor version shipped is legacy now.
+    # Every recognized pre-canonical default is eligible for migration.
     host = _CatalogHost([
         TokenEntry(id=1, name="Brakes", category="Performance"),
         TokenEntry(id=4, name="Turbo", category="Performance"),

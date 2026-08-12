@@ -1,10 +1,8 @@
 """Shared fixtures for the test suite.
 
-UI tests build the real MainWindow, which reads AND persists per-user state
-under %APPDATA%/NFS_MW_Junkman_Editor: the token catalog (rewritten by
-catalog normalization on every launch), the My Builds snapshot library, and
-the ui-settings file (theme/unlock toggles). A 2026-07-12 suite run silently
-migrated the user's live token catalog that way.
+UI tests build the real MainWindow, which reads and persists per-user state
+under %APPDATA%/NFS_MW_Junkman_Editor: the token catalog, My Builds snapshot
+library, and UI settings.
 
 Redirecting APPDATA per test keeps everything hermetic: every path helper
 that resolves per-user state (ui.main_window._appdata_dir,

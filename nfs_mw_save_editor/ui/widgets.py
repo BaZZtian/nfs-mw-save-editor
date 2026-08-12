@@ -968,9 +968,8 @@ class TokenCard(QWidget):
             self._flip_anim.setDuration(360)
             self._flip_anim.setEasingCurve(QEasingCurve.InOutQuad)
             self._flip_anim.valueChanged.connect(self._set_flip_progress)
-            # The spin answers the marker, not the card: crossing any corner of
-            # the block used to set it off. The label keeps a fixed size while
-            # the pixmap squeezes mid-spin, so the hover area cannot flicker.
+            # Only the marker triggers the spin. The label keeps a fixed size
+            # while the pixmap squeezes, so the hover area cannot flicker.
             self.icon_label.installEventFilter(self)
         icon_row = QHBoxLayout()
         icon_row.setAlignment(Qt.AlignCenter)

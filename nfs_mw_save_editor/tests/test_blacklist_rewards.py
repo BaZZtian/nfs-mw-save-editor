@@ -1,8 +1,7 @@
 """The reward offers are transcribed data, so guard the shape they must hold.
 
-Source of truth is the game's career vaults, decoded by
-RE/tools/dump_career_bins.py; that tool checks the same invariants against the
-vault itself.  These tests keep the transcription from drifting.
+Source of truth is the game's decoded career vaults. These tests keep the
+transcription and its structural invariants from drifting.
 """
 from __future__ import annotations
 
@@ -61,7 +60,7 @@ def test_taken_is_fewer_than_offered():
 
 
 def test_every_offer_splits_three_bonus_and_three_upgrades():
-    """The split the marker-select screen deals in, verified 14/14."""
+    """Every nonempty offer contains three bonus and three upgrade cards."""
     for stage, markers in BLACKLIST_REWARD_MARKERS.items():
         if not markers:
             continue
@@ -83,7 +82,7 @@ def test_display_order_leads_with_the_bonus_cards():
 
 
 def test_the_upgrade_three_are_not_one_per_category():
-    """Guards the tempting wrong rule: they are any three upgrade cards."""
+    """Upgrade cards need not contain one card from every category."""
     big_lou = reward_markers(11)[3:]
     assert sorted(big_lou) == [6, 10, 11]  # tires, spoiler, rims - two Parts
 

@@ -388,7 +388,7 @@ def build_markdown_report(
     lines.append("")
     lines.append("- This report is loader/planner validation plus save-backed inject smoke only.")
     lines.append("- It does not claim full in-game visual certification for every snapshot.")
-    lines.append("- Parts slot `74` is a normal allocatable slot (game-validated 2026-07-19).")
+    lines.append("- Parts slot `74` is a normal allocatable slot.")
     return "\n".join(lines) + "\n"
 
 
