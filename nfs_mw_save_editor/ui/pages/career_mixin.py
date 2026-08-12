@@ -83,6 +83,7 @@ from core import (
     career_transplant,
     marker_names,
     milestone_names,
+    race_cops,
     race_display_names,
     rival_bios,
     rival_challenge,
@@ -405,11 +406,24 @@ def _untracked_boss_row(
         detail=detail,
         fraction=None,
         tooltip=(
-            f"{title} — rival race\n{type_label} · {event_id} · boss race\n"
+            f"{title} — rival race\n"
+            f"{type_label} · {event_id} · boss race{_cop_note(event_id)}\n"
             "The save keeps no record for this event — its state follows "
             "the rest of the rival series."
         ),
     )
+
+
+def _cop_note(event_id: Optional[str]) -> str:
+    """Tail for a tooltip's type line: whether the race runs with cops.
+
+    Keyed by the slot's own EventID, never by a remapped route - the route a
+    slot drives has no entry of its own in the vault.
+    """
+    if not race_cops.has_cops(event_id):
+        return ""
+    heat = race_cops.forced_heat(event_id)
+    return f" · cops, heat {heat}" if heat else " · cops"
 
 
 def _race_type_icon(event_id: Optional[str]) -> str:
@@ -1368,6 +1382,9 @@ class _ChipPreviewCard(QFrame):
     # milestones still fit their card at that width.
     _CHIP_STEPS = ((1600, 80), (1350, 68), (0, 56))
     _RADIUS = 12.0
+    # The glyph fills the chip; at 0.62 the big steps had a ring of dead air
+    # around it.
+    _ICON_SCALE = 0.74
 
     def __init__(self, title: str) -> None:
         super().__init__()
@@ -1449,15 +1466,17 @@ class _ChipPreviewCard(QFrame):
     def _draw_chip(self, painter: QPainter, rect: QRect, row: _InspectorRow, tokens) -> None:
         boss = row.kind == "boss"
         accent = "BOSS_GOLD" if boss else "ACCENT"
-        bright = "BOSS_GOLD_BRIGHT" if boss else "ACCENT_BRIGHT"
         icon_colour: Optional[QColor] = None
         opacity = 1.0
         if row.state == "done":
-            fill = QColor(tokens[accent])
-            border = QColor(tokens[bright])
-            # The theme itself says what reads on top of its accent; without
-            # this the icon vanished into the fill on the yellow themes.
-            icon_colour = QColor(tokens["TEXT_ON_ACCENT"])
+            # A tinted surface rather than the accent itself: a row of solid
+            # accent tiles was the loudest thing on the page.
+            fill = QColor(tokens["BOSS_GOLD_BG" if boss else "ACCENT_SOFT"])
+            border = QColor(tokens[accent])
+            # TEXT, not TEXT_ON_ACCENT - the latter is picked to read on the
+            # accent, and on the soft fill it collapses (1.7:1 in the themes
+            # whose accent is bright).  TEXT never drops below 6.1:1 there.
+            icon_colour = QColor(tokens["TEXT"])
         elif row.state == "open":
             fill = QColor(tokens["BG_INPUT"])
             border = QColor(tokens[accent])
@@ -1468,7 +1487,7 @@ class _ChipPreviewCard(QFrame):
         painter.setBrush(fill)
         painter.setPen(QPen(border, 1.4))
         painter.drawRoundedRect(QRectF(rect), self._RADIUS, self._RADIUS)
-        icon = self._tinted(row.icon_path, round(rect.width() * 0.62), icon_colour)
+        icon = self._tinted(row.icon_path, round(rect.width() * self._ICON_SCALE), icon_colour)
         if not icon.isNull():
             painter.setOpacity(opacity)
             painter.drawPixmap(
@@ -2214,6 +2233,7 @@ def _race_row(record: career_progress.RaceRecord, *, boss: bool) -> _InspectorRo
     kind_line = f"{type_label} · {record.event_id}" + (" · boss race" if boss else "")
     if route_id != record.event_id:
         kind_line += f" · route {route_id}"
+    kind_line += _cop_note(record.event_id)
     if record.is_completed:
         state = "done"
         best = _race_best_result(record, type_label)
