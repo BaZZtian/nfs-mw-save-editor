@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import Dict, Tuple
 
+from core.marker_names import MARKER_CANON
+
 # ePossibleMarker ids, in the order the vault lists them.
 BLACKLIST_REWARD_MARKERS: Dict[int, Tuple[int, ...]] = {
     1: (),                              # Razor - Final Pursuit, no marker race
@@ -44,7 +46,39 @@ PINK_SLIP_MARKER = 18
 CARDS_PER_OFFER = 6
 CARDS_TAKEN = 2
 
+# The game's "Bonus Markers" FE category (see core/marker_names.py): the pink
+# slip, cash, the jail/impound cards.  Every rival offers exactly three of
+# these and three upgrade cards.
+BONUS_MARKERS = frozenset({17, 18, 19, 20, 21})
+
+
+def _display_rank(marker: int) -> int:
+    """Marker-select order: bonus cards, then visual, parts, performance."""
+    if marker in BONUS_MARKERS:
+        return 0
+    # The FE category is "Unique Part Upgrades" - singular; matching "Parts"
+    # silently sorted every part card in with performance.
+    category = MARKER_CANON[marker].fe_category if marker in MARKER_CANON else ""
+    if "Visual" in category:
+        return 1
+    if "Part" in category:
+        return 2
+    return 3
+
 
 def reward_markers(stage: int) -> Tuple[int, ...]:
-    """Marker ids offered by ``stage`` (15 = Sonny, 1 = Razor)."""
-    return BLACKLIST_REWARD_MARKERS.get(stage, ())
+    """Marker ids offered by ``stage`` (15 = Sonny, 1 = Razor).
+
+    Ordered the way the marker-select screen deals them: the three bonus
+    cards first (the pink slip is always one of them), then the three upgrade
+    cards by category - visual, parts, performance.  The vault stores its own
+    order, where the pink slip sits fourth for nine rivals out of fourteen.
+
+    The bonus/upgrade split is exact - three of each, every rival - and every
+    rival offers exactly ONE performance card, which is why it always lands
+    last.  The other two are not one-per-category: Big Lou hands out spoiler,
+    rims and tires (two Parts, no Visual), Bull hands out gauge, vinyl and a
+    supercharger (two Visual, no Parts).
+    """
+    cards = BLACKLIST_REWARD_MARKERS.get(stage, ())
+    return tuple(sorted(cards, key=_display_rank))
