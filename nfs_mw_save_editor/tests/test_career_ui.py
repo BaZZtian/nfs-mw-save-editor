@@ -2091,18 +2091,24 @@ def test_a_press_on_the_card_itself_lends_no_face():
     window.close()
 
 
-def test_the_glyph_is_let_go_before_the_list_arrives():
-    """Two CONTENTS in one panel at once is the crossfade nobody asked for.
-
-    The surface tint is held to a weaker rule on purpose: it is paint, not
-    content, and a whisper of it left as the list begins is a colour settling,
-    not two things fighting.
+def test_the_glyph_dissolves_across_the_list_rather_than_fighting_it():
+    """The two overlap on purpose - letting the glyph go before the list
+    starts leaves a stretch with nothing in the panel at all.  What must hold
+    is that it is a dissolve: by the time the list is half lit the glyph is a
+    whisper, and it is gone before the panel is.
     """
     from ui.pages.career_mixin import _DetailOverlay
 
-    listing_starts = _DetailOverlay._CONTENT_IN[0]
-    assert _DetailOverlay._GLYPH_OUT < listing_starts
-    still_worn = max(0.0, 1.0 - listing_starts / _DetailOverlay._FACE_OUT)
+    starts, ends = _DetailOverlay._CONTENT_IN
+    half_lit = starts + (ends - starts) / 2
+    hold, out = _DetailOverlay._GLYPH_HOLD, _DetailOverlay._GLYPH_OUT
+    glyph_then = max(0.0, 1.0 - (half_lit - hold) / (out - hold))
+
+    assert hold >= starts, "the glyph starts leaving before it was ever fully seen"
+    assert glyph_then <= 0.35, f"still {glyph_then:.2f} of glyph over a half-lit list"
+    assert out < 1.0, "the glyph outlives the opening"
+
+    still_worn = max(0.0, 1.0 - starts / _DetailOverlay._FACE_OUT)
     assert still_worn <= 0.15, f"the panel is still wearing the chip: {still_worn:.2f}"
 
 

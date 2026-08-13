@@ -2547,7 +2547,15 @@ class _DetailOverlay(QWidget):
     # of.  The glyph goes first, well before the list arrives, so the two never
     # share the panel.
     _FACE_OUT = 0.5
-    _GLYPH_OUT = 0.3
+    # The glyph HOLDS, then dissolves ACROSS the list's arrival.  Fading it
+    # from the first frame meant it was never once fully on screen, which is
+    # what makes a 300ms opening read as something blinking rather than
+    # something leaving; and letting go of it before the list starts leaves a
+    # stretch with nothing in the panel at all.  So they overlap - the glyph
+    # is a whisper by the time the list is halfway lit, which is a dissolve
+    # and not two contents competing.
+    _GLYPH_HOLD = 0.45
+    _GLYPH_OUT = 0.85
 
     closed = Signal()
 
@@ -2670,7 +2678,7 @@ class _DetailOverlay(QWidget):
         face = self._face
         if face is None or face.icon_path is None:
             return
-        showing = max(0.0, 1.0 - self._run_position() / self._GLYPH_OUT)
+        showing = self._glyph_showing()
         if showing <= 0.0:
             return
         size = max(8, face.icon_px)
@@ -2685,6 +2693,15 @@ class _DetailOverlay(QWidget):
             glyph,
         )
         painter.setOpacity(1.0)
+
+    def _glyph_showing(self) -> float:
+        """Fully lit while the panel is still close to the thing it grew from,
+        then dissolved - and gone before the list arrives."""
+        position = self._run_position()
+        if position <= self._GLYPH_HOLD:
+            return 1.0
+        span = self._GLYPH_OUT - self._GLYPH_HOLD
+        return max(0.0, 1.0 - (position - self._GLYPH_HOLD) / span)
 
     def _content_opacity(self) -> float:
         """Never jumps at an interruption: opening only brightens from where
