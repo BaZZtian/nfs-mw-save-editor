@@ -1419,6 +1419,13 @@ class _PressableSection(QFrame):
     _MARK_OUT_MS = 200      # the edge letting go once the panel is home
     _EDGE_HELD = 0.75       # answering a press, and standing while it is open
     _EDGE_HOVER = 0.35      # a whisper: the step up to a press has to be seen
+    # The panel lands back on what it grew from, and that landing has weight:
+    # the thing takes the knock, gives way, and springs back past its own size
+    # before settling.  Small numbers - a chip is 56px, so a tenth is under six
+    # of them, and the overshoot is one.
+    _RECOIL_MS = 300
+    _RECOIL_DIP = 0.9
+    _RECOIL_BOUNCE = 0.45
 
     # Carries the rect the dossier should grow from: whatever was pressed, or
     # the card itself when the press landed between things.
@@ -1440,6 +1447,12 @@ class _PressableSection(QFrame):
         self._mark_run.setEndValue(1.0)
         self._mark_run.valueChanged.connect(self._apply_mark_step)
         self._mark_run.finished.connect(self._settle_mark)
+        self._recoil_rect: Optional[QRect] = None
+        self._recoil_level = 1.0
+        self._recoil_run = PacedAnimation(self)
+        self._recoil_run.setDuration(self._RECOIL_MS)
+        self._recoil_run.valueChanged.connect(self._apply_recoil)
+        self._recoil_run.finished.connect(self._settle_recoil)
 
     def _has_content(self) -> bool:
         """Whether there is anything behind a click.  Overridden by both."""
@@ -1530,6 +1543,34 @@ class _PressableSection(QFrame):
         self._mark_run.stop()
         self._card_mark = self._mark_to = 0.0
         self._pressed_card = self._card_held = self._card_under_cursor = False
+
+    def recoil(self, rect: QRect) -> None:
+        """The panel has just closed back into ``rect``; let it take the knock.
+
+        Only for something the panel actually landed ON.  A press that came
+        from the whole card has nothing to knock - the card is the surface the
+        panel was drawn on, not an object it hit.
+        """
+        self._recoil_rect = QRect(rect)
+        self._recoil_run.stop()
+        self._recoil_level = 0.0
+        self._recoil_run.start()
+
+    def _recoil_scale(self, rect: QRect) -> float:
+        if self._recoil_rect is None or rect != self._recoil_rect:
+            return 1.0
+        return self._RECOIL_DIP + (1.0 - self._RECOIL_DIP) * self._recoil_level
+
+    def _apply_recoil(self, value) -> None:
+        self._recoil_level = spring(float(value), bounce=self._RECOIL_BOUNCE)
+        if self._recoil_rect is not None:
+            self.update(self._recoil_rect.adjusted(-4, -4, 4, 4))
+
+    def _settle_recoil(self) -> None:
+        landed, self._recoil_rect = self._recoil_rect, None
+        self._recoil_level = 1.0
+        if landed is not None:
+            self.update(landed.adjusted(-4, -4, 4, 4))
 
     def _promise_a_click(self) -> None:
         """Nothing to open means nothing to promise: a hand standing over a
@@ -1754,6 +1795,15 @@ class _ChipPreviewCard(_PressableSection):
         # animation exists to remove.
         lift = self._HOVER_LIFT * level
         shape = QRectF(rect).translated(0.0, -lift)
+        knock = self._recoil_scale(rect)
+        if knock != 1.0:
+            # Around the whole chip, glyph included: a box shrinking about a
+            # glyph that stayed put would read as a mistake, not a knock.
+            painter.save()
+            middle = shape.center()
+            painter.translate(middle)
+            painter.scale(knock, knock)
+            painter.translate(-middle)
         boss = row.kind == "boss"
         fill_token, border_token, tint_token, opacity = self._chip_colours(row)
         fill = QColor(tokens[fill_token])
@@ -1782,6 +1832,8 @@ class _ChipPreviewCard(_PressableSection):
                 icon,
             )
             painter.setOpacity(1.0)
+        if knock != 1.0:
+            painter.restore()
 
     def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
         super().paintEvent(_event)
@@ -2187,11 +2239,20 @@ class _RewardOffersCard(_PressableSection):
             drawn = icon if scale == 1.0 else icon.scaled(
                 width, icon.height(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation
             )
+            knock = self._recoil_scale(self._token_rect(cell))
+            if knock != 1.0:
+                painter.save()
+                middle = QRectF(self._token_rect(cell)).center()
+                painter.translate(middle)
+                painter.scale(knock, knock)
+                painter.translate(-middle)
             painter.drawPixmap(
                 cell.center().x() - drawn.width() // 2,
                 top + (icon_size - drawn.height()) // 2,
                 drawn,
             )
+            if knock != 1.0:
+                painter.restore()
         self._paint_card_edge(painter, tokens)
         painter.end()
 
@@ -3682,6 +3743,7 @@ class CareerMixin:
         else:
             card.release_card_mark()
             self._career_detail_origin = None
+        self._career_detail_landing = (card, QRect(origin))
         # Theme styling is scoped to roots, and the overlay is a root of its
         # own: without this the dossier paints on the bare palette colour, with
         # no card surface and no border.  Re-applied per opening so a theme
@@ -3703,10 +3765,17 @@ class CareerMixin:
             overlay.close_overlay()
 
     def _on_career_detail_closed(self) -> None:
-        """The panel is home; the outline it grew from may let go."""
+        """The panel is home: the outline it grew from may let go, and whatever
+        it landed on takes the knock."""
         card, self._career_detail_origin = getattr(self, "_career_detail_origin", None), None
         if card is not None:
             card.release_card_mark()
+        landing = getattr(self, "_career_detail_landing", None)
+        self._career_detail_landing = None
+        if landing is not None:
+            source, origin = landing
+            if origin != source.rect():
+                source.recoil(origin)
 
     def roll_reward_offer_order(self) -> None:
         """Re-deal the bonus cards, once per opened save.

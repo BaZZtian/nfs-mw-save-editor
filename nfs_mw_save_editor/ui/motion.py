@@ -32,7 +32,7 @@ from PySide6.QtCore import (
 )
 
 
-def spring(position: float, settle: float = 9.0) -> float:
+def spring(position: float, settle: float = 9.0, bounce: float = 0.0) -> float:
     """A critically damped spring, as a position between 0 and 1.
 
     Apple drives this kind of transition with a spring rather than a curve,
@@ -54,7 +54,21 @@ def spring(position: float, settle: float = 9.0) -> float:
         return 0.0
     if position >= 1.0:
         return 1.0
-    reach = lambda t: 1.0 - (1.0 + settle * t) * math.exp(-settle * t)  # noqa: E731
+    if bounce <= 0.0:
+        reach = lambda t: 1.0 - (1.0 + settle * t) * math.exp(-settle * t)  # noqa: E731
+        return reach(position) / reach(1.0)
+
+    # Under-damped: it goes past and comes back.  Apple's `bounce` is one minus
+    # the damping ratio, and the first overshoot is exp(-pi*z / sqrt(1-z^2)) -
+    # 1.5% at bounce 0.2, 13% at 0.45.  Small numbers: over the few per cent of
+    # scale a recoil is worth, anything gentler cannot be seen at all.
+    damping = max(0.05, min(0.95, 1.0 - bounce))
+    ringing = settle * math.sqrt(1.0 - damping * damping)
+    def reach(t: float) -> float:
+        decay = math.exp(-damping * settle * t)
+        return 1.0 - decay * (
+            math.cos(ringing * t) + (damping * settle / ringing) * math.sin(ringing * t)
+        )
     return reach(position) / reach(1.0)
 
 

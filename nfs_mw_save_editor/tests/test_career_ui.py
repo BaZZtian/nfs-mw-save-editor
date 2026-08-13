@@ -2166,3 +2166,59 @@ def test_the_list_arrives_with_a_hair_of_scale_and_lands_crisp():
     assert scales[-1] == 1.0, "the list is left standing under a transform"
     assert 0.9 < overlay._CONTENT_RISE < 1.0, "further down and the text grows"
     window.close()
+
+
+def _knock_scales(card, rect, steps=14):
+    run = card._recoil_run
+    seen = []
+    for i in range(steps + 1):
+        run.setCurrentTime(round(run.duration() * i / steps))
+        seen.append(card._recoil_scale(rect))
+    return seen
+
+
+def test_the_chip_takes_the_knock_when_the_panel_lands_on_it():
+    """The panel closes back INTO the chip, and a landing has weight: the chip
+    gives way, springs past its own size and settles.  Small enough to be felt
+    rather than watched - and it must end at exactly 1, or the chip is left
+    standing at the wrong size."""
+    app = _app()
+    rows, boss_rows = _chip_rows(8, boss=2)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip = card._chip_rects[3][0]
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, chip.center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+    assert card._recoil_rect is None, "knocked before the panel came back"
+
+    window.close_career_detail()
+    _land_animation(overlay)
+    assert card._recoil_rect == chip
+
+    seen = _knock_scales(card, chip)
+    assert seen[0] == pytest.approx(card._RECOIL_DIP, abs=0.01), "it never gave way"
+    assert max(seen) > 1.0, "it came back without springing past"
+    assert max(seen) < 1.03, f"the knock is a lurch: {max(seen):.3f}"
+    assert seen[-1] == 1.0, "the chip is left at the wrong size"
+    assert card._recoil_scale(card._chip_rects[0][0]) == 1.0, "the row shook"
+    window.close()
+
+
+def test_a_panel_that_came_from_the_card_has_nothing_to_knock():
+    """The card is the surface the panel was drawn on, not an object it hit."""
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, QPoint(card.width() // 2, 6))
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+    window.close_career_detail()
+    _land_animation(overlay)
+
+    assert card._recoil_rect is None
+    assert card._recoil_scale(card.rect()) == 1.0
+    window.close()
