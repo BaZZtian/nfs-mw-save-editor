@@ -1818,3 +1818,123 @@ def test_the_lift_does_not_rebuild_the_glyph_on_every_frame():
         card.grab()
     assert len(_ChipPreviewCard._pixmap_cache) == cached
     window.close()
+
+
+
+def _press(app, card, point, release=False):
+    where = QPointF(point)
+    kind = QEvent.MouseButtonRelease if release else QEvent.MouseButtonPress
+    app.sendEvent(card, QMouseEvent(kind, where, where, Qt.LeftButton,
+                                    Qt.LeftButton, Qt.NoModifier))
+
+
+def test_a_press_that_misses_the_chips_is_answered_by_the_card():
+    """Missing a chip still opens the dossier, so the press cannot go
+    unanswered - the card's own edge lights while the button is down."""
+    app = _app()
+    rows, boss_rows = _chip_rows(5, boss=1)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    header = QPoint(card.width() // 2, 6)      # above the chips, inside the card
+    assert card._chip_at(header) is None
+    resting = card.grab().toImage()
+
+    _press(app, card, header)
+    assert card._card_mark == card._EDGE_HELD, "a press must be answered at once"
+    assert card.grab().toImage() != resting, "the press was never drawn"
+
+    opened = []
+    card.activated.connect(opened.append)
+    _press(app, card, header, release=True)
+    assert opened == [card.rect()], "the panel must grow from the whole card"
+    # NOT cut at the handover: the panel grows out of this very outline, and a
+    # quick click would otherwise be a blink.
+    assert card._card_mark == card._EDGE_HELD
+    assert card.grab().toImage() != resting
+
+    card.release_card_mark()
+    run = card._mark_run
+    assert 0 < run.duration() <= card._MARK_OUT_MS
+    run.setCurrentTime(run.duration() // 2)
+    assert 0.0 < card._card_mark < 1.0, "the edge was cut instead of fading"
+    run.setCurrentTime(run.duration())
+    assert card._card_mark == 0.0
+    assert card.grab().toImage() == resting
+    window.close()
+
+
+def test_the_card_holds_its_edge_until_the_dossier_is_home():
+    """The outline hands the panel over on the way out as on the way in: it is
+    released only once the panel has closed back into it."""
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, QPoint(card.width() // 2, 6))
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+    assert card._card_mark == card._EDGE_HELD, "the outline let go while its dossier stood open"
+
+    window.close_career_detail()
+    _land_animation(overlay)
+    assert card._mark_run.state() == QAbstractAnimation.Running
+    card._mark_run.setCurrentTime(card._mark_run.duration())
+    assert card._card_mark == 0.0
+    window.close()
+
+
+def test_a_press_that_wanders_onto_a_chip_has_nothing_to_hand_over():
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip = card._chip_rects[2][0]
+
+    _press(app, card, QPoint(card.width() // 2, 6))
+    assert card._card_mark == card._EDGE_HELD
+    opened = []
+    card.activated.connect(opened.append)
+    _press(app, card, chip.center(), release=True)
+
+    assert opened == [chip], "the panel must grow from the chip let go over"
+    assert card._mark_run.state() == QAbstractAnimation.Running
+    card._mark_run.setCurrentTime(card._mark_run.duration())
+    assert card._card_mark == 0.0
+    window.close()
+
+
+def test_a_card_with_nothing_behind_it_does_not_promise_a_click():
+    app = _app()
+    rows, boss_rows = _chip_rows(5)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    assert card.cursor().shape() == Qt.PointingHandCursor
+
+    card.set_items("No race table loaded", ())
+    assert card.cursor().shape() == Qt.ArrowCursor
+    _press(app, card, QPoint(card.width() // 2, 6))
+    assert not card._pressed_card, "an empty card answered a press it cannot serve"
+    window.close()
+
+
+def test_the_cards_edge_does_not_blink_as_the_cursor_meets_a_chip():
+    """The edge answers the CARD, so it must not go out over a chip - it would
+    blink all the way along the row."""
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip = card._chip_rects[2][0]
+    run = card._mark_run
+
+    _hover_chip(app, card, QPoint(card.width() // 2, 6))   # on the card, off the chips
+    assert run.state() == QAbstractAnimation.Running
+    run.setCurrentTime(run.duration())
+    assert card._card_mark == pytest.approx(card._EDGE_HOVER)
+
+    _hover_chip(app, card, chip.center())                  # and onto a chip
+    assert card._card_mark == pytest.approx(card._EDGE_HOVER), "the edge blinked"
+    assert run.state() != QAbstractAnimation.Running
+
+    card.leaveEvent(QEvent(QEvent.Leave))
+    assert run.state() == QAbstractAnimation.Running
+    run.setCurrentTime(run.duration())
+    assert card._card_mark == 0.0
+    window.close()

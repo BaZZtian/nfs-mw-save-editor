@@ -1406,12 +1406,17 @@ class _ChipPreviewCard(QFrame):
     _HOVER_IN_MS = 140
     _HOVER_OUT_MS = 90
     _HOVER_MIN_MS = 60      # a correction still has to be seen happening
+    _MARK_OUT_MS = 200      # the card's edge letting go once the panel is home
+    # The edge has two reasons to be lit, and they differ only in how loudly.
+    # It stays lit while the cursor is ANYWHERE on the card, chips included:
+    # putting it out over a chip would make it blink all the way along the row.
+    _EDGE_HELD = 0.75       # answering a press, and standing while it is open
+    _EDGE_HOVER = 0.35      # a whisper: the step up to a press has to be seen
 
     def __init__(self, title: str) -> None:
         super().__init__()
         self.setObjectName("careerInspectorSection")
         self.setMouseTracking(True)
-        self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._title = title
         self._subtitle = ""
@@ -1419,6 +1424,7 @@ class _ChipPreviewCard(QFrame):
         self._boss_rows: Tuple[_InspectorRow, ...] = ()
         self._chip_rects: list[tuple[QRect, _InspectorRow]] = []
         self._pressed_chip: Optional[QRect] = None
+        self._pressed_card = False
         self._hovered_chip: Optional[QRect] = None
         # How lifted each chip stands NOW, and the run carrying it there.
         self._hover_level: Dict[QRect, float] = {}
@@ -1430,6 +1436,18 @@ class _ChipPreviewCard(QFrame):
         self._hover_run.setEndValue(1.0)
         self._hover_run.valueChanged.connect(self._apply_hover_step)
         self._hover_run.finished.connect(self._settle_hover)
+        # How lit the card's own edge stands, and the run putting it out.
+        self._card_mark = 0.0
+        self._mark_from = 0.0
+        self._mark_to = 0.0
+        self._card_held = False
+        self._card_under_cursor = False
+        self._mark_run = QVariantAnimation(self)
+        self._mark_run.setEasingCurve(QEasingCurve.Linear)
+        self._mark_run.setStartValue(0.0)
+        self._mark_run.setEndValue(1.0)
+        self._mark_run.valueChanged.connect(self._apply_mark_step)
+        self._mark_run.finished.connect(self._settle_mark)
         self.setFixedHeight(self._card_height())
 
     def _chip(self) -> int:
@@ -1456,7 +1474,7 @@ class _ChipPreviewCard(QFrame):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
-        self._forget_hover()
+        self._forget_pointer_state()
         height = self._card_height()
         if self.height() != height:
             self.setFixedHeight(height)
@@ -1470,7 +1488,12 @@ class _ChipPreviewCard(QFrame):
         self._subtitle = subtitle
         self._rows = tuple(rows)
         self._boss_rows = tuple(boss_rows)
-        self._forget_hover()
+        self._forget_pointer_state()
+        # Nothing to open means nothing to promise: a hand standing over a card
+        # with no table behind it is an affordance with nothing under it.
+        self.setCursor(
+            Qt.PointingHandCursor if self._rows or self._boss_rows else Qt.ArrowCursor
+        )
         self.update()
 
     def _tinted(self, path: Optional[Path], size: int, colour: Optional[QColor]) -> QPixmap:
@@ -1617,6 +1640,19 @@ class _ChipPreviewCard(QFrame):
                 self._draw_chip(painter, rect, row, tokens)
                 self._chip_rects.append((rect, row))
                 x += size + self._GAP
+
+        if self._card_mark > 0.0:
+            # Drawn over the sheet's own border rather than restyling it: the
+            # card is painted by the page stylesheet, and a repolish to light
+            # one edge for a hundred milliseconds is not worth its cost.
+            radius = float(str(tokens["RADIUS_XL"]).removesuffix("px"))
+            lit = QColor(tokens["ACCENT"])
+            lit.setAlphaF(self._card_mark)
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(lit, 1.0))
+            painter.drawRoundedRect(
+                QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius
+            )
         painter.end()
 
     def event(self, event) -> bool:
@@ -1709,16 +1745,82 @@ class _ChipPreviewCard(QFrame):
         }
         self._hover_from, self._hover_to = {}, {}
 
-    def _forget_hover(self) -> None:
+    def release_card_mark(self) -> None:
+        """Let the card's edge go, softly.
+
+        Called by the page once the dossier this card opened has closed back
+        into it: the outline hands the panel over on the way out just as it
+        handed it over on the way in.  It settles to whatever the cursor still
+        justifies - the quiet hover glow if it is back on the card, nothing if
+        it is elsewhere.
+        """
+        self._card_held = False
+        self._aim_edge(self._MARK_OUT_MS)
+
+    def _edge_target(self) -> float:
+        if self._card_held:
+            return self._EDGE_HELD
+        if self._card_under_cursor and (self._rows or self._boss_rows):
+            return self._EDGE_HOVER
+        return 0.0
+
+    def _aim_edge(self, span_ms: int, instant: bool = False) -> None:
+        target = self._edge_target()
+        if instant:
+            self._mark_run.stop()
+            self._mark_to = self._card_mark = target
+            self.update()
+            return
+        distance = abs(target - self._card_mark)
+        if distance <= 0.0:
+            return
+        self._mark_from, self._mark_to = self._card_mark, target
+        self._mark_run.stop()
+        # Priced against the taller of the two ends rather than against the
+        # distance alone: the hover glow's whole journey is a third of the
+        # held edge's, and it must not therefore take a third of the time.
+        reference = max(self._mark_from, target, 0.001)
+        self._mark_run.setDuration(max(1, round(span_ms * distance / reference)))
+        self._mark_run.start()
+
+    def _apply_mark_step(self, value) -> None:
+        step = self._hover_ease(float(value))
+        self._card_mark = self._mark_from + (self._mark_to - self._mark_from) * step
+        self.update()
+
+    def _settle_mark(self) -> None:
+        self._card_mark = self._mark_to
+        self.update()
+
+    def _forget_pointer_state(self) -> None:
         """The chips are about to move or be replaced, and every level is keyed
-        by where its chip sits - there would be nothing left to land on."""
+        by where its chip sits - there would be nothing left to land on.  The
+        card's own mark goes with them: it belongs to a press on a card that is
+        no longer the one in front of anybody."""
         self._hover_run.stop()
         self._hover_level, self._hover_from, self._hover_to = {}, {}, {}
         self._hovered_chip = None
+        self._mark_run.stop()
+        self._card_mark = self._mark_to = 0.0
+        self._pressed_card = self._card_held = self._card_under_cursor = False
+
+    def enterEvent(self, event) -> None:  # noqa: N802 - Qt override
+        # Not covered by the move below: the cursor can come to rest on the
+        # card without moving at all - the dossier closing out from under it
+        # is exactly that case.
+        self._note_cursor_on_card()
+        super().enterEvent(event)
+
+    def _note_cursor_on_card(self) -> None:
+        if self._card_under_cursor or not (self._rows or self._boss_rows):
+            return
+        self._card_under_cursor = True
+        self._aim_edge(self._HOVER_IN_MS)
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
         if self._rows + self._boss_rows:
             self._set_hovered(self._chip_at(event.position().toPoint()))
+            self._note_cursor_on_card()
         super().mouseMoveEvent(event)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
@@ -1727,6 +1829,15 @@ class _ChipPreviewCard(QFrame):
             if self._pressed_chip is not None:
                 self.update(self._pressed_chip)
                 return
+            # A press that missed the chips opens the dossier all the same, so
+            # it has to be answered all the same - by the card's own edge, lit
+            # instantly and without movement.  The cursor crosses this card on
+            # the way to every chip, and anything that MOVED here would be
+            # noise; a press is deliberate, and rare enough to answer.
+            self._pressed_card = True
+            self._card_held = True
+            self._aim_edge(0, instant=True)   # a press is never scheduled
+            return
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
@@ -1735,19 +1846,38 @@ class _ChipPreviewCard(QFrame):
             self.update(pressed)
         if event.button() == Qt.LeftButton and self._rows + self._boss_rows:
             origin = self._chip_at(event.position().toPoint()) or self.rect()
+            # The edge deliberately does NOT go out here.  The panel grows from
+            # exactly this outline, and cutting the outline at the moment of
+            # handover is the blink that makes a quick click feel broken: the
+            # page keeps it lit and releases it when the dossier has closed
+            # back into it.  Unless the press wandered onto a chip before it
+            # was let go - then the panel comes from somewhere else and the
+            # card's edge has nothing to hand over.
+            if self._pressed_card and origin != self.rect():
+                self.release_card_mark()
+            self._pressed_card = False
             self.activated.emit(origin)
             return
+        if self._pressed_card:
+            self._pressed_card = False
+            self.release_card_mark()
         super().mouseReleaseEvent(event)
 
     def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
         if self._pressed_chip is not None:
             self.update(self._pressed_chip)
             self._pressed_chip = None
+        if self._pressed_card:
+            # A press taken back rather than handed over.
+            self._pressed_card = False
+            self._card_held = False
         self._set_hovered(None)
+        self._card_under_cursor = False
+        self._aim_edge(self._MARK_OUT_MS if self._card_held else self._HOVER_OUT_MS)
         super().leaveEvent(event)
 
     def hideEvent(self, event) -> None:  # noqa: N802 - Qt override
-        self._forget_hover()
+        self._forget_pointer_state()
         super().hideEvent(event)
 
 
@@ -3143,6 +3273,7 @@ class CareerMixin:
         if host is None:
             return None
         overlay = _DetailOverlay(host)
+        overlay.closed.connect(self._on_career_detail_closed)
         self.career_detail_overlay = overlay
         self._sync_career_detail_overlay()
         return overlay
@@ -3159,6 +3290,16 @@ class CareerMixin:
         overlay = self._ensure_career_detail_overlay()
         if overlay is None:
             return
+        # Whoever lit an edge for the last dossier is not the one this panel
+        # grows from any more.
+        previous = getattr(self, "_career_detail_origin", None)
+        if previous is not None and previous is not card:
+            previous.release_card_mark()
+        if origin == card.rect():
+            self._career_detail_origin = card
+        else:
+            card.release_card_mark()
+            self._career_detail_origin = None
         # Theme styling is scoped to roots, and the overlay is a root of its
         # own: without this the dossier paints on the bare palette colour, with
         # no card surface and no border.  Re-applied per opening so a theme
@@ -3180,6 +3321,12 @@ class CareerMixin:
         overlay = getattr(self, "career_detail_overlay", None)
         if overlay is not None:
             overlay.close_overlay()
+
+    def _on_career_detail_closed(self) -> None:
+        """The panel is home; the outline it grew from may let go."""
+        card, self._career_detail_origin = getattr(self, "_career_detail_origin", None), None
+        if card is not None:
+            card.release_card_mark()
 
     def roll_reward_offer_order(self) -> None:
         """Re-deal the bonus cards, once per opened save.
