@@ -16,6 +16,7 @@ are left on Qt's timer: fewer moving parts, and nothing to gain.
 """
 from __future__ import annotations
 
+import math
 from typing import Any, Optional
 
 from PySide6.QtCore import (
@@ -29,6 +30,32 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
+
+
+def spring(position: float, settle: float = 9.0) -> float:
+    """A critically damped spring, as a position between 0 and 1.
+
+    Apple drives this kind of transition with a spring rather than a curve,
+    and the difference is at the two ends.  A spring leaves ITS REST with no
+    velocity and builds, where an ease-out leaves at its fastest - over the
+    distance from a chip to a panel that first jump is tens of pixels in a
+    frame, which reads as being thrown rather than opening.  And it settles
+    asymptotically instead of arriving on a deadline.
+
+    Closed form for the zero-velocity case, `1 - (1 + wt)e^-wt`, normalised so
+    the run is home when its time is up.  `settle` is how many time constants
+    fit in the run: 9 leaves a thousandth of the distance on the table, which
+    is under a pixel of anything we move.
+
+    A spring has no duration of its own, so the caller still says how long -
+    what changes is the shape, not the schedule.
+    """
+    if position <= 0.0:
+        return 0.0
+    if position >= 1.0:
+        return 1.0
+    reach = lambda t: 1.0 - (1.0 + settle * t) * math.exp(-settle * t)  # noqa: E731
+    return reach(position) / reach(1.0)
 
 
 class PacedAnimation(QObject):

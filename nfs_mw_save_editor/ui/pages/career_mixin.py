@@ -99,7 +99,7 @@ from core.career_donor_library import (
     load_career_donor_library,
 )
 from ui.icon_map import game_icon_path, rival_asset_path, token_icon_path
-from ui.motion import PacedAnimation
+from ui.motion import PacedAnimation, spring
 from ui.pages.constants import BLACKLIST_BOSS_NAMES
 from ui.theme import build_page_stylesheet, resolve_theme_tokens
 from ui.widgets import (
@@ -2538,6 +2538,11 @@ class _DetailOverlay(QWidget):
     _MIN_MS = 120           # a reversal still needs long enough to be seen
     # One axis is home this far into the run; the other keeps going.
     _AXIS_LEAD = 0.55
+    # How tightly the spring is wound.  Higher arrives sooner and then creeps;
+    # lower spends the whole run moving.  Judged by eye against the closing,
+    # where a tight spring was home in a third of its time and the rest of the
+    # run had nothing left to show.
+    _SPRING = 4.5
     # Content shows once the panel is nearly grown.  Earlier looks better on
     # paper and costs frames where the motion is fastest.
     _CONTENT_IN = (0.45, 1.0)
@@ -2593,32 +2598,38 @@ class _DetailOverlay(QWidget):
         self._opening = False
         self._closing = False
 
-    @staticmethod
-    def _ease(t: float) -> float:
-        # Quartic rather than cubic: the textbook ease-out is weak enough that
-        # the panel reads as drifting into place instead of arriving.
-        return 1.0 - (1.0 - t) ** 4
+    def _ease(self, t: float) -> float:
+        """A spring rather than a curve, for what happens at the two ends.
+
+        An ease-out leaves at its fastest: over the distance from a chip to a
+        panel that is tens of pixels in the first frame, and it reads as the
+        panel being thrown rather than opening.  The spring leaves from rest
+        and builds - 7% of the way in the first twentieth of the run against
+        the quartic's 18% - and is level with it by a third of the way.
+        """
+        return spring(t, self._SPRING)
 
     def _panel_rect(self, step: float) -> QRect:
         """Where the panel sits at ``step`` of the run now under way.
 
         Opening splits the axes: the width settles first, so a square chip
-        never balloons into a panel on its way out.
+        never balloons into a panel on its way out.  Closing gives the lead to
+        the HEIGHT instead, so the panel rolls up and then closes sideways into
+        the chip - the opening's order seen backwards.
 
-        Closing REPLAYS that curve backwards, which by the book is an ease-in -
-        a quarter of the run covering 1.6% of the distance, then more than half
-        of it in the last quarter.  Chosen anyway, by eye, over an even
-        ease-out: the pause at the start reads as the panel taking its leave
-        rather than being yanked shut.  Both were built and compared side by
-        side in the running app before this was settled.
+        But only the ORDER is reversed, not the clock.  Replaying the opening's
+        curve backwards makes the return an ease-in: the panel stands almost
+        still for a quarter of the run and then bolts.  Both directions now get
+        their own run out of rest, which is what a spring does and what the
+        return was missing.
         """
         if self._opening:
             wide = self._ease(min(1.0, step / self._AXIS_LEAD))
             tall = self._ease(step)
         else:
-            back = 1.0 - step
-            wide = 1.0 - self._ease(min(1.0, back / self._AXIS_LEAD))
-            tall = 1.0 - self._ease(back)
+            # Both axes on one clock going home: giving the height the lead as
+            # well had the panel flat before a third of the run was out.
+            wide = tall = self._ease(step)
         start, end = self._from_rect, self._to_rect
         return QRect(
             round(start.left() + (end.left() - start.left()) * wide),

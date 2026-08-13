@@ -1637,14 +1637,15 @@ def test_an_interrupted_opening_costs_only_the_distance_left():
     window.close()
 
 
-def test_closing_replays_the_opening_curve_backwards():
-    """A deliberate choice, not an oversight.
+def test_the_way_home_is_its_own_run_and_never_stands_still():
+    """The close used to be the opening's curve replayed backwards, which by
+    the book is an ease-in: the panel stood almost still for a quarter of the
+    run and then bolted.  That pause was defended once and then named as the
+    fault - the return "not smooth".  It is now a run out of rest of its own,
+    like the opening, which is what a spring does in both directions.
 
-    By the book this is an ease-in - the panel barely moves for the first
-    quarter, then covers most of the distance at the end - and an even
-    ease-out was built and compared against it in the running app.  The pause
-    at the start was preferred: it reads as the panel taking its leave.  The
-    numbers are locked here so nobody "fixes" it back by theory alone.
+    Locked as a shape, not as numbers: it must be moving at every quarter, and
+    never be nearly home before it is half done.
     """
     app = _app()
     rows, boss_rows = _chip_rows(16, boss=2)
@@ -1655,13 +1656,21 @@ def test_closing_replays_the_opening_curve_backwards():
     _land_animation(overlay)
 
     opened = overlay.scroll.geometry()
+    span = opened.height() - overlay._origin.height()
     overlay.close_overlay()
     overlay._animation.stop()
-    overlay._apply_progress(0.25)
-    covered = (opened.height() - overlay.scroll.height()) / (
-        opened.height() - overlay._origin.height()
-    )
-    assert covered < 0.1, f"the pause at the start is gone: {covered:.1%} covered"
+
+    covered = []
+    for step in (0.25, 0.5, 0.75):
+        overlay._apply_progress(step)
+        covered.append((opened.height() - overlay.scroll.height()) / span)
+
+    assert covered[0] > 0.05, f"it stands still at the start: {covered[0]:.1%}"
+    assert covered[0] < 0.6, f"it bolts at the start: {covered[0]:.1%}"
+    assert covered[1] < 0.95, f"nearly home at halfway: {covered[1]:.1%}"
+    assert covered == sorted(covered), "the panel doubled back"
+    assert covered[2] > covered[1], "the last quarter has nothing to show"
+
     overlay._apply_progress(1.0)
     assert overlay.scroll.geometry().size() == overlay._origin.size()
     window.close()
