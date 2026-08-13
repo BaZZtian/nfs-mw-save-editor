@@ -16,6 +16,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from PySide6.QtCore import (
     QAbstractAnimation,
+    QEventLoop,
     QEvent,
     QPoint,
     QPointF,
@@ -1496,8 +1497,8 @@ def test_clicking_a_chip_opens_the_dossier_it_stands_for():
 
     overlay = window.career_detail_overlay
     assert overlay.isVisible()
-    assert overlay._animation.state() == QAbstractAnimation.Running
-    assert overlay._animation.endValue() == 1.0
+    assert overlay._animation.isRunning()
+    assert overlay._animation.duration() == overlay._OPEN_MS
     # It grows from the chip that was clicked, not from the card.
     assert overlay._origin.size() == chip_rect.size()
     assert overlay.listing._rows == rows
@@ -1981,14 +1982,23 @@ def test_the_rewards_card_opens_what_it_can_only_hint_at():
 
 
 def test_the_panel_grows_from_the_token_that_was_pressed():
+    """From the diamond, not from the column of air it stands in: the cell is
+    three times wider than the token, and a panel unfolding out of it reads as
+    a bar snapping open - and carried the token's glyph at the cell's scale,
+    half again too big at the first frame."""
     app = _app()
     window, card, _offers = _career_window_with_offers(app)
     opened = []
     card.activated.connect(opened.append)
 
     cell = card._cells[4][0]
+    token = card._token_rect(cell)
+    assert token.width() == token.height() < cell.width()
     QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, cell.center())
-    assert opened == [cell]
+    assert opened == [token]
+
+    face = card.face_for(token)
+    assert face is not None and face.icon_px == card._icon_size()
 
     # Between the tokens there is only the card, so the card is the origin.
     card.activated.disconnect()
@@ -2011,4 +2021,156 @@ def test_a_rewards_card_with_no_offers_promises_nothing():
     QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, QPoint(card.width() // 2, 20))
     assert opened == []
     assert card._card_mark == 0.0
+    window.close()
+
+
+def _average_colour(image, rect):
+    total = [0, 0, 0]
+    step = max(1, rect.width() // 12)
+    seen = 0
+    for x in range(rect.left() + 4, rect.right() - 4, step):
+        for y in range(rect.top() + 4, rect.bottom() - 4, step):
+            pixel = image.pixelColor(x, y)
+            total[0] += pixel.red()
+            total[1] += pixel.green()
+            total[2] += pixel.blue()
+            seen += 1
+    return [channel / max(1, seen) for channel in total]
+
+
+def test_the_panel_starts_as_the_chip_it_grew_from():
+    """Nothing appears from nothing.  At the first frame the panel is not an
+    empty sheet standing where a chip was - it IS the chip: its fill, its
+    border, its glyph, which it then lets go of as it grows."""
+    app = _app()
+    rows, boss_rows = _chip_rows(8, boss=2)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip_rect, chip_row = card._chip_rects[3]
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, chip_rect.center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    face = overlay._face
+    assert face is not None, "the panel was given nothing to start as"
+    assert (face.fill, face.border) == card._chip_colours(chip_row)[:2]
+    assert face.icon_path == chip_row.icon_path
+
+    overlay._apply_progress(0.0)
+    assert overlay._face_weight() == 1.0
+    worn = _average_colour(overlay.grab().toImage(), overlay.scroll.geometry())
+
+    overlay._apply_progress(1.0)
+    assert overlay._face_weight() == 0.0
+    landed = overlay.grab().toImage()
+    own = _average_colour(landed, overlay.scroll.geometry())
+    chip = _average_colour(card.grab().toImage(), chip_rect)
+
+    def distance(a, b):
+        return sum(abs(x - y) for x, y in zip(a, b))
+
+    assert distance(worn, chip) < distance(worn, own), (
+        f"the first frame looks like the panel, not the chip: {worn} {chip} {own}"
+    )
+    window.close()
+
+
+def test_a_press_on_the_card_itself_lends_no_face():
+    """The card and the panel are the same surface already; there is nothing
+    to borrow, and pretending otherwise would tint the panel for no reason."""
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+
+    assert card.face_for(card.rect()) is None
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, QPoint(card.width() // 2, 6))
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    assert overlay._face is None
+    overlay._apply_progress(0.0)
+    assert overlay._face_weight() == 0.0
+    window.close()
+
+
+def test_the_glyph_is_let_go_before_the_list_arrives():
+    """Two CONTENTS in one panel at once is the crossfade nobody asked for.
+
+    The surface tint is held to a weaker rule on purpose: it is paint, not
+    content, and a whisper of it left as the list begins is a colour settling,
+    not two things fighting.
+    """
+    from ui.pages.career_mixin import _DetailOverlay
+
+    listing_starts = _DetailOverlay._CONTENT_IN[0]
+    assert _DetailOverlay._GLYPH_OUT < listing_starts
+    still_worn = max(0.0, 1.0 - listing_starts / _DetailOverlay._FACE_OUT)
+    assert still_worn <= 0.15, f"the panel is still wearing the chip: {still_worn:.2f}"
+
+
+def test_the_panel_is_ticked_faster_than_qt_drives_animations():
+    """Qt's animation timer runs at 60Hz whatever the screen does, and a panel
+    starting from a chip crosses tens of pixels between two of those ticks.
+
+    The interval is asserted rather than counted: how many ticks actually land
+    depends on the timer resolution the process is granted, which is coarse in
+    a bare test and fine in the running app - measured there at 165fps against
+    Qt's 62.
+    """
+    from ui.pages.career_mixin import _PanelRun
+
+    app = _app()
+    assert _PanelRun._INTERVAL_MS <= 7, "slower than one tick per 144Hz refresh"
+
+    run = _PanelRun()
+    seen = []
+    run.progressed.connect(seen.append)
+    loop = QEventLoop()
+    run.finished.connect(loop.quit)
+    run.setDuration(60)
+    run.start()
+    loop.exec()
+
+    assert seen[-1] == 1.0
+    assert seen == sorted(seen), "the run went backwards"
+
+
+def test_a_late_tick_lands_where_the_clock_says():
+    """Progress is read off a clock, not counted in ticks: a frame that took
+    too long must not stretch the run into slow motion."""
+    from ui.pages.career_mixin import _PanelRun
+
+    app = _app()
+    run = _PanelRun()
+    seen = []
+    run.progressed.connect(seen.append)
+    ended = []
+    run.finished.connect(lambda: ended.append(True))
+
+    run.setDuration(30)
+    run.start()
+    time.sleep(0.2)          # a frame that overran its whole span
+    app.processEvents()
+
+    assert seen and seen[-1] == 1.0, f"the run was stretched: {seen}"
+    assert ended == [True]
+    assert not run.isRunning()
+
+
+def test_a_token_answers_for_its_own_square_only():
+    """The cells tile the whole row, so testing them made a token turn while
+    the cursor was plainly beside it - and swallowed presses meant for the
+    card underneath."""
+    app = _app()
+    window, card, _offers = _career_window_with_offers(app)
+    cell = card._cells[1][0]
+    token = card._token_rect(cell)
+    beside = QPoint((cell.left() + token.left()) // 2, cell.center().y())
+    assert cell.contains(beside) and not token.contains(beside)
+
+    assert card._cell_at(token.center()) == 1
+    assert card._cell_at(beside) is None
+
+    opened = []
+    card.activated.connect(opened.append)
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, beside)
+    assert opened == [card.rect()], "a press beside a token opened the token"
     window.close()

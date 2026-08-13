@@ -33,7 +33,9 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 from PySide6.QtCore import (
     QEasingCurve,
+    QElapsedTimer,
     QEvent,
+    QObject,
     QPoint,
     QPointF,
     QRect,
@@ -1368,6 +1370,36 @@ class _InspectorRow:
     note: str = ""
 
 
+def _towards(rest: QColor, lit: QColor, level: float) -> QColor:
+    """``rest`` moved ``level`` of the way to ``lit``."""
+    return QColor(
+        round(rest.red() + (lit.red() - rest.red()) * level),
+        round(rest.green() + (lit.green() - rest.green()) * level),
+        round(rest.blue() + (lit.blue() - rest.blue()) * level),
+    )
+
+
+@dataclass(frozen=True)
+class _OriginFace:
+    """How the thing that was clicked is painted, in theme tokens.
+
+    The panel begins as the chip rather than as an empty sheet: nothing in the
+    world appears from nothing, and a dark rectangle standing where a chip was
+    is exactly that.  Carried as tokens, not colours, so a theme switch while
+    the panel stands open cannot leave it painting yesterday's palette.
+    """
+
+    fill: str
+    border: str
+    icon_path: Optional[Path] = None
+    icon_tint: Optional[str] = None
+    # In pixels, as the card draws it.  Taking a share of the origin's width
+    # instead put the reward token's glyph on screen half again too big at the
+    # first frame, because a token's cell is wider than the token.
+    icon_px: int = 0
+    icon_opacity: float = 1.0
+
+
 class _PressableSection(QFrame):
     """A card that opens a dossier, and says so with its own edge.
 
@@ -1413,6 +1445,12 @@ class _PressableSection(QFrame):
     def dossier(self) -> Tuple[str, str, Tuple, Tuple]:
         """Title, subtitle and rows for the panel this card opens."""
         return "", "", (), ()
+
+    def face_for(self, origin: QRect) -> Optional[_OriginFace]:
+        """How ``origin`` is painted, when it is something smaller than the
+        card.  A press on the card itself has no face to lend - the panel and
+        the card are the same surface already."""
+        return None
 
     @staticmethod
     def _hover_ease(step: float) -> float:
@@ -1618,13 +1656,17 @@ class _ChipPreviewCard(_PressableSection):
         self._promise_a_click()
         self.update()
 
-    def _tinted(self, path: Optional[Path], size: int, colour: Optional[QColor]) -> QPixmap:
+    @classmethod
+    def _tinted(cls, path: Optional[Path], size: int, colour: Optional[QColor]) -> QPixmap:
+        """A glyph in the chips' own paint.  A classmethod because the dossier
+        panel carries the clicked chip's glyph and must draw the SAME pixmap,
+        out of the same cache, rather than a lookalike of its own."""
         if path is None:
             return QPixmap()
         key = (str(path), size, colour.name() if colour is not None else "-")
-        cached = self._pixmap_cache.get(key)
+        cached = cls._pixmap_cache.get(key)
         if cached is not None:
-            self._pixmap_cache.move_to_end(key)
+            cls._pixmap_cache.move_to_end(key)
             return cached
         source = QPixmap(str(path))
         if source.isNull():
@@ -1639,10 +1681,45 @@ class _ChipPreviewCard(_PressableSection):
             painter.fillRect(layer.rect(), colour)
             painter.end()
             source = layer
-        self._pixmap_cache[key] = source
-        while len(self._pixmap_cache) > 96:
-            self._pixmap_cache.popitem(last=False)
+        cls._pixmap_cache[key] = source
+        while len(cls._pixmap_cache) > 96:
+            cls._pixmap_cache.popitem(last=False)
         return source
+
+    @staticmethod
+    def _chip_colours(row: _InspectorRow) -> tuple[str, str, Optional[str], float]:
+        """Fill, border, glyph tint and glyph opacity for a chip, as tokens.
+
+        Kept apart from the drawing so the dossier can start out wearing this
+        very face - a panel that borrows the chip's paint from somewhere else
+        would drift from it the first time either was touched.
+        """
+        boss = row.kind == "boss"
+        accent = "BOSS_GOLD" if boss else "ACCENT"
+        if row.state == "done":
+            # A tinted surface rather than the accent itself: a row of solid
+            # accent tiles was the loudest thing on the page.  TEXT, not
+            # TEXT_ON_ACCENT - the latter is picked to read on the accent, and
+            # on the soft fill it collapses (1.7:1 in the themes whose accent
+            # is bright).  TEXT never drops below 6.1:1 there.
+            return ("BOSS_GOLD_BG" if boss else "ACCENT_SOFT"), accent, "TEXT", 1.0
+        if row.state == "open":
+            return "BG_INPUT", accent, None, 1.0
+        return "BG_INPUT", ("BOSS_GOLD_DIM" if boss else "BORDER"), None, 0.38
+
+    def face_for(self, origin: QRect) -> Optional[_OriginFace]:
+        for rect, row in self._chip_rects:
+            if rect == origin:
+                fill, border, tint, opacity = self._chip_colours(row)
+                return _OriginFace(
+                    fill=fill,
+                    border=border,
+                    icon_path=row.icon_path,
+                    icon_tint=tint,
+                    icon_px=round(rect.width() * self._ICON_SCALE),
+                    icon_opacity=opacity,
+                )
+        return None
 
     @staticmethod
     def _hover_border(row: _InspectorRow, boss: bool, opacity: float) -> tuple[str, float]:
@@ -1675,28 +1752,13 @@ class _ChipPreviewCard(_PressableSection):
         lift = self._HOVER_LIFT * level
         shape = QRectF(rect).translated(0.0, -lift)
         boss = row.kind == "boss"
-        accent = "BOSS_GOLD" if boss else "ACCENT"
-        icon_colour: Optional[QColor] = None
-        opacity = 1.0
-        if row.state == "done":
-            # A tinted surface rather than the accent itself: a row of solid
-            # accent tiles was the loudest thing on the page.
-            fill = QColor(tokens["BOSS_GOLD_BG" if boss else "ACCENT_SOFT"])
-            border = QColor(tokens[accent])
-            # TEXT, not TEXT_ON_ACCENT - the latter is picked to read on the
-            # accent, and on the soft fill it collapses (1.7:1 in the themes
-            # whose accent is bright).  TEXT never drops below 6.1:1 there.
-            icon_colour = QColor(tokens["TEXT"])
-        elif row.state == "open":
-            fill = QColor(tokens["BG_INPUT"])
-            border = QColor(tokens[accent])
-        else:
-            fill = QColor(tokens["BG_INPUT"])
-            border = QColor(tokens["BOSS_GOLD_DIM" if boss else "BORDER"])
-            opacity = 0.38
+        fill_token, border_token, tint_token, opacity = self._chip_colours(row)
+        fill = QColor(tokens[fill_token])
+        border = QColor(tokens[border_token])
+        icon_colour = QColor(tokens[tint_token]) if tint_token else None
         if level > 0.0:
             token, lit = self._hover_border(row, boss, opacity)
-            border = self._towards(border, QColor(tokens[token]), level)
+            border = _towards(border, QColor(tokens[token]), level)
             opacity += (lit - opacity) * level
         painter.setBrush(fill)
         painter.setPen(QPen(border, 1.4))
@@ -1781,14 +1843,6 @@ class _ChipPreviewCard(_PressableSection):
             if rect.contains(position):
                 return rect
         return None
-
-    @staticmethod
-    def _towards(rest: QColor, lit: QColor, level: float) -> QColor:
-        return QColor(
-            round(rest.red() + (lit.red() - rest.red()) * level),
-            round(rest.green() + (lit.green() - rest.green()) * level),
-            round(rest.blue() + (lit.blue() - rest.blue()) * level),
-        )
 
     def _hover_band(self, rect: QRect) -> QRect:
         """The chip, the air it rises through, and its own pen.
@@ -1986,6 +2040,30 @@ class _RewardOffersCard(_PressableSection):
     def _has_content(self) -> bool:
         return bool(self._markers)
 
+    @staticmethod
+    def _token_rect(cell: QRect) -> QRect:
+        """The token's own square inside its cell.
+
+        What was clicked is the diamond, not the column of air it stands in -
+        and a panel growing out of a wide flat cell reads as a bar snapping
+        open rather than as the token unfolding.
+        """
+        side = cell.height()
+        return QRect(cell.center().x() - side // 2, cell.top(), side, side)
+
+    def face_for(self, origin: QRect) -> Optional[_OriginFace]:
+        for cell, marker in self._cells:
+            if self._token_rect(cell) == origin:
+                # The tokens stand on the card's own surface, with no fill or
+                # border of their own, so only the glyph is lent.
+                return _OriginFace(
+                    fill="BG_CARD",
+                    border="BORDER",
+                    icon_path=token_icon_path(marker),
+                    icon_px=self._icon_size(),
+                )
+        return None
+
     def dossier(self) -> Tuple[str, str, Tuple, Tuple]:
         """The six offers, each with what it actually buys.
 
@@ -2115,8 +2193,15 @@ class _RewardOffersCard(_PressableSection):
         painter.end()
 
     def _cell_at(self, pos) -> Optional[int]:
+        """Which token is under ``pos`` - the token, not its cell.
+
+        The cells tile the whole row, so testing them made a token answer for
+        three times its own width: it turned while the cursor was plainly
+        beside it, and a press meant for the card opened from a token the
+        cursor was nowhere near.
+        """
         for index, (rect, _marker) in enumerate(self._cells):
-            if rect.contains(pos):
+            if self._token_rect(rect).contains(pos):
                 return index
         return None
 
@@ -2147,7 +2232,11 @@ class _RewardOffersCard(_PressableSection):
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
         if event.button() == Qt.LeftButton and self._markers:
             index = self._cell_at(event.position().toPoint())
-            origin = self._cells[index][0] if index is not None else self.rect()
+            origin = (
+                self._token_rect(self._cells[index][0])
+                if index is not None
+                else self.rect()
+            )
             if self._pressed_card and index is not None:
                 # The panel comes from the token, so the card's edge has
                 # nothing to hand over.
@@ -2431,6 +2520,66 @@ class _ProgressRowList(QFrame):
         super().leaveEvent(event)
 
 
+class _PanelRun(QObject):
+    """One run of the panel's motion, ticked at the screen's pace.
+
+    `QVariantAnimation` is driven by Qt's own animation timer, which runs at
+    60Hz whatever the screen does.  On a 144Hz monitor that is one new position
+    every two or three refreshes, and a panel starting from something as small
+    as a chip crosses tens of pixels between them - the stepping you can see,
+    and the reason opening from an icon looked worse than opening from a card.
+    Measured on this page: Qt's driver 62fps, this 165fps, with the frame
+    itself costing 4ms - so the frames are there to be had.
+
+    Progress is read off a clock rather than counted in ticks, so a late tick
+    lands where it should instead of stretching the run.
+    """
+
+    progressed = Signal(float)
+    finished = Signal()
+
+    _INTERVAL_MS = 6
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._span = 1
+        self._clock = QElapsedTimer()
+        self._ticker = QTimer(self)
+        self._ticker.setTimerType(Qt.PreciseTimer)
+        self._ticker.setInterval(self._INTERVAL_MS)
+        self._ticker.timeout.connect(self._tick)
+
+    def duration(self) -> int:
+        return self._span
+
+    def setDuration(self, span_ms: int) -> None:  # noqa: N802 - Qt spelling
+        self._span = max(1, round(span_ms))
+
+    def isRunning(self) -> bool:  # noqa: N802 - Qt spelling
+        return self._ticker.isActive()
+
+    def start(self) -> None:
+        self._clock.restart()
+        self._ticker.start()
+
+    def stop(self) -> None:
+        self._ticker.stop()
+
+    def setCurrentTime(self, done_ms: int) -> None:  # noqa: N802 - Qt spelling
+        """Put the run at ``done_ms`` at once, without waiting on the clock."""
+        self.progressed.emit(min(1.0, max(0.0, done_ms / self._span)))
+        if done_ms >= self._span:
+            self._ticker.stop()
+            self.finished.emit()
+
+    def _tick(self) -> None:
+        done = self._clock.elapsed()
+        self.progressed.emit(min(1.0, done / self._span))
+        if done >= self._span:
+            self._ticker.stop()
+            self.finished.emit()
+
+
 class _DetailOverlay(QWidget):
     """One preview card's full dossier, opened over the page it belongs to.
 
@@ -2453,6 +2602,11 @@ class _DetailOverlay(QWidget):
     _CONTENT_IN = (0.45, 1.0)
     _SCRIM_ALPHA = 150
     _HINT_BAND = 26
+    # How far into the run the panel stops looking like the thing it grew out
+    # of.  The glyph goes first, well before the list arrives, so the two never
+    # share the panel.
+    _FACE_OUT = 0.5
+    _GLYPH_OUT = 0.3
 
     closed = Signal()
 
@@ -2473,11 +2627,12 @@ class _DetailOverlay(QWidget):
         self._fade.setOpacity(0.0)
         self.scroll.setGraphicsEffect(self._fade)
 
-        self._animation = QVariantAnimation(self)
-        self._animation.setEasingCurve(QEasingCurve.Linear)
-        self._animation.valueChanged.connect(self._apply_progress)
+        self._animation = _PanelRun(self)
+        self._animation.progressed.connect(self._apply_progress)
         self._animation.finished.connect(self._on_finished)
         self._origin = QRect()
+        self._backdrop = QPixmap()
+        self._face: Optional[_OriginFace] = None
         self._target = QRect()
         self._from_rect = QRect()
         self._to_rect = QRect()
@@ -2552,6 +2707,44 @@ class _DetailOverlay(QWidget):
         """
         return self._step if self._opening else 1.0 - self._step
 
+    def _face_weight(self) -> float:
+        """How much of the origin's paint the panel is still wearing.
+
+        1 at the chip, 0 once the panel is its own thing.  Read off the run's
+        own clock, like the fade and the scrim: keying it to the eased geometry
+        would make the surface change colour fastest exactly where the panel
+        moves fastest.
+        """
+        if self._face is None:
+            return 0.0
+        return max(0.0, 1.0 - self._run_position() / self._FACE_OUT)
+
+    def _paint_face_glyph(self, painter: QPainter, panel: QRect, tokens) -> None:
+        """The clicked thing's own glyph, carried into the panel and let go.
+
+        Drawn at the size it had on the card and never stretched - a glyph that
+        grows with the panel is the stretched-content tell this whole
+        transition is built to avoid.
+        """
+        face = self._face
+        if face is None or face.icon_path is None:
+            return
+        showing = max(0.0, 1.0 - self._run_position() / self._GLYPH_OUT)
+        if showing <= 0.0:
+            return
+        size = max(8, face.icon_px)
+        tint = QColor(tokens[face.icon_tint]) if face.icon_tint else None
+        glyph = _ChipPreviewCard._tinted(face.icon_path, size, tint)
+        if glyph.isNull():
+            return
+        painter.setOpacity(showing * face.icon_opacity)
+        painter.drawPixmap(
+            panel.center().x() - glyph.width() // 2,
+            panel.center().y() - glyph.height() // 2,
+            glyph,
+        )
+        painter.setOpacity(1.0)
+
     def _content_opacity(self) -> float:
         """Never jumps at an interruption: opening only brightens from where
         the list already was, closing only dims from there."""
@@ -2560,6 +2753,27 @@ class _DetailOverlay(QWidget):
         if self._opening:
             return max(self._fade_from, reached)
         return min(self._fade_from, reached)
+
+    def _take_the_pages_picture(self) -> None:
+        """Copy the page under the panel once, and paint that copy instead.
+
+        A translucent widget makes Qt redraw everything BENEATH it on every
+        frame, and beneath this one lies the whole career page - hero art,
+        timeline, three cards.  That, not the panel, was the cost of a frame:
+        15ms of the 18 went on a page that cannot change while a modal panel
+        stands over it.  With the copy in hand the widget is opaque, so Qt
+        stops descending into what it covers.
+        """
+        host = self.parentWidget()
+        if host is None or self.size().isEmpty():
+            return
+        was_visible = self.isVisible()
+        self.setVisible(False)
+        self._backdrop = host.grab(self.geometry())
+        self.setVisible(was_visible)
+        self.setAttribute(
+            Qt.WA_OpaquePaintEvent, self._backdrop.size() == self.size()
+        )
 
     def _measure(self, width: int) -> QRect:
         """Final panel rect: as tall as the list wants, capped by the page."""
@@ -2584,10 +2798,14 @@ class _DetailOverlay(QWidget):
         subtitle: str,
         rows: Sequence[_InspectorRow],
         boss_rows: Sequence[_InspectorRow] = (),
+        face: Optional[_OriginFace] = None,
     ) -> None:
         self.listing._title = title
         self.listing.set_items(subtitle, rows, boss_rows)
+        self._face = face
         self.raise_()
+        if not self.isVisible():
+            self._take_the_pages_picture()
         self.setVisible(True)
         self._target = self._measure(self._MAX_WIDTH)
         self._origin = origin if origin.isValid() else self._target
@@ -2618,8 +2836,6 @@ class _DetailOverlay(QWidget):
         remaining = 1.0 - self._openness if self._opening else self._openness
         span = self._OPEN_MS if self._opening else self._CLOSE_MS
         self._animation.setDuration(max(self._MIN_MS, round(span * remaining)))
-        self._animation.setStartValue(0.0)
-        self._animation.setEndValue(1.0)
         # No frame painted here: doing one synchronously puts a full repaint in
         # the same beat as the click, and the animation's first tick paints the
         # same thing a moment later anyway.
@@ -2631,6 +2847,7 @@ class _DetailOverlay(QWidget):
             return
         self.setGeometry(area)
         if self.isVisible():
+            self._take_the_pages_picture()
             self._target = self._measure(self._MAX_WIDTH)
             if self._opening:
                 self._to_rect = self._target
@@ -2655,11 +2872,17 @@ class _DetailOverlay(QWidget):
         if self._closing:
             self._closing = False
             self.setVisible(False)
+            # Nothing behind it is frozen any more, and a stale page picture
+            # would be a lie the moment anything under it changed.
+            self._backdrop = QPixmap()
+            self.setAttribute(Qt.WA_OpaquePaintEvent, False)
             self.closed.emit()
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
         tokens = resolve_theme_tokens()
         painter = QPainter(self)
+        if not self._backdrop.isNull():
+            painter.drawPixmap(0, 0, self._backdrop)
         scrim = QColor(0, 0, 0)
         # Keyed to how open the panel is, not to the run: an interruption then
         # picks the scrim up where it stands instead of jumping.
@@ -2671,10 +2894,18 @@ class _DetailOverlay(QWidget):
         # page instead of a card opening.  Same colour underneath, so the two
         # never disagree.
         painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         panel = self.scroll.geometry()
-        painter.setBrush(QColor(tokens["BG_CARD"]))
-        painter.setPen(QPen(QColor(tokens["BORDER"]), 1.0))
+        surface = QColor(tokens["BG_CARD"])
+        edge = QColor(tokens["BORDER"])
+        worn = self._face_weight()
+        if worn > 0.0 and self._face is not None:
+            surface = _towards(surface, QColor(tokens[self._face.fill]), worn)
+            edge = _towards(edge, QColor(tokens[self._face.border]), worn)
+        painter.setBrush(surface)
+        painter.setPen(QPen(edge, 1.0))
         painter.drawRoundedRect(QRectF(panel), 12.0, 12.0)
+        self._paint_face_glyph(painter, panel, tokens)
 
         # Its own ramp, twice as steep as the list's: the hint is a single
         # short line and reads as lagging if it shares the list's curve.
@@ -3435,7 +3666,10 @@ class CareerMixin:
         self._sync_career_detail_overlay()
         corner = overlay.mapFromGlobal(card.mapToGlobal(origin.topLeft()))
         title, subtitle, rows, boss_rows = card.dossier()
-        overlay.open_for(QRect(corner, origin.size()), title, subtitle, rows, boss_rows)
+        overlay.open_for(
+            QRect(corner, origin.size()), title, subtitle, rows, boss_rows,
+            face=card.face_for(origin),
+        )
 
     def close_career_detail(self) -> None:
         overlay = getattr(self, "career_detail_overlay", None)
