@@ -14,8 +14,16 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QAbstractAnimation, QPoint, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QFont, QIcon, QPixmap
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QEvent,
+    QPoint,
+    QPointF,
+    QRectF,
+    QSize,
+    Qt,
+)
+from PySide6.QtGui import QFont, QIcon, QMouseEvent, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -1656,3 +1664,42 @@ def test_closing_replays_the_opening_curve_backwards():
     overlay._apply_progress(1.0)
     assert overlay.scroll.geometry().size() == overlay._origin.size()
     window.close()
+
+
+def test_a_chip_answers_the_cursor_and_the_press_differently():
+    app = _app()
+    rows, boss_rows = _chip_rows(5, boss=1)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    first, second = card._chip_rects[0][0], card._chip_rects[1][0]
+
+    def move_to(point):
+        where = QPointF(point)
+        app.sendEvent(card, QMouseEvent(QEvent.MouseMove, where, where,
+                                        Qt.NoButton, Qt.NoButton, Qt.NoModifier))
+
+    move_to(first.center())
+    assert card._hovered_chip == first
+    move_to(second.center())
+    assert card._hovered_chip == second
+
+    card.leaveEvent(QEvent(QEvent.Leave))
+    assert card._hovered_chip is None
+    window.close()
+
+
+def test_hovering_a_locked_chip_does_not_dress_it_as_available():
+    """The cursor may be acknowledged; availability may not be implied."""
+    from ui.pages.career_mixin import _ChipPreviewCard, _InspectorRow
+
+    def row(state: str) -> _InspectorRow:
+        return _InspectorRow(title="x", tag="", state=state, kind="race",
+                             icon_path=None, detail="", fraction=None, tooltip="")
+
+    locked_token, locked_opacity = _ChipPreviewCard._hover_border(row("locked"), False, 0.38)
+    assert "ACCENT" not in locked_token and "GOLD" not in locked_token
+    assert 0.38 < locked_opacity < 1.0        # brighter, still plainly locked
+
+    open_token, _ = _ChipPreviewCard._hover_border(row("open"), False, 1.0)
+    boss_token, _ = _ChipPreviewCard._hover_border(row("done"), True, 1.0)
+    assert open_token == "ACCENT_BRIGHT"
+    assert boss_token == "BOSS_GOLD_BRIGHT"

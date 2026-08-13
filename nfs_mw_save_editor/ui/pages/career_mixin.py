@@ -1397,6 +1397,7 @@ class _ChipPreviewCard(QFrame):
     # The glyph fills the chip; at 0.62 the big steps had a ring of dead air
     # around it.
     _ICON_SCALE = 0.74
+    _HOVER_LIFT = 2         # px the chip rises under the cursor
 
     def __init__(self, title: str) -> None:
         super().__init__()
@@ -1410,6 +1411,7 @@ class _ChipPreviewCard(QFrame):
         self._boss_rows: Tuple[_InspectorRow, ...] = ()
         self._chip_rects: list[tuple[QRect, _InspectorRow]] = []
         self._pressed_chip: Optional[QRect] = None
+        self._hovered_chip: Optional[QRect] = None
         self.setFixedHeight(self._card_height())
 
     def _chip(self) -> int:
@@ -1477,12 +1479,31 @@ class _ChipPreviewCard(QFrame):
             self._pixmap_cache.popitem(last=False)
         return source
 
+    @staticmethod
+    def _hover_border(row: _InspectorRow, boss: bool, opacity: float) -> tuple[str, float]:
+        """Border token and icon opacity for a chip under the cursor.
+
+        The border brightens rather than the fill, because fill is what carries
+        the state.  A locked chip brightens towards the muted tone and NEVER
+        towards the accent: acknowledging the cursor is not the same as
+        claiming to be available.
+        """
+        if row.state == "locked":
+            return "MUTED_DARK", 0.52
+        return ("BOSS_GOLD_BRIGHT" if boss else "ACCENT_BRIGHT"), opacity
+
     def _draw_chip(self, painter: QPainter, rect: QRect, row: _InspectorRow, tokens) -> None:
-        if rect == self._pressed_chip:
+        pressed = rect == self._pressed_chip
+        # Under the cursor the chip lifts; under the finger it sinks.  Pressing
+        # wins, so the chip cannot appear to do both at once.
+        hovered = not pressed and rect == self._hovered_chip
+        if pressed:
             # The chip has to answer the click itself; without this nothing
             # happens between the press and the panel starting to grow.
             inset = max(1, round(rect.width() * 0.015))
             rect = rect.adjusted(inset, inset, -inset, -inset)
+        elif hovered:
+            rect = rect.translated(0, -self._HOVER_LIFT)
         boss = row.kind == "boss"
         accent = "BOSS_GOLD" if boss else "ACCENT"
         icon_colour: Optional[QColor] = None
@@ -1503,6 +1524,9 @@ class _ChipPreviewCard(QFrame):
             fill = QColor(tokens["BG_INPUT"])
             border = QColor(tokens["BOSS_GOLD_DIM" if boss else "BORDER"])
             opacity = 0.38
+        if hovered:
+            token, opacity = self._hover_border(row, boss, opacity)
+            border = QColor(tokens[token])
         painter.setBrush(fill)
         painter.setPen(QPen(border, 1.4))
         painter.drawRoundedRect(QRectF(rect), self._RADIUS, self._RADIUS)
@@ -1577,6 +1601,19 @@ class _ChipPreviewCard(QFrame):
                 return rect
         return None
 
+    def _set_hovered(self, rect: Optional[QRect]) -> None:
+        if rect == self._hovered_chip:
+            return
+        for stale in (self._hovered_chip, rect):
+            if stale is not None:
+                self.update(stale.adjusted(-1, -self._HOVER_LIFT - 1, 1, 1))
+        self._hovered_chip = rect
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self._rows + self._boss_rows:
+            self._set_hovered(self._chip_at(event.position().toPoint()))
+        super().mouseMoveEvent(event)
+
     def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
         if event.button() == Qt.LeftButton and self._rows + self._boss_rows:
             self._pressed_chip = self._chip_at(event.position().toPoint())
@@ -1599,6 +1636,7 @@ class _ChipPreviewCard(QFrame):
         if self._pressed_chip is not None:
             self.update(self._pressed_chip)
             self._pressed_chip = None
+        self._set_hovered(None)
         super().leaveEvent(event)
 
 
