@@ -99,6 +99,7 @@ from core.career_donor_library import (
     load_career_donor_library,
 )
 from ui.icon_map import game_icon_path, rival_asset_path, token_icon_path
+from ui.motion import PacedAnimation
 from ui.pages.constants import BLACKLIST_BOSS_NAMES
 from ui.theme import build_page_stylesheet, resolve_theme_tokens
 from ui.widgets import (
@@ -1012,7 +1013,7 @@ class _BlacklistTimeline(QWidget):
         self._summary: Optional[career_progress.CareerProgressSummary] = None
         self._selected_stage: Optional[int] = None
         self._selection_position: Optional[float] = None
-        self._selection_animation = QVariantAnimation(self)
+        self._selection_animation = PacedAnimation(self)
         self._selection_animation.setDuration(self._SELECTION_DURATION_MS)
         self._selection_animation.setEasingCurve(QEasingCurve.OutCubic)
         self._selection_animation.valueChanged.connect(self._set_selection_position)
@@ -2008,7 +2009,7 @@ class _RewardOffersCard(_PressableSection):
         self._cells: list[tuple[QRect, int]] = []
         self._hovered: Optional[int] = None
         self._flip = 0.0
-        self._flip_anim = QVariantAnimation(self)
+        self._flip_anim = PacedAnimation(self)
         self._flip_anim.setDuration(self._FLIP_MS)
         self._flip_anim.setEasingCurve(QEasingCurve.InOutQuad)
         self._flip_anim.valueChanged.connect(self._set_flip)
@@ -2520,66 +2521,6 @@ class _ProgressRowList(QFrame):
         super().leaveEvent(event)
 
 
-class _PanelRun(QObject):
-    """One run of the panel's motion, ticked at the screen's pace.
-
-    `QVariantAnimation` is driven by Qt's own animation timer, which runs at
-    60Hz whatever the screen does.  On a 144Hz monitor that is one new position
-    every two or three refreshes, and a panel starting from something as small
-    as a chip crosses tens of pixels between them - the stepping you can see,
-    and the reason opening from an icon looked worse than opening from a card.
-    Measured on this page: Qt's driver 62fps, this 165fps, with the frame
-    itself costing 4ms - so the frames are there to be had.
-
-    Progress is read off a clock rather than counted in ticks, so a late tick
-    lands where it should instead of stretching the run.
-    """
-
-    progressed = Signal(float)
-    finished = Signal()
-
-    _INTERVAL_MS = 6
-
-    def __init__(self, parent: Optional[QObject] = None) -> None:
-        super().__init__(parent)
-        self._span = 1
-        self._clock = QElapsedTimer()
-        self._ticker = QTimer(self)
-        self._ticker.setTimerType(Qt.PreciseTimer)
-        self._ticker.setInterval(self._INTERVAL_MS)
-        self._ticker.timeout.connect(self._tick)
-
-    def duration(self) -> int:
-        return self._span
-
-    def setDuration(self, span_ms: int) -> None:  # noqa: N802 - Qt spelling
-        self._span = max(1, round(span_ms))
-
-    def isRunning(self) -> bool:  # noqa: N802 - Qt spelling
-        return self._ticker.isActive()
-
-    def start(self) -> None:
-        self._clock.restart()
-        self._ticker.start()
-
-    def stop(self) -> None:
-        self._ticker.stop()
-
-    def setCurrentTime(self, done_ms: int) -> None:  # noqa: N802 - Qt spelling
-        """Put the run at ``done_ms`` at once, without waiting on the clock."""
-        self.progressed.emit(min(1.0, max(0.0, done_ms / self._span)))
-        if done_ms >= self._span:
-            self._ticker.stop()
-            self.finished.emit()
-
-    def _tick(self) -> None:
-        done = self._clock.elapsed()
-        self.progressed.emit(min(1.0, done / self._span))
-        if done >= self._span:
-            self._ticker.stop()
-            self.finished.emit()
-
-
 class _DetailOverlay(QWidget):
     """One preview card's full dossier, opened over the page it belongs to.
 
@@ -2627,8 +2568,8 @@ class _DetailOverlay(QWidget):
         self._fade.setOpacity(0.0)
         self.scroll.setGraphicsEffect(self._fade)
 
-        self._animation = _PanelRun(self)
-        self._animation.progressed.connect(self._apply_progress)
+        self._animation = PacedAnimation(self)
+        self._animation.valueChanged.connect(self._apply_progress)
         self._animation.finished.connect(self._on_finished)
         self._origin = QRect()
         self._backdrop = QPixmap()

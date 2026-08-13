@@ -55,6 +55,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.icon_map import token_back_icon_path, token_icon_path
+from ui.motion import PacedAnimation
 from ui.theme import apply_popup_theme, resolve_theme_tokens
 
 
@@ -229,7 +230,7 @@ class AnimatedSegmentedControl(QFrame):
         self._duration_ms = duration_ms
         self._indicator_position = 0.0
         self._buttons: list[QPushButton] = []
-        self._animation = QPropertyAnimation(self, b"indicatorPosition", self)
+        self._animation = PacedAnimation(self, b"indicatorPosition", self)
         self._animation.setDuration(duration_ms)
         self._animation.setEasingCurve(QEasingCurve.OutCubic)
 
@@ -964,7 +965,7 @@ class TokenCard(QWidget):
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
-            self._flip_anim = QVariantAnimation(self)
+            self._flip_anim = PacedAnimation(self)
             self._flip_anim.setDuration(360)
             self._flip_anim.setEasingCurve(QEasingCurve.InOutQuad)
             self._flip_anim.valueChanged.connect(self._set_flip_progress)
@@ -1153,7 +1154,7 @@ class ToastNotification(QLabel):
         self.raise_()
 
         # slide in
-        self._slide = QPropertyAnimation(self, b"pos", self)
+        self._slide = PacedAnimation(self, b"pos", self)
         self._slide.setDuration(300)
         self._slide.setStartValue(self.pos())
         self._slide.setEndValue(self._target_pos(len(ToastNotification._active)))

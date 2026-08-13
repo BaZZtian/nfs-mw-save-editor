@@ -2106,55 +2106,6 @@ def test_the_glyph_is_let_go_before_the_list_arrives():
     assert still_worn <= 0.15, f"the panel is still wearing the chip: {still_worn:.2f}"
 
 
-def test_the_panel_is_ticked_faster_than_qt_drives_animations():
-    """Qt's animation timer runs at 60Hz whatever the screen does, and a panel
-    starting from a chip crosses tens of pixels between two of those ticks.
-
-    The interval is asserted rather than counted: how many ticks actually land
-    depends on the timer resolution the process is granted, which is coarse in
-    a bare test and fine in the running app - measured there at 165fps against
-    Qt's 62.
-    """
-    from ui.pages.career_mixin import _PanelRun
-
-    app = _app()
-    assert _PanelRun._INTERVAL_MS <= 7, "slower than one tick per 144Hz refresh"
-
-    run = _PanelRun()
-    seen = []
-    run.progressed.connect(seen.append)
-    loop = QEventLoop()
-    run.finished.connect(loop.quit)
-    run.setDuration(60)
-    run.start()
-    loop.exec()
-
-    assert seen[-1] == 1.0
-    assert seen == sorted(seen), "the run went backwards"
-
-
-def test_a_late_tick_lands_where_the_clock_says():
-    """Progress is read off a clock, not counted in ticks: a frame that took
-    too long must not stretch the run into slow motion."""
-    from ui.pages.career_mixin import _PanelRun
-
-    app = _app()
-    run = _PanelRun()
-    seen = []
-    run.progressed.connect(seen.append)
-    ended = []
-    run.finished.connect(lambda: ended.append(True))
-
-    run.setDuration(30)
-    run.start()
-    time.sleep(0.2)          # a frame that overran its whole span
-    app.processEvents()
-
-    assert seen and seen[-1] == 1.0, f"the run was stretched: {seen}"
-    assert ended == [True]
-    assert not run.isRunning()
-
-
 def test_a_token_answers_for_its_own_square_only():
     """The cells tile the whole row, so testing them made a token turn while
     the cursor was plainly beside it - and swallowed presses meant for the
