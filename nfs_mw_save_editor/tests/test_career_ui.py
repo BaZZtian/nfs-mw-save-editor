@@ -1938,3 +1938,77 @@ def test_the_cards_edge_does_not_blink_as_the_cursor_meets_a_chip():
     run.setCurrentTime(run.duration())
     assert card._card_mark == 0.0
     window.close()
+
+
+def _career_window_with_offers(app, stage=9, size=(1182, 812)):
+    from core.blacklist_rewards import CARDS_TAKEN
+
+    window = MainWindow()
+    window.resize(*size)
+    window.show()
+    app.processEvents()
+    window._select_page("Career")
+    app.processEvents()
+    page = window.career_inspector_pages[window.career_inspector_stack.currentIndex()]
+    card = page.reward_list
+    offers = page.reward_offers(stage)
+    card.set_offers(f"take {CARDS_TAKEN} of {len(offers)}", offers)
+    card.grab()      # cells are filled in while the card paints
+    app.processEvents()
+    return window, card, offers
+
+
+def test_the_rewards_card_opens_what_it_can_only_hint_at():
+    """The card can show six tokens and nothing more; the sentence under each
+    one is the whole reason to open the panel."""
+    app = _app()
+    window, card, offers = _career_window_with_offers(app)
+    cell = card._cells[2][0]
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, cell.center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+
+    rows = overlay.listing._rows
+    assert len(rows) == len(offers)
+    assert overlay.listing._title == "REWARDS"
+    assert all(row.note for row in rows), "an offer with nothing said about it"
+    assert all(row.state == "open" for row in rows), "offers are not claims"
+    # Taller than a plain row apiece: the sentence needs its own line.
+    assert overlay.listing._content_height() > len(rows) * 30
+    window.close()
+
+
+def test_the_panel_grows_from_the_token_that_was_pressed():
+    app = _app()
+    window, card, _offers = _career_window_with_offers(app)
+    opened = []
+    card.activated.connect(opened.append)
+
+    cell = card._cells[4][0]
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, cell.center())
+    assert opened == [cell]
+
+    # Between the tokens there is only the card, so the card is the origin.
+    card.activated.disconnect()
+    caught = []
+    card.activated.connect(caught.append)
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, QPoint(card.width() // 2, 6))
+    assert caught == [card.rect()]
+    window.close()
+
+
+def test_a_rewards_card_with_no_offers_promises_nothing():
+    app = _app()
+    window, card, _offers = _career_window_with_offers(app)
+    assert card.cursor().shape() == Qt.PointingHandCursor
+
+    card.set_offers("", (), "No career data loaded")
+    assert card.cursor().shape() == Qt.ArrowCursor
+    opened = []
+    card.activated.connect(opened.append)
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, QPoint(card.width() // 2, 20))
+    assert opened == []
+    assert card._card_mark == 0.0
+    window.close()

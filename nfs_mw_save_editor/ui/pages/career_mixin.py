@@ -1363,9 +1363,162 @@ class _InspectorRow:
     detail: str
     fraction: Optional[float]
     tooltip: str
+    # A second line under the title, for rows whose meaning does not fit on
+    # one: a reward marker is a sentence, not a lap time.
+    note: str = ""
 
 
-class _ChipPreviewCard(QFrame):
+class _PressableSection(QFrame):
+    """A card that opens a dossier, and says so with its own edge.
+
+    Nothing here MOVES.  The cursor crosses these cards on the way to
+    everything else, and at that frequency movement is noise - the edge only
+    changes tone: a whisper while the cursor is anywhere on the card, a step up
+    under a press, held for as long as the dossier stands open.  The panel
+    grows out of exactly this outline, so cutting it at the handover is what
+    makes a quick click read as a blink.
+    """
+
+    _HOVER_IN_MS = 140
+    _HOVER_OUT_MS = 90
+    _MARK_OUT_MS = 200      # the edge letting go once the panel is home
+    _EDGE_HELD = 0.75       # answering a press, and standing while it is open
+    _EDGE_HOVER = 0.35      # a whisper: the step up to a press has to be seen
+
+    # Carries the rect the dossier should grow from: whatever was pressed, or
+    # the card itself when the press landed between things.
+    activated = Signal(QRect)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("careerInspectorSection")
+        self.setMouseTracking(True)
+        self._card_mark = 0.0        # how lit the card's own edge stands
+        self._mark_from = 0.0
+        self._mark_to = 0.0
+        self._card_held = False
+        self._card_under_cursor = False
+        self._pressed_card = False
+        self._mark_run = QVariantAnimation(self)
+        self._mark_run.setEasingCurve(QEasingCurve.Linear)   # eased by value
+        self._mark_run.setStartValue(0.0)
+        self._mark_run.setEndValue(1.0)
+        self._mark_run.valueChanged.connect(self._apply_mark_step)
+        self._mark_run.finished.connect(self._settle_mark)
+
+    def _has_content(self) -> bool:
+        """Whether there is anything behind a click.  Overridden by both."""
+        return False
+
+    def dossier(self) -> Tuple[str, str, Tuple, Tuple]:
+        """Title, subtitle and rows for the panel this card opens."""
+        return "", "", (), ()
+
+    @staticmethod
+    def _hover_ease(step: float) -> float:
+        """Quadratic ease-out - deliberately weaker than the dossier's quartic.
+
+        How hard a curve should bite depends on how far the thing travels.
+        Over the panel's hundreds of pixels the quartic reads as arriving; over
+        two pixels, or over a shade of a border, it spends nine tenths of the
+        run inside the first fifth and is a jump again, with extra steps.  This
+        one answers the cursor at once and still spends the run moving.  Never
+        an ease-in: it reads as the interface thinking it over.
+        """
+        return 1.0 - (1.0 - step) ** 2
+
+    def _edge_target(self) -> float:
+        if self._card_held:
+            return self._EDGE_HELD
+        if self._card_under_cursor and self._has_content():
+            return self._EDGE_HOVER
+        return 0.0
+
+    def _aim_edge(self, span_ms: int, instant: bool = False) -> None:
+        target = self._edge_target()
+        if instant:
+            self._mark_run.stop()
+            self._mark_to = self._card_mark = target
+            self.update()
+            return
+        distance = abs(target - self._card_mark)
+        if distance <= 0.0:
+            return
+        self._mark_from, self._mark_to = self._card_mark, target
+        self._mark_run.stop()
+        # Priced against the taller of the two ends rather than against the
+        # distance alone: the hover glow's whole journey is a third of the held
+        # edge's, and it must not therefore take a third of the time.
+        reference = max(self._mark_from, target, 0.001)
+        self._mark_run.setDuration(max(1, round(span_ms * distance / reference)))
+        self._mark_run.start()
+
+    def _apply_mark_step(self, value) -> None:
+        step = self._hover_ease(float(value))
+        self._card_mark = self._mark_from + (self._mark_to - self._mark_from) * step
+        self.update()
+
+    def _settle_mark(self) -> None:
+        self._card_mark = self._mark_to
+        self.update()
+
+    def release_card_mark(self) -> None:
+        """Let the card's edge go, softly.
+
+        Called by the page once the dossier this card opened has closed back
+        into it: the outline hands the panel over on the way out just as it
+        handed it over on the way in.  It settles to whatever the cursor still
+        justifies - the quiet hover glow if it is back on the card, nothing if
+        it is elsewhere.
+        """
+        self._card_held = False
+        self._aim_edge(self._MARK_OUT_MS)
+
+    def _note_cursor_on_card(self) -> None:
+        if self._card_under_cursor or not self._has_content():
+            return
+        self._card_under_cursor = True
+        self._aim_edge(self._HOVER_IN_MS)
+
+    def _hold_card_edge(self) -> None:
+        self._pressed_card = True
+        self._card_held = True
+        self._aim_edge(0, instant=True)   # a press is never scheduled
+
+    def _forget_card_edge(self) -> None:
+        self._mark_run.stop()
+        self._card_mark = self._mark_to = 0.0
+        self._pressed_card = self._card_held = self._card_under_cursor = False
+
+    def _promise_a_click(self) -> None:
+        """Nothing to open means nothing to promise: a hand standing over a
+        card with no table behind it is an affordance with nothing under it."""
+        self.setCursor(Qt.PointingHandCursor if self._has_content() else Qt.ArrowCursor)
+
+    def _paint_card_edge(self, painter: QPainter, tokens) -> None:
+        if self._card_mark <= 0.0:
+            return
+        # Drawn over the sheet's own border rather than restyling it: the card
+        # is painted by the page stylesheet, and a repolish to light one edge
+        # for a hundred milliseconds is not worth its cost.
+        radius = float(str(tokens["RADIUS_XL"]).removesuffix("px"))
+        lit = QColor(tokens["ACCENT"])
+        lit.setAlphaF(self._card_mark)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(lit, 1.0))
+        painter.drawRoundedRect(
+            QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius
+        )
+
+    def enterEvent(self, event) -> None:  # noqa: N802 - Qt override
+        # Not covered by a move: the cursor can come to rest on the card
+        # without moving at all - the dossier closing out from under it is
+        # exactly that case.
+        self._note_cursor_on_card()
+        super().enterEvent(event)
+
+
+class _ChipPreviewCard(_PressableSection):
     """One row of chips standing in for a chapter's events.
 
     A preview, not a list: the boss chips are always shown and the rest of the
@@ -1388,10 +1541,6 @@ class _ChipPreviewCard(QFrame):
     # oscillation that overflowed the stack.  A window is not resized by its
     # own scrollbar, so reading it is safe.  Each step is sized so all seven
     # milestones still fit their card at that width.
-    # Carries the rect the detail overlay should grow from: the chip that was
-    # clicked, or the card itself when the click missed the row.
-    activated = Signal(QRect)
-
     _CHIP_STEPS = ((1600, 80), (1350, 68), (0, 56))
     _RADIUS = 12.0
     # The glyph fills the chip; at 0.62 the big steps had a ring of dead air
@@ -1403,20 +1552,10 @@ class _ChipPreviewCard(QFrame):
     # rather than a jump, short enough that nobody ever waits on it.  Leaving
     # is quicker than arriving - once the cursor is gone the chip has nothing
     # further to say, and feedback that lingers reads as lag.
-    _HOVER_IN_MS = 140
-    _HOVER_OUT_MS = 90
     _HOVER_MIN_MS = 60      # a correction still has to be seen happening
-    _MARK_OUT_MS = 200      # the card's edge letting go once the panel is home
-    # The edge has two reasons to be lit, and they differ only in how loudly.
-    # It stays lit while the cursor is ANYWHERE on the card, chips included:
-    # putting it out over a chip would make it blink all the way along the row.
-    _EDGE_HELD = 0.75       # answering a press, and standing while it is open
-    _EDGE_HOVER = 0.35      # a whisper: the step up to a press has to be seen
 
     def __init__(self, title: str) -> None:
         super().__init__()
-        self.setObjectName("careerInspectorSection")
-        self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._title = title
         self._subtitle = ""
@@ -1424,7 +1563,6 @@ class _ChipPreviewCard(QFrame):
         self._boss_rows: Tuple[_InspectorRow, ...] = ()
         self._chip_rects: list[tuple[QRect, _InspectorRow]] = []
         self._pressed_chip: Optional[QRect] = None
-        self._pressed_card = False
         self._hovered_chip: Optional[QRect] = None
         # How lifted each chip stands NOW, and the run carrying it there.
         self._hover_level: Dict[QRect, float] = {}
@@ -1436,18 +1574,6 @@ class _ChipPreviewCard(QFrame):
         self._hover_run.setEndValue(1.0)
         self._hover_run.valueChanged.connect(self._apply_hover_step)
         self._hover_run.finished.connect(self._settle_hover)
-        # How lit the card's own edge stands, and the run putting it out.
-        self._card_mark = 0.0
-        self._mark_from = 0.0
-        self._mark_to = 0.0
-        self._card_held = False
-        self._card_under_cursor = False
-        self._mark_run = QVariantAnimation(self)
-        self._mark_run.setEasingCurve(QEasingCurve.Linear)
-        self._mark_run.setStartValue(0.0)
-        self._mark_run.setEndValue(1.0)
-        self._mark_run.valueChanged.connect(self._apply_mark_step)
-        self._mark_run.finished.connect(self._settle_mark)
         self.setFixedHeight(self._card_height())
 
     def _chip(self) -> int:
@@ -1489,11 +1615,7 @@ class _ChipPreviewCard(QFrame):
         self._rows = tuple(rows)
         self._boss_rows = tuple(boss_rows)
         self._forget_pointer_state()
-        # Nothing to open means nothing to promise: a hand standing over a card
-        # with no table behind it is an affordance with nothing under it.
-        self.setCursor(
-            Qt.PointingHandCursor if self._rows or self._boss_rows else Qt.ArrowCursor
-        )
+        self._promise_a_click()
         self.update()
 
     def _tinted(self, path: Optional[Path], size: int, colour: Optional[QColor]) -> QPixmap:
@@ -1641,18 +1763,7 @@ class _ChipPreviewCard(QFrame):
                 self._chip_rects.append((rect, row))
                 x += size + self._GAP
 
-        if self._card_mark > 0.0:
-            # Drawn over the sheet's own border rather than restyling it: the
-            # card is painted by the page stylesheet, and a repolish to light
-            # one edge for a hundred milliseconds is not worth its cost.
-            radius = float(str(tokens["RADIUS_XL"]).removesuffix("px"))
-            lit = QColor(tokens["ACCENT"])
-            lit.setAlphaF(self._card_mark)
-            painter.setBrush(Qt.NoBrush)
-            painter.setPen(QPen(lit, 1.0))
-            painter.drawRoundedRect(
-                QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius
-            )
+        self._paint_card_edge(painter, tokens)
         painter.end()
 
     def event(self, event) -> bool:
@@ -1670,19 +1781,6 @@ class _ChipPreviewCard(QFrame):
             if rect.contains(position):
                 return rect
         return None
-
-    @staticmethod
-    def _hover_ease(step: float) -> float:
-        """Quadratic ease-out - deliberately weaker than the dossier's quartic.
-
-        How hard a curve should bite depends on how far the thing travels.
-        Over the panel's hundreds of pixels the quartic reads as arriving; over
-        two pixels it spends nine tenths of the run inside the first fifth and
-        is a jump again, with extra steps.  This one answers the cursor at once
-        and still spends the run moving.  Never an ease-in: a hover that starts
-        slowly reads as the interface thinking it over.
-        """
-        return 1.0 - (1.0 - step) ** 2
 
     @staticmethod
     def _towards(rest: QColor, lit: QColor, level: float) -> QColor:
@@ -1745,52 +1843,11 @@ class _ChipPreviewCard(QFrame):
         }
         self._hover_from, self._hover_to = {}, {}
 
-    def release_card_mark(self) -> None:
-        """Let the card's edge go, softly.
+    def _has_content(self) -> bool:
+        return bool(self._rows or self._boss_rows)
 
-        Called by the page once the dossier this card opened has closed back
-        into it: the outline hands the panel over on the way out just as it
-        handed it over on the way in.  It settles to whatever the cursor still
-        justifies - the quiet hover glow if it is back on the card, nothing if
-        it is elsewhere.
-        """
-        self._card_held = False
-        self._aim_edge(self._MARK_OUT_MS)
-
-    def _edge_target(self) -> float:
-        if self._card_held:
-            return self._EDGE_HELD
-        if self._card_under_cursor and (self._rows or self._boss_rows):
-            return self._EDGE_HOVER
-        return 0.0
-
-    def _aim_edge(self, span_ms: int, instant: bool = False) -> None:
-        target = self._edge_target()
-        if instant:
-            self._mark_run.stop()
-            self._mark_to = self._card_mark = target
-            self.update()
-            return
-        distance = abs(target - self._card_mark)
-        if distance <= 0.0:
-            return
-        self._mark_from, self._mark_to = self._card_mark, target
-        self._mark_run.stop()
-        # Priced against the taller of the two ends rather than against the
-        # distance alone: the hover glow's whole journey is a third of the
-        # held edge's, and it must not therefore take a third of the time.
-        reference = max(self._mark_from, target, 0.001)
-        self._mark_run.setDuration(max(1, round(span_ms * distance / reference)))
-        self._mark_run.start()
-
-    def _apply_mark_step(self, value) -> None:
-        step = self._hover_ease(float(value))
-        self._card_mark = self._mark_from + (self._mark_to - self._mark_from) * step
-        self.update()
-
-    def _settle_mark(self) -> None:
-        self._card_mark = self._mark_to
-        self.update()
+    def dossier(self) -> Tuple[str, str, Tuple, Tuple]:
+        return self._title, self._subtitle, self._rows, self._boss_rows
 
     def _forget_pointer_state(self) -> None:
         """The chips are about to move or be replaced, and every level is keyed
@@ -1800,22 +1857,7 @@ class _ChipPreviewCard(QFrame):
         self._hover_run.stop()
         self._hover_level, self._hover_from, self._hover_to = {}, {}, {}
         self._hovered_chip = None
-        self._mark_run.stop()
-        self._card_mark = self._mark_to = 0.0
-        self._pressed_card = self._card_held = self._card_under_cursor = False
-
-    def enterEvent(self, event) -> None:  # noqa: N802 - Qt override
-        # Not covered by the move below: the cursor can come to rest on the
-        # card without moving at all - the dossier closing out from under it
-        # is exactly that case.
-        self._note_cursor_on_card()
-        super().enterEvent(event)
-
-    def _note_cursor_on_card(self) -> None:
-        if self._card_under_cursor or not (self._rows or self._boss_rows):
-            return
-        self._card_under_cursor = True
-        self._aim_edge(self._HOVER_IN_MS)
+        self._forget_card_edge()
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
         if self._rows + self._boss_rows:
@@ -1834,9 +1876,7 @@ class _ChipPreviewCard(QFrame):
             # instantly and without movement.  The cursor crosses this card on
             # the way to every chip, and anything that MOVED here would be
             # noise; a press is deliberate, and rare enough to answer.
-            self._pressed_card = True
-            self._card_held = True
-            self._aim_edge(0, instant=True)   # a press is never scheduled
+            self._hold_card_edge()
             return
         super().mousePressEvent(event)
 
@@ -1881,7 +1921,7 @@ class _ChipPreviewCard(QFrame):
         super().hideEvent(event)
 
 
-class _RewardOffersCard(QFrame):
+class _RewardOffersCard(_PressableSection):
     """What a rival puts on the table: his six marker cards, evenly spaced.
 
     Deliberately stateless.  The player takes TWO of the six and nothing in the
@@ -1906,8 +1946,6 @@ class _RewardOffersCard(QFrame):
 
     def __init__(self, title: str) -> None:
         super().__init__()
-        self.setObjectName("careerInspectorSection")
-        self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._title = title
         self._subtitle = ""
@@ -1941,7 +1979,35 @@ class _RewardOffersCard(QFrame):
         self._hovered = None
         self._flip_anim.stop()
         self._flip = 0.0
+        self._forget_card_edge()
+        self._promise_a_click()
         self.update()
+
+    def _has_content(self) -> bool:
+        return bool(self._markers)
+
+    def dossier(self) -> Tuple[str, str, Tuple, Tuple]:
+        """The six offers, each with what it actually buys.
+
+        The card can only show the tokens; the sentence under each one is the
+        reason to open the panel at all.  Still deliberately stateless - these
+        are offers, and nothing in the save records which two were taken.
+        """
+        rows = []
+        for marker in self._markers:
+            canon = marker_names.MARKER_CANON.get(marker)
+            rows.append(_InspectorRow(
+                title=canon.name if canon else f"Marker {marker}",
+                tag="",
+                state="open",
+                kind="reward",
+                icon_path=token_icon_path(marker),
+                detail=canon.fe_category if canon else "",
+                fraction=None,
+                tooltip=canon.description if canon else "",
+                note=canon.description if canon else "",
+            ))
+        return self._title, self._subtitle, tuple(rows), ()
 
     def _set_flip(self, value) -> None:
         self._flip = float(value)
@@ -2045,6 +2111,7 @@ class _RewardOffersCard(QFrame):
                 top + (icon_size - drawn.height()) // 2,
                 drawn,
             )
+        self._paint_card_edge(painter, tokens)
         painter.end()
 
     def _cell_at(self, pos) -> Optional[int]:
@@ -2054,6 +2121,7 @@ class _RewardOffersCard(QFrame):
         return None
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._note_cursor_on_card()
         index = self._cell_at(event.pos())
         if index != self._hovered:
             self._hovered = index
@@ -2067,10 +2135,41 @@ class _RewardOffersCard(QFrame):
             self.update()
         super().mouseMoveEvent(event)
 
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.button() == Qt.LeftButton and self._markers:
+            # No token sinks under the press: they are already turning under
+            # the cursor, and two answers at once on one small thing is one
+            # too many.  The card's edge speaks for the whole row.
+            self._hold_card_edge()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.button() == Qt.LeftButton and self._markers:
+            index = self._cell_at(event.position().toPoint())
+            origin = self._cells[index][0] if index is not None else self.rect()
+            if self._pressed_card and index is not None:
+                # The panel comes from the token, so the card's edge has
+                # nothing to hand over.
+                self.release_card_mark()
+            self._pressed_card = False
+            self.activated.emit(origin)
+            return
+        if self._pressed_card:
+            self._pressed_card = False
+            self.release_card_mark()
+        super().mouseReleaseEvent(event)
+
     def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
         self._hovered = None
         self._flip_anim.stop()
         self._flip = 0.0
+        if self._pressed_card:
+            # A press taken back rather than handed over.
+            self._pressed_card = False
+            self._card_held = False
+        self._card_under_cursor = False
+        self._aim_edge(self._MARK_OUT_MS if self._card_held else self._HOVER_OUT_MS)
         self.update()
         super().leaveEvent(event)
 
@@ -2095,6 +2194,7 @@ class _ProgressRowList(QFrame):
     _pixmap_cache: "OrderedDict[tuple[str, int], QPixmap]" = OrderedDict()
     _ROWS_TOP = 58
     _ROW_HEIGHT = 30
+    _NOTE_ROW_HEIGHT = 46
     _SECTION_GAP = 27
     _BOTTOM_PAD = 14
 
@@ -2109,10 +2209,15 @@ class _ProgressRowList(QFrame):
         self._boss_rows: Tuple[_InspectorRow, ...] = ()
         self._row_rects: list[tuple[QRect, _InspectorRow]] = []
 
+    def _row_height(self, row: _InspectorRow) -> int:
+        return self._NOTE_ROW_HEIGHT if row.note else self._ROW_HEIGHT
+
     def _content_height(self) -> int:
-        height = self._ROWS_TOP + len(self._rows) * self._ROW_HEIGHT
+        height = self._ROWS_TOP + sum(self._row_height(row) for row in self._rows)
         if self._boss_rows:
-            height += self._SECTION_GAP + len(self._boss_rows) * self._ROW_HEIGHT
+            height += self._SECTION_GAP + sum(
+                self._row_height(row) for row in self._boss_rows
+            )
         return height + self._BOTTOM_PAD
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
@@ -2197,7 +2302,7 @@ class _ProgressRowList(QFrame):
     ) -> int:
         width = self.width()
         for index, row in enumerate(rows):
-            rect = QRect(10, top, width - 20, self._ROW_HEIGHT)
+            rect = QRect(10, top, width - 20, self._row_height(row))
             self._row_rects.append((rect, row))
             boss = row.kind == "boss"
             if row.state == "done":
@@ -2219,26 +2324,34 @@ class _ProgressRowList(QFrame):
                 detail_color = QColor(tokens["MUTED_DARK"])
                 icon_opacity = 0.38
 
-            box = QRectF(rect.left() + 5, rect.top() + 4, 22, 22)
+            # A row with a note has the room for a bigger token, and needs it:
+            # the marker art is a detailed diamond that turns to mush at 16px,
+            # where a race glyph stays legible.
+            box_side = 28 if row.note else 22
+            glyph = box_side - 8
+            box = QRectF(rect.left() + 5, rect.center().y() - box_side / 2,
+                         box_side, box_side)
             painter.setBrush(box_fill)
             painter.setPen(QPen(box_border, 1.2))
             box_radius = 4.0 if boss else 6.0
             painter.drawRoundedRect(box, box_radius, box_radius)
-            icon = self._source_pixmap(row.icon_path, 16)
+            icon = self._source_pixmap(row.icon_path, glyph)
             if not icon.isNull():
                 painter.setOpacity(icon_opacity)
-                painter.drawPixmap(int(box.left()) + 3, int(box.top()) + 3, icon)
+                painter.drawPixmap(int(box.left()) + 4, int(box.top()) + 4, icon)
                 painter.setOpacity(1.0)
 
             self._row_font(painter, 10.0, bold=False)
-            title_x = rect.left() + 37
+            title_x = round(box.right()) + 10
             title_advance = painter.fontMetrics().horizontalAdvance(row.title)
             painter.setPen(title_color)
-            painter.drawText(
-                QRectF(title_x, rect.top(), rect.width() - 37, rect.height()),
-                Qt.AlignLeft | Qt.AlignVCenter,
-                row.title,
-            )
+            # With a note under it the title sits on the upper line; alone, it
+            # keeps the middle of the row.
+            room = rect.right() - 5 - title_x
+            title_rect = QRectF(title_x, rect.top(), room, rect.height())
+            if row.note:
+                title_rect = QRectF(title_x, rect.top() + 5, room, 18)
+            painter.drawText(title_rect, Qt.AlignLeft | Qt.AlignVCenter, row.title)
 
             if row.tag:
                 self._row_font(painter, 7.5, bold=True)
@@ -2256,10 +2369,22 @@ class _ProgressRowList(QFrame):
             detail_width = painter.fontMetrics().horizontalAdvance(row.detail)
             painter.setPen(detail_color)
             painter.drawText(
-                QRectF(rect.right() - 5 - detail_width, rect.top(), detail_width, rect.height()),
+                QRectF(rect.right() - 5 - detail_width,
+                       title_rect.top() if row.note else rect.top(),
+                       detail_width,
+                       title_rect.height() if row.note else rect.height()),
                 Qt.AlignRight | Qt.AlignVCenter,
                 row.detail,
             )
+
+            if row.note:
+                self._row_font(painter, 8.5, bold=False)
+                painter.setPen(QColor(tokens["MUTED_DARK"]))
+                painter.drawText(
+                    QRectF(title_x, rect.top() + 23, room, 16),
+                    Qt.AlignLeft | Qt.AlignVCenter,
+                    painter.fontMetrics().elidedText(row.note, Qt.ElideRight, round(room)),
+                )
 
             if row.fraction is not None and row.state == "open" and rect.width() >= 330:
                 bar = QRectF(
@@ -2289,7 +2414,7 @@ class _ProgressRowList(QFrame):
                 painter.drawLine(
                     rect.left() + 2, rect.bottom(), rect.right() - 2, rect.bottom()
                 )
-            top += self._ROW_HEIGHT
+            top += rect.height()
         return top
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
@@ -3236,7 +3361,7 @@ class CareerMixin:
         self.career_inspector_pages = (_ChapterInspectorPage(), _ChapterInspectorPage())
         for page in self.career_inspector_pages:
             self.career_inspector_stack.addWidget(page)
-            for card in (page.race_list, page.milestone_list):
+            for card in (page.race_list, page.milestone_list, page.reward_list):
                 card.activated.connect(
                     lambda origin, card=card: self._open_career_detail(card, origin)
                 )
@@ -3309,13 +3434,8 @@ class CareerMixin:
         )
         self._sync_career_detail_overlay()
         corner = overlay.mapFromGlobal(card.mapToGlobal(origin.topLeft()))
-        overlay.open_for(
-            QRect(corner, origin.size()),
-            card._title,
-            card._subtitle,
-            card._rows,
-            card._boss_rows,
-        )
+        title, subtitle, rows, boss_rows = card.dossier()
+        overlay.open_for(QRect(corner, origin.size()), title, subtitle, rows, boss_rows)
 
     def close_career_detail(self) -> None:
         overlay = getattr(self, "career_detail_overlay", None)
