@@ -2140,3 +2140,29 @@ def test_a_token_answers_for_its_own_square_only():
     QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, beside)
     assert opened == [card.rect()], "a press beside a token opened the token"
     window.close()
+
+
+def test_the_list_arrives_with_a_hair_of_scale_and_lands_crisp():
+    """A plain fade reads as a layer switched on.  The last few per cent of
+    scale under it read as the thing settling into place - but it must land at
+    exactly 1, or the text stays softened by a transform that never ended."""
+    app = _app()
+    rows, boss_rows = _chip_rows(10, boss=2)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[2][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    overlay._animation.stop()
+
+    seen = []
+    for step in (0.45, 0.6, 0.75, 0.9, 1.0):
+        overlay._apply_progress(step)
+        seen.append((overlay._fade.opacity(), overlay._fade._scale))
+
+    opacities = [shown for shown, _scale in seen]
+    scales = [scale for _shown, scale in seen]
+    assert opacities == sorted(opacities) and scales == sorted(scales)
+    assert scales[0] == pytest.approx(overlay._CONTENT_RISE, abs=0.01)
+    assert scales[-1] == 1.0, "the list is left standing under a transform"
+    assert 0.9 < overlay._CONTENT_RISE < 1.0, "further down and the text grows"
+    window.close()

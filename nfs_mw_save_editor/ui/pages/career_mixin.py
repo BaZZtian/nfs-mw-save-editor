@@ -41,6 +41,7 @@ from PySide6.QtCore import (
     QRect,
     QRectF,
     QSize,
+    QSizeF,
     Qt,
     QTimer,
     QVariantAnimation,
@@ -65,6 +66,7 @@ from PySide6.QtGui import (
     QTransform,
 )
 from PySide6.QtWidgets import (
+    QGraphicsEffect,
     QButtonGroup,
     QFrame,
     QGraphicsOpacityEffect,
@@ -2521,6 +2523,55 @@ class _ProgressRowList(QFrame):
         super().leaveEvent(event)
 
 
+class _ArrivingContent(QGraphicsEffect):
+    """Opacity and a hair of scale, together, for content coming in.
+
+    Nothing arrives at full size out of nowhere: a plain fade reads as a layer
+    being switched on, while the same fade with the last few per cent of scale
+    under it reads as the thing settling into place.  Scaling DOWN at the start
+    means the list can never spill past the panel that clips it.
+
+    A `QGraphicsEffect` rather than a transform on the widget because the list
+    is a real scroll area with a scrollbar and a wheel: this leaves all of that
+    alone and only touches the pixels on their way to the screen - which the
+    opacity effect it replaces was already paying for.
+    """
+
+    def __init__(self, parent: Optional[QObject] = None) -> None:
+        super().__init__(parent)
+        self._opacity = 0.0
+        self._scale = 1.0
+
+    def opacity(self) -> float:
+        return self._opacity
+
+    def arrive(self, opacity: float, scale: float) -> None:
+        if (opacity, scale) == (self._opacity, self._scale):
+            return
+        self._opacity, self._scale = opacity, scale
+        self.update()
+
+    def draw(self, painter: QPainter) -> None:  # noqa: N802 - Qt override
+        if self._opacity <= 0.0:
+            return
+        # PySide hands back the pixmap alone, so the corner it belongs at is
+        # read from the source's own bounds rather than from an out-parameter.
+        where = self.sourceBoundingRect(Qt.LogicalCoordinates).topLeft()
+        pixmap = self.sourcePixmap(
+            Qt.LogicalCoordinates, None, QGraphicsEffect.NoPad
+        )
+        if pixmap.isNull():
+            return
+        painter.setOpacity(self._opacity)
+        if self._scale < 1.0:
+            painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            middle = QRectF(where, QSizeF(pixmap.deviceIndependentSize())).center()
+            painter.translate(middle)
+            painter.scale(self._scale, self._scale)
+            painter.translate(-middle)
+        painter.drawPixmap(where, pixmap)
+
+
 class _DetailOverlay(QWidget):
     """One preview card's full dossier, opened over the page it belongs to.
 
@@ -2546,6 +2597,10 @@ class _DetailOverlay(QWidget):
     # Content shows once the panel is nearly grown.  Earlier looks better on
     # paper and costs frames where the motion is fastest.
     _CONTENT_IN = (0.45, 1.0)
+    # How small the list starts before it settles.  Apple's is about this
+    # much; further down it reads as the text growing, which is the stretched
+    # content this whole transition is built to avoid.
+    _CONTENT_RISE = 0.96
     _SCRIM_ALPHA = 150
     _HINT_BAND = 26
     # How far into the run the panel stops looking like the thing it grew out
@@ -2577,8 +2632,7 @@ class _DetailOverlay(QWidget):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.listing = _ProgressRowList("")
         self.scroll.setWidget(self.listing)
-        self._fade = QGraphicsOpacityEffect(self.scroll)
-        self._fade.setOpacity(0.0)
+        self._fade = _ArrivingContent(self.scroll)
         self.scroll.setGraphicsEffect(self._fade)
 
         self._animation = PacedAnimation(self)
@@ -2830,7 +2884,10 @@ class _DetailOverlay(QWidget):
         self.scroll.setGeometry(rect)
         self._openness = self._measure_openness(rect)
         self._scrim_alpha = self._scrim_for()
-        self._fade.setOpacity(self._content_opacity())
+        showing = self._content_opacity()
+        # One value drives both, so they cannot drift apart: half shown is half
+        # of the way up in size as well.
+        self._fade.arrive(showing, 1.0 - (1.0 - self._CONTENT_RISE) * (1.0 - showing))
         # Repaint whole, every frame.  Repainting only the panel's own region
         # once the scrim stops changing is cheaper on average and WORSE to
         # watch: the frames then alternate between cheap and expensive, and
