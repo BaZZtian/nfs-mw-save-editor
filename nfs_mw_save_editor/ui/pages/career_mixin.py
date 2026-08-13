@@ -1409,6 +1409,7 @@ class _ChipPreviewCard(QFrame):
         self._rows: Tuple[_InspectorRow, ...] = ()
         self._boss_rows: Tuple[_InspectorRow, ...] = ()
         self._chip_rects: list[tuple[QRect, _InspectorRow]] = []
+        self._pressed_chip: Optional[QRect] = None
         self.setFixedHeight(self._card_height())
 
     def _chip(self) -> int:
@@ -1477,6 +1478,11 @@ class _ChipPreviewCard(QFrame):
         return source
 
     def _draw_chip(self, painter: QPainter, rect: QRect, row: _InspectorRow, tokens) -> None:
+        if rect == self._pressed_chip:
+            # The chip has to answer the click itself; without this nothing
+            # happens between the press and the panel starting to grow.
+            inset = max(1, round(rect.width() * 0.015))
+            rect = rect.adjusted(inset, inset, -inset, -inset)
         boss = row.kind == "boss"
         accent = "BOSS_GOLD" if boss else "ACCENT"
         icon_colour: Optional[QColor] = None
@@ -1565,17 +1571,35 @@ class _ChipPreviewCard(QFrame):
                 self.setToolTip("")
         return super().event(event)
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def _chip_at(self, position: QPoint) -> Optional[QRect]:
+        for rect, _row in self._chip_rects:
+            if rect.contains(position):
+                return rect
+        return None
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
         if event.button() == Qt.LeftButton and self._rows + self._boss_rows:
-            position = event.position().toPoint()
-            origin = self.rect()
-            for rect, _row in self._chip_rects:
-                if rect.contains(position):
-                    origin = rect
-                    break
+            self._pressed_chip = self._chip_at(event.position().toPoint())
+            if self._pressed_chip is not None:
+                self.update(self._pressed_chip)
+                return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
+        pressed, self._pressed_chip = self._pressed_chip, None
+        if pressed is not None:
+            self.update(pressed)
+        if event.button() == Qt.LeftButton and self._rows + self._boss_rows:
+            origin = self._chip_at(event.position().toPoint()) or self.rect()
             self.activated.emit(origin)
             return
         super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self._pressed_chip is not None:
+            self.update(self._pressed_chip)
+            self._pressed_chip = None
+        super().leaveEvent(event)
 
 
 class _RewardOffersCard(QFrame):
@@ -2015,11 +2039,14 @@ class _DetailOverlay(QWidget):
 
     _MARGIN = 30            # least air between panel and the page's edges
     _MAX_WIDTH = 760
-    _OPEN_MS = 380
-    _CLOSE_MS = 250
-    # The width is home this far into the run; the height keeps going.
-    _WIDTH_DONE = 0.55
-    _CONTENT_FROM = 0.45
+    _OPEN_MS = 300          # the ceiling for interface motion; past it a panel
+    _CLOSE_MS = 250         # reads as slow however good the curve is
+    _MIN_MS = 120           # a reversal still needs long enough to be seen
+    # One axis is home this far into the run; the other keeps going.
+    _AXIS_LEAD = 0.55
+    # Content shows once the panel is nearly grown.  Earlier looks better on
+    # paper and costs frames where the motion is fastest.
+    _CONTENT_IN = (0.45, 1.0)
     _SCRIM_ALPHA = 150
     _HINT_BAND = 26
 
@@ -2048,25 +2075,87 @@ class _DetailOverlay(QWidget):
         self._animation.finished.connect(self._on_finished)
         self._origin = QRect()
         self._target = QRect()
-        self._progress = 0.0
+        self._from_rect = QRect()
+        self._to_rect = QRect()
+        self._step = 0.0        # position along the CURRENT run, 0..1
+        self._openness = 0.0    # how open the panel is, 0 = chip, 1 = panel
+        self._fade_from = 0.0   # list opacity when the current run began
+        self._scrim_alpha = 0   # scrim alpha now on screen
+        self._scrim_from = 0    # and what it was when the current run began
+        self._opening = False
         self._closing = False
 
     @staticmethod
     def _ease(t: float) -> float:
-        return 1.0 - (1.0 - t) ** 3
+        # Quartic rather than cubic: the textbook ease-out is weak enough that
+        # the panel reads as drifting into place instead of arriving.
+        return 1.0 - (1.0 - t) ** 4
 
-    def _panel_rect(self, progress: float) -> QRect:
-        """Where the panel sits at ``progress``; width and height run on
-        separate clocks, which is what keeps the shape from ballooning."""
-        wide = self._ease(min(1.0, progress / self._WIDTH_DONE))
-        tall = self._ease(progress)
-        start, end = self._origin, self._target
+    def _panel_rect(self, step: float) -> QRect:
+        """Where the panel sits at ``step`` of the run now under way.
+
+        Opening splits the axes: the width settles first, so a square chip
+        never balloons into a panel on its way out.
+
+        Closing REPLAYS that curve backwards, which by the book is an ease-in -
+        a quarter of the run covering 1.6% of the distance, then more than half
+        of it in the last quarter.  Chosen anyway, by eye, over an even
+        ease-out: the pause at the start reads as the panel taking its leave
+        rather than being yanked shut.  Both were built and compared side by
+        side in the running app before this was settled.
+        """
+        if self._opening:
+            wide = self._ease(min(1.0, step / self._AXIS_LEAD))
+            tall = self._ease(step)
+        else:
+            back = 1.0 - step
+            wide = 1.0 - self._ease(min(1.0, back / self._AXIS_LEAD))
+            tall = 1.0 - self._ease(back)
+        start, end = self._from_rect, self._to_rect
         return QRect(
             round(start.left() + (end.left() - start.left()) * wide),
             round(start.top() + (end.top() - start.top()) * tall),
             round(start.width() + (end.width() - start.width()) * wide),
             round(start.height() + (end.height() - start.height()) * tall),
         )
+
+    def _measure_openness(self, rect: QRect) -> float:
+        """How much of the way from chip to panel ``rect`` stands, by height.
+
+        Interruptions are priced off this, so it has to be read from the panel
+        on screen rather than from whichever run put it there.
+        """
+        span = self._target.height() - self._origin.height()
+        if span <= 0:
+            return 1.0 if rect.height() >= self._target.height() else 0.0
+        return max(0.0, min(1.0, (rect.height() - self._origin.height()) / span))
+
+    def _scrim_for(self) -> int:
+        """On the run's clock as well, and monotone across an interruption."""
+        reached = round(self._SCRIM_ALPHA * min(1.0, self._run_position() * 1.6))
+        if self._opening:
+            return max(self._scrim_from, reached)
+        return min(self._scrim_from, reached)
+
+    def _run_position(self) -> float:
+        """Where the run stands on ITS OWN clock, counted the way the opening
+        counts: 0 at the chip, 1 at the panel.
+
+        Keying the list and the scrim to the eased geometry instead looks the
+        same in a diagram and is not: 0.45 of the run is 0.45 of the time, but
+        0.45 of the GEOMETRY arrives at 0.18 of the run, which put the fade in
+        the middle of the fastest movement and cost frames where they show.
+        """
+        return self._step if self._opening else 1.0 - self._step
+
+    def _content_opacity(self) -> float:
+        """Never jumps at an interruption: opening only brightens from where
+        the list already was, closing only dims from there."""
+        start, end = self._CONTENT_IN
+        reached = max(0.0, min(1.0, (self._run_position() - start) / (end - start)))
+        if self._opening:
+            return max(self._fade_from, reached)
+        return min(self._fade_from, reached)
 
     def _measure(self, width: int) -> QRect:
         """Final panel rect: as tall as the list wants, capped by the page."""
@@ -2098,23 +2187,38 @@ class _DetailOverlay(QWidget):
         self.setVisible(True)
         self._target = self._measure(self._MAX_WIDTH)
         self._origin = origin if origin.isValid() else self._target
-        self._closing = False
         self.scroll.verticalScrollBar().setValue(0)
-        self._animation.stop()
-        self._animation.setDuration(self._OPEN_MS)
-        self._animation.setStartValue(float(self._progress))
-        self._animation.setEndValue(1.0)
-        self._animation.start()
+        self._start_run(self._to_rect if self._closing else self._origin, self._target)
         self.setFocus(Qt.OtherFocusReason)
 
     def close_overlay(self) -> None:
         if not self.isVisible() or self._closing:
             return
-        self._closing = True
+        self._start_run(self.scroll.geometry(), self._origin)
+
+    def _start_run(self, source: QRect, destination: QRect) -> None:
+        """Begin a fresh run from where the panel actually stands.
+
+        Every run is its own ease-out from the panel on screen, so an
+        interruption is a new opening or closing rather than a rewind - and it
+        is priced by the distance left, not by the full trip.
+        """
         self._animation.stop()
-        self._animation.setDuration(self._CLOSE_MS)
-        self._animation.setStartValue(float(self._progress))
-        self._animation.setEndValue(0.0)
+        self._opening = destination == self._target
+        self._closing = not self._opening
+        self._from_rect = source if source.isValid() else destination
+        self._to_rect = destination
+        self._openness = self._measure_openness(self._from_rect)
+        self._fade_from = self._fade.opacity()
+        self._scrim_from = self._scrim_alpha
+        remaining = 1.0 - self._openness if self._opening else self._openness
+        span = self._OPEN_MS if self._opening else self._CLOSE_MS
+        self._animation.setDuration(max(self._MIN_MS, round(span * remaining)))
+        self._animation.setStartValue(0.0)
+        self._animation.setEndValue(1.0)
+        # No frame painted here: doing one synchronously puts a full repaint in
+        # the same beat as the click, and the animation's first tick paints the
+        # same thing a moment later anyway.
         self._animation.start()
 
     def resync(self, area: QRect) -> None:
@@ -2124,16 +2228,23 @@ class _DetailOverlay(QWidget):
         self.setGeometry(area)
         if self.isVisible():
             self._target = self._measure(self._MAX_WIDTH)
-            self._apply_progress(self._progress)
+            if self._opening:
+                self._to_rect = self._target
+            else:
+                self._from_rect = self._target
+            self._apply_progress(self._step)
 
     def _apply_progress(self, value) -> None:
-        self._progress = float(value)
-        rect = self._panel_rect(self._progress)
+        self._step = float(value)
+        rect = self._panel_rect(self._step)
         self.scroll.setGeometry(rect)
-        span = 1.0 - self._CONTENT_FROM
-        self._fade.setOpacity(
-            max(0.0, min(1.0, (self._progress - self._CONTENT_FROM) / span))
-        )
+        self._openness = self._measure_openness(rect)
+        self._scrim_alpha = self._scrim_for()
+        self._fade.setOpacity(self._content_opacity())
+        # Repaint whole, every frame.  Repainting only the panel's own region
+        # once the scrim stops changing is cheaper on average and WORSE to
+        # watch: the frames then alternate between cheap and expensive, and
+        # uneven pacing reads as stepping however good the average is.
         self.update()
 
     def _on_finished(self) -> None:
@@ -2142,12 +2253,14 @@ class _DetailOverlay(QWidget):
             self.setVisible(False)
             self.closed.emit()
 
-    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt override
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
         tokens = resolve_theme_tokens()
         painter = QPainter(self)
         scrim = QColor(0, 0, 0)
-        scrim.setAlpha(round(self._SCRIM_ALPHA * min(1.0, self._progress * 1.6)))
-        painter.fillRect(self.rect(), scrim)
+        # Keyed to how open the panel is, not to the run: an interruption then
+        # picks the scrim up where it stands instead of jumping.
+        scrim.setAlpha(self._scrim_alpha)
+        painter.fillRect(event.rect(), scrim)
 
         # The surface is drawn here, opaque, and only the list on top of it
         # fades in: fading the whole panel left a hole travelling across the
@@ -2159,12 +2272,15 @@ class _DetailOverlay(QWidget):
         painter.setPen(QPen(QColor(tokens["BORDER"]), 1.0))
         painter.drawRoundedRect(QRectF(panel), 12.0, 12.0)
 
-        if self._progress > self._CONTENT_FROM:
+        # Its own ramp, twice as steep as the list's: the hint is a single
+        # short line and reads as lagging if it shares the list's curve.
+        hint_opacity = max(0.0, min(1.0, (self._run_position() - self._CONTENT_IN[0]) * 2))
+        if hint_opacity > 0.0:
             font = painter.font()
             font.setPointSizeF(8.5)
             painter.setFont(font)
             colour = QColor(tokens["MUTED"])
-            colour.setAlphaF(min(1.0, (self._progress - self._CONTENT_FROM) * 2))
+            colour.setAlphaF(hint_opacity)
             painter.setPen(colour)
             painter.drawText(
                 QRect(panel.left(), panel.bottom() + 4, panel.width(), self._HINT_BAND),

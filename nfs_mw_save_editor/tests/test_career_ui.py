@@ -1518,7 +1518,7 @@ def test_escape_and_a_click_outside_close_the_dossier():
     assert overlay.isVisible()
 
     QTest.keyClick(overlay, Qt.Key_Escape)
-    assert overlay._animation.endValue() == 0.0
+    assert overlay._closing
     _land_animation(overlay)
     assert not overlay.isVisible()
 
@@ -1530,7 +1530,7 @@ def test_escape_and_a_click_outside_close_the_dossier():
     outside = QPoint(6, 6)
     assert not overlay.scroll.geometry().contains(outside)
     QTest.mouseClick(overlay, Qt.LeftButton, Qt.NoModifier, outside)
-    assert overlay._animation.endValue() == 0.0
+    assert overlay._closing
     _land_animation(overlay)
     assert not overlay.isVisible()
     window.close()
@@ -1579,4 +1579,80 @@ def test_an_empty_card_has_nothing_to_open():
     QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card.rect().center())
     app.processEvents()
     assert getattr(window, "career_detail_overlay", None) is None
+    window.close()
+
+
+def test_a_pressed_chip_answers_the_click_before_the_panel_moves():
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip_rect = card._chip_rects[2][0]
+
+    QTest.mousePress(card, Qt.LeftButton, Qt.NoModifier, chip_rect.center())
+    assert card._pressed_chip == chip_rect
+    QTest.mouseRelease(card, Qt.LeftButton, Qt.NoModifier, chip_rect.center())
+    assert card._pressed_chip is None
+
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+    window.close()
+
+
+def test_an_interrupted_opening_costs_only_the_distance_left():
+    """Catching the panel a fifth of the way out and waiting the full close
+    duration is the tell of an animation that ignores being interrupted."""
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+
+    overlay._animation.stop()
+    overlay._apply_progress(1.0)
+    overlay.close_overlay()
+    assert overlay._openness == 1.0
+    assert overlay._animation.duration() == overlay._CLOSE_MS
+    _land_animation(overlay)
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay._animation.stop()
+    overlay._apply_progress(0.2)          # caught while it was still opening
+    overlay.close_overlay()
+    assert overlay._animation.duration() == max(
+        overlay._MIN_MS, round(overlay._CLOSE_MS * overlay._openness)
+    )
+    assert overlay._animation.duration() < overlay._CLOSE_MS
+    _land_animation(overlay)
+    window.close()
+
+
+def test_closing_replays_the_opening_curve_backwards():
+    """A deliberate choice, not an oversight.
+
+    By the book this is an ease-in - the panel barely moves for the first
+    quarter, then covers most of the distance at the end - and an even
+    ease-out was built and compared against it in the running app.  The pause
+    at the start was preferred: it reads as the panel taking its leave.  The
+    numbers are locked here so nobody "fixes" it back by theory alone.
+    """
+    app = _app()
+    rows, boss_rows = _chip_rows(16, boss=2)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+
+    opened = overlay.scroll.geometry()
+    overlay.close_overlay()
+    overlay._animation.stop()
+    overlay._apply_progress(0.25)
+    covered = (opened.height() - overlay.scroll.height()) / (
+        opened.height() - overlay._origin.height()
+    )
+    assert covered < 0.1, f"the pause at the start is gone: {covered:.1%} covered"
+    overlay._apply_progress(1.0)
+    assert overlay.scroll.geometry().size() == overlay._origin.size()
     window.close()
