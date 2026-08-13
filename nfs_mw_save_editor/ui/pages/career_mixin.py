@@ -1398,6 +1398,14 @@ class _ChipPreviewCard(QFrame):
     # around it.
     _ICON_SCALE = 0.74
     _HOVER_LIFT = 2         # px the chip rises under the cursor
+    # A cursor crosses this row tens of times a minute, so the motion belongs
+    # at the bottom of the interface band: long enough to read as a movement
+    # rather than a jump, short enough that nobody ever waits on it.  Leaving
+    # is quicker than arriving - once the cursor is gone the chip has nothing
+    # further to say, and feedback that lingers reads as lag.
+    _HOVER_IN_MS = 140
+    _HOVER_OUT_MS = 90
+    _HOVER_MIN_MS = 60      # a correction still has to be seen happening
 
     def __init__(self, title: str) -> None:
         super().__init__()
@@ -1412,6 +1420,16 @@ class _ChipPreviewCard(QFrame):
         self._chip_rects: list[tuple[QRect, _InspectorRow]] = []
         self._pressed_chip: Optional[QRect] = None
         self._hovered_chip: Optional[QRect] = None
+        # How lifted each chip stands NOW, and the run carrying it there.
+        self._hover_level: Dict[QRect, float] = {}
+        self._hover_from: Dict[QRect, float] = {}
+        self._hover_to: Dict[QRect, float] = {}
+        self._hover_run = QVariantAnimation(self)
+        self._hover_run.setEasingCurve(QEasingCurve.Linear)   # eased by value
+        self._hover_run.setStartValue(0.0)
+        self._hover_run.setEndValue(1.0)
+        self._hover_run.valueChanged.connect(self._apply_hover_step)
+        self._hover_run.finished.connect(self._settle_hover)
         self.setFixedHeight(self._card_height())
 
     def _chip(self) -> int:
@@ -1438,6 +1456,7 @@ class _ChipPreviewCard(QFrame):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
+        self._forget_hover()
         height = self._card_height()
         if self.height() != height:
             self.setFixedHeight(height)
@@ -1451,6 +1470,7 @@ class _ChipPreviewCard(QFrame):
         self._subtitle = subtitle
         self._rows = tuple(rows)
         self._boss_rows = tuple(boss_rows)
+        self._forget_hover()
         self.update()
 
     def _tinted(self, path: Optional[Path], size: int, colour: Optional[QColor]) -> QPixmap:
@@ -1495,15 +1515,20 @@ class _ChipPreviewCard(QFrame):
     def _draw_chip(self, painter: QPainter, rect: QRect, row: _InspectorRow, tokens) -> None:
         pressed = rect == self._pressed_chip
         # Under the cursor the chip lifts; under the finger it sinks.  Pressing
-        # wins, so the chip cannot appear to do both at once.
-        hovered = not pressed and rect == self._hovered_chip
+        # wins, so the chip cannot appear to do both at once - and the press
+        # stays instant: the answer to a click is the one thing that must never
+        # be scheduled.
+        level = 0.0 if pressed else self._hover_level.get(rect, 0.0)
         if pressed:
             # The chip has to answer the click itself; without this nothing
             # happens between the press and the panel starting to grow.
             inset = max(1, round(rect.width() * 0.015))
             rect = rect.adjusted(inset, inset, -inset, -inset)
-        elif hovered:
-            rect = rect.translated(0, -self._HOVER_LIFT)
+        # The lift is carried in floating point and drawn antialiased.  Rounded
+        # to whole pixels it is two visible steps, which IS the staircase this
+        # animation exists to remove.
+        lift = self._HOVER_LIFT * level
+        shape = QRectF(rect).translated(0.0, -lift)
         boss = row.kind == "boss"
         accent = "BOSS_GOLD" if boss else "ACCENT"
         icon_colour: Optional[QColor] = None
@@ -1524,18 +1549,26 @@ class _ChipPreviewCard(QFrame):
             fill = QColor(tokens["BG_INPUT"])
             border = QColor(tokens["BOSS_GOLD_DIM" if boss else "BORDER"])
             opacity = 0.38
-        if hovered:
-            token, opacity = self._hover_border(row, boss, opacity)
-            border = QColor(tokens[token])
+        if level > 0.0:
+            token, lit = self._hover_border(row, boss, opacity)
+            border = self._towards(border, QColor(tokens[token]), level)
+            opacity += (lit - opacity) * level
         painter.setBrush(fill)
         painter.setPen(QPen(border, 1.4))
-        painter.drawRoundedRect(QRectF(rect), self._RADIUS, self._RADIUS)
+        painter.drawRoundedRect(shape, self._RADIUS, self._RADIUS)
+        # Sized from the chip, never from the lifted shape: the tinted pixmap
+        # is cached by size, and a size that moved every frame would rebuild
+        # the glyph sixty times a second.
         icon = self._tinted(row.icon_path, round(rect.width() * self._ICON_SCALE), icon_colour)
         if not icon.isNull():
             painter.setOpacity(opacity)
+            # Whole pixels across, the lift alone fractional: at rest the glyph
+            # lands on the grid and stays crisp.
             painter.drawPixmap(
-                rect.left() + (rect.width() - icon.width()) // 2,
-                rect.top() + (rect.height() - icon.height()) // 2,
+                QPointF(
+                    rect.left() + (rect.width() - icon.width()) // 2,
+                    rect.top() + (rect.height() - icon.height()) // 2 - lift,
+                ),
                 icon,
             )
             painter.setOpacity(1.0)
@@ -1545,6 +1578,7 @@ class _ChipPreviewCard(QFrame):
         tokens = resolve_theme_tokens()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
         header = QRect(
             self._PAD, self._PAD - 2, self.width() - 2 * self._PAD, self._HEADER
@@ -1601,13 +1635,86 @@ class _ChipPreviewCard(QFrame):
                 return rect
         return None
 
+    @staticmethod
+    def _hover_ease(step: float) -> float:
+        """Quadratic ease-out - deliberately weaker than the dossier's quartic.
+
+        How hard a curve should bite depends on how far the thing travels.
+        Over the panel's hundreds of pixels the quartic reads as arriving; over
+        two pixels it spends nine tenths of the run inside the first fifth and
+        is a jump again, with extra steps.  This one answers the cursor at once
+        and still spends the run moving.  Never an ease-in: a hover that starts
+        slowly reads as the interface thinking it over.
+        """
+        return 1.0 - (1.0 - step) ** 2
+
+    @staticmethod
+    def _towards(rest: QColor, lit: QColor, level: float) -> QColor:
+        return QColor(
+            round(rest.red() + (lit.red() - rest.red()) * level),
+            round(rest.green() + (lit.green() - rest.green()) * level),
+            round(rest.blue() + (lit.blue() - rest.blue()) * level),
+        )
+
+    def _hover_band(self, rect: QRect) -> QRect:
+        """The chip, the air it rises through, and its own pen.
+
+        Repainting the card instead would cost the whole row - header, every
+        other chip - sixty times a second, for two pixels of movement.
+        """
+        return rect.adjusted(-2, -self._HOVER_LIFT - 2, 2, 2)
+
     def _set_hovered(self, rect: Optional[QRect]) -> None:
         if rect == self._hovered_chip:
             return
-        for stale in (self._hovered_chip, rect):
-            if stale is not None:
-                self.update(stale.adjusted(-1, -self._HOVER_LIFT - 1, 1, 1))
         self._hovered_chip = rect
+        # Aim from where every chip stands NOW rather than from rest: a cursor
+        # running along the row must not restart the chip it has just left, and
+        # returning to one caught halfway must not drop it first.
+        self._hover_from = dict(self._hover_level)
+        if rect is not None:
+            self._hover_from.setdefault(rect, 0.0)
+        self._hover_to = {key: (1.0 if key == rect else 0.0) for key in self._hover_from}
+        self._start_hover_run()
+
+    def _start_hover_run(self) -> None:
+        remaining = max(
+            (abs(self._hover_to[key] - start) for key, start in self._hover_from.items()),
+            default=0.0,
+        )
+        self._hover_run.stop()
+        if remaining <= 0.0:
+            self._settle_hover()
+            return
+        rising = any(target > 0.0 for target in self._hover_to.values())
+        span = self._HOVER_IN_MS if rising else self._HOVER_OUT_MS
+        # Priced by what is LEFT to cover, so an interrupted hover never drags:
+        # a chip caught halfway down comes back in half the time.
+        self._hover_run.setDuration(max(self._HOVER_MIN_MS, round(span * remaining)))
+        self._hover_run.start()
+
+    def _apply_hover_step(self, value) -> None:
+        step = self._hover_ease(float(value))
+        for key, start in self._hover_from.items():
+            end = self._hover_to.get(key, 0.0)
+            self._hover_level[key] = start + (end - start) * step
+            self.update(self._hover_band(key))
+
+    def _settle_hover(self) -> None:
+        for key, end in self._hover_to.items():
+            self._hover_level[key] = end
+            self.update(self._hover_band(key))
+        self._hover_level = {
+            key: level for key, level in self._hover_level.items() if level > 0.0
+        }
+        self._hover_from, self._hover_to = {}, {}
+
+    def _forget_hover(self) -> None:
+        """The chips are about to move or be replaced, and every level is keyed
+        by where its chip sits - there would be nothing left to land on."""
+        self._hover_run.stop()
+        self._hover_level, self._hover_from, self._hover_to = {}, {}, {}
+        self._hovered_chip = None
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
         if self._rows + self._boss_rows:
@@ -1638,6 +1745,10 @@ class _ChipPreviewCard(QFrame):
             self._pressed_chip = None
         self._set_hovered(None)
         super().leaveEvent(event)
+
+    def hideEvent(self, event) -> None:  # noqa: N802 - Qt override
+        self._forget_hover()
+        super().hideEvent(event)
 
 
 class _RewardOffersCard(QFrame):

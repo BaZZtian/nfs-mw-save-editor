@@ -1703,3 +1703,118 @@ def test_hovering_a_locked_chip_does_not_dress_it_as_available():
     boss_token, _ = _ChipPreviewCard._hover_border(row("done"), True, 1.0)
     assert open_token == "ACCENT_BRIGHT"
     assert boss_token == "BOSS_GOLD_BRIGHT"
+
+
+def _hover_chip(app, card, point) -> None:
+    where = QPointF(point)
+    app.sendEvent(card, QMouseEvent(QEvent.MouseMove, where, where,
+                                    Qt.NoButton, Qt.NoButton, Qt.NoModifier))
+
+
+def test_a_chip_rises_over_time_rather_than_snapping():
+    """Two pixels are still a movement, and a movement has a middle."""
+    app = _app()
+    rows, boss_rows = _chip_rows(5, boss=1)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip = card._chip_rects[0][0]
+
+    _hover_chip(app, card, chip.center())
+    run = card._hover_run
+    assert run.state() == QAbstractAnimation.Running
+    assert card._hover_level.get(chip, 0.0) == 0.0     # nothing has moved yet
+    assert run.duration() <= 200, "a hover is met too often to run this long"
+
+    run.setCurrentTime(run.duration() // 2)
+    midway = card._hover_level[chip]
+    assert 0.0 < midway < 1.0, "the chip jumped instead of travelling"
+    assert midway > 0.5, "an ease-in start would leave the cursor unanswered"
+
+    run.setCurrentTime(run.duration())
+    assert card._hover_level[chip] == 1.0
+    window.close()
+
+
+def test_leaving_a_chip_is_quicker_than_arriving_at_it():
+    """Feedback that outlives the cursor reads as lag."""
+    app = _app()
+    rows, boss_rows = _chip_rows(5)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip = card._chip_rects[0][0]
+
+    _hover_chip(app, card, chip.center())
+    arriving = card._hover_run.duration()
+    card._hover_run.setCurrentTime(arriving)
+
+    card.leaveEvent(QEvent(QEvent.Leave))
+    leaving = card._hover_run.duration()
+    assert 0 < leaving < arriving
+    card._hover_run.setCurrentTime(leaving)
+    assert card._hover_level.get(chip, 0.0) == 0.0
+    window.close()
+
+
+def test_a_cursor_crossing_the_row_never_drops_a_chip_first():
+    """The chip being left carries on from where it stands, and the two share
+    one clock: a crossing is a single movement, not one chip finishing before
+    the next may start."""
+    app = _app()
+    rows, boss_rows = _chip_rows(5)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    first, second = card._chip_rects[0][0], card._chip_rects[1][0]
+
+    _hover_chip(app, card, first.center())
+    card._hover_run.setCurrentTime(card._hover_run.duration() // 4)
+    caught = card._hover_level[first]
+    assert 0.0 < caught < 1.0
+
+    _hover_chip(app, card, second.center())
+    assert card._hover_level[first] == pytest.approx(caught), "it jumped first"
+
+    card._hover_run.setCurrentTime(card._hover_run.duration())
+    assert card._hover_level.get(first, 0.0) == 0.0
+    assert card._hover_level[second] == 1.0
+    window.close()
+
+
+def test_a_chip_caught_on_its_way_up_comes_back_sooner_than_a_risen_one():
+    """Runs are priced by the distance LEFT, so a hover barely begun is not
+    made to play out a full exit before the chip is back down."""
+    app = _app()
+    rows, boss_rows = _chip_rows(5)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip = card._chip_rects[0][0]
+    run = card._hover_run
+
+    _hover_chip(app, card, chip.center())
+    run.setCurrentTime(run.duration())              # all the way up
+    card.leaveEvent(QEvent(QEvent.Leave))
+    risen = run.duration()
+    run.setCurrentTime(risen)                       # and all the way back
+
+    _hover_chip(app, card, chip.center())
+    run.setCurrentTime(run.duration() // 3)         # caught on the way up
+    card.leaveEvent(QEvent(QEvent.Leave))
+    assert card._HOVER_MIN_MS <= run.duration() < risen
+    window.close()
+
+
+def test_the_lift_does_not_rebuild_the_glyph_on_every_frame():
+    """The pixmap is cached by size, so the size has to come from the chip and
+    not from the shape that is moving - otherwise two pixels of travel cost a
+    re-tint of every glyph sixty times a second."""
+    from ui.pages.career_mixin import _ChipPreviewCard
+
+    app = _app()
+    rows, boss_rows = _chip_rows(5)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+    chip = card._chip_rects[0][0]
+    card.grab()
+    cached = len(_ChipPreviewCard._pixmap_cache)
+
+    _hover_chip(app, card, chip.center())
+    run = card._hover_run
+    for step in range(1, 6):
+        run.setCurrentTime(run.duration() * step // 5)
+        card.grab()
+    assert len(_ChipPreviewCard._pixmap_cache) == cached
+    window.close()
