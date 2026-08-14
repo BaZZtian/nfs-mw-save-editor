@@ -1752,9 +1752,18 @@ class SaveFile:
         self._write_u16(record.abs_off + self.CAREER_VEHICLE_FLAGS_OFFSET, new_flags)
 
     def get_rap_sheet_totals(self) -> Optional[rap_sheet_totals.RapSheetTotals]:
-        """Shared Rap Sheet aggregates (live garage + sold-car history)."""
+        """Shared Rap Sheet aggregates (live garage + sold-car history).
 
-        return rap_sheet_totals.read_rap_sheet_totals(bytes(self.data))
+        None means unavailable: not a save, or a garage record failed the
+        fail-closed occupancy gate. Display surfaces show a gap; paths that
+        must refuse loudly call read_rap_sheet_totals directly and let its
+        ValueError carry the slot.
+        """
+
+        try:
+            return rap_sheet_totals.read_rap_sheet_totals(bytes(self.data))
+        except ValueError:
+            return None
 
     # --- integrity ---
 

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import struct
+from pathlib import Path
+
+import pytest
 
 from core import garage_records
 from core.rap_sheet_totals import RapSheetTotals, read_rap_sheet_totals
+from core.savefile import SaveFile
 
 
 def _blank_save() -> bytearray:
@@ -91,3 +95,40 @@ def test_non_save_buffer_returns_none() -> None:
 
     assert read_rap_sheet_totals(b"\x00" * 100) is None
     assert read_rap_sheet_totals(bytes(garage_records.EXPECTED_SAVE_SIZE - 1)) is None
+
+
+def test_live_handle_with_broken_padding_raises() -> None:
+    """Assert a live Handle with non-canonical padding refuses the whole
+    aggregate instead of silently under-counting it as an empty slot."""
+
+    data = _blank_save()
+    _write_live_record(data, 1, bounty=100_000, escaped=1, busted=0)
+    base = garage_records.GARAGE_RECORDS_OFFSET + 1 * garage_records.GARAGE_RECORD_SIZE
+    data[base + 1] = 0x00  # break the 0xCD pad byte
+
+    with pytest.raises(ValueError, match="pad-byte gate"):
+        read_rap_sheet_totals(bytes(data))
+
+
+def test_unexpected_handle_raises() -> None:
+    """Assert a Handle that is neither 0xFF nor the slot index refuses."""
+
+    data = _blank_save()
+    base = garage_records.GARAGE_RECORDS_OFFSET + 2 * garage_records.GARAGE_RECORD_SIZE
+    data[base] = 7
+
+    with pytest.raises(ValueError, match="unexpected handle 0x07"):
+        read_rap_sheet_totals(bytes(data))
+
+
+def test_savefile_wrapper_maps_fail_closed_to_none() -> None:
+    """Assert SaveFile.get_rap_sheet_totals turns the fail-closed ValueError
+    into None so display surfaces show a gap instead of crashing."""
+
+    data = _blank_save()
+    _write_live_record(data, 1, bounty=100_000, escaped=1, busted=0)
+    base = garage_records.GARAGE_RECORDS_OFFSET + 1 * garage_records.GARAGE_RECORD_SIZE
+    data[base + 1] = 0x00
+
+    sf = SaveFile(path=Path("SYNTH"), data=data)
+    assert sf.get_rap_sheet_totals() is None

@@ -7,7 +7,7 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from core import career_progress, career_transplant
+from core import career_progress, career_transplant, garage_records
 from core.race_chapters import RACE_OFFERING, resolve_offering
 from core.race_names import RACE_EVENT_IDS, resolve_event_id
 
@@ -50,6 +50,11 @@ def _progress_buffer(
         career_transplant.GAME_MAGIC_OFFSET:
         career_transplant.GAME_MAGIC_OFFSET + len(career_transplant.GAME_MAGIC)
     ] = career_transplant.GAME_MAGIC
+    # Zero-filled garage records are neither empty nor live; the rap-sheet
+    # reader fails closed on them, so stamp every slot empty.
+    for k in range(garage_records.GARAGE_RECORD_COUNT):
+        data[garage_records.GARAGE_RECORDS_OFFSET
+             + k * garage_records.GARAGE_RECORD_SIZE] = garage_records.GARAGE_EMPTY_HANDLE
     struct.pack_into("<IIII", data, career_progress.HEADER_TIMER_COUNT_OFFSET,
                      num_timers, num_types, len(milestones), len(speedtraps))
 

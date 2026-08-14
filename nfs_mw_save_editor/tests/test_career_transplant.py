@@ -35,12 +35,18 @@ class _FakeSave:
 
 
 def _zero_bounty_fields(data: bytearray) -> None:
-    """Zero garage bounties + sold history so fixtures imply no compensation."""
+    """Zero garage bounties + sold history so fixtures imply no compensation.
+
+    Also marks every garage record empty: the fixture fill byte is not a
+    valid Handle, and the rap-sheet reader fails closed on unexplained
+    records instead of skipping them.
+    """
 
     for k in range(garage_records.GARAGE_RECORD_COUNT):
-        off = (garage_records.GARAGE_RECORDS_OFFSET
-               + k * garage_records.GARAGE_RECORD_SIZE
-               + garage_records.GARAGE_RECORD_BOUNTY_REL)
+        base = (garage_records.GARAGE_RECORDS_OFFSET
+                + k * garage_records.GARAGE_RECORD_SIZE)
+        data[base] = garage_records.GARAGE_EMPTY_HANDLE
+        off = base + garage_records.GARAGE_RECORD_BOUNTY_REL
         data[off:off + 4] = b"\x00" * 4
     data[career_transplant.SOLD_HISTORY_BOUNTY_OFFSET:
          career_transplant.SOLD_HISTORY_BOUNTY_OFFSET + 4] = b"\x00" * 4
@@ -318,6 +324,30 @@ def _fill_garage_record(data: bytearray, index: int, bounty: int) -> None:
     data[base + 1] = 0xCD
     data[base + 0x0A:base + 0x0C] = b"\xCD\xCD"
     _set_u32(data, base + garage_records.GARAGE_RECORD_BOUNTY_REL, bounty)
+
+
+def test_unreadable_user_garage_refuses_plan() -> None:
+    """Assert an unexplained garage record refuses the whole plan instead of
+    feeding normalize an under-counted total."""
+
+    user = _valid_user_buffer()
+    _fill_garage_record(user, 0, 100_000)
+    base = garage_records.GARAGE_RECORDS_OFFSET
+    user[base + 1] = 0x00  # live Handle, broken 0xCD pad byte
+
+    donor = _valid_donor_buffer()
+    save = _FakeSave(user)
+    before = bytes(save.data)
+
+    plan = career_transplant.plan_career_transplant(save, donor)
+    assert plan.refusal_reason is not None
+    assert "User garage records are unreadable" in plan.refusal_reason
+    assert "pad-byte gate" in plan.refusal_reason
+    assert (plan.user_total_bounty, plan.donor_total_bounty) == (0, 0)
+
+    with pytest.raises(ValueError):
+        career_transplant.apply_career_transplant(save, donor)
+    assert bytes(save.data) == before
 
 
 def test_bounty_compensation_computed_and_applied() -> None:

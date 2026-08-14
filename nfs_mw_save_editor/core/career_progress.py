@@ -440,7 +440,11 @@ def build_career_progress(data: bytes) -> Optional[CareerProgressSummary]:
     races = parse_races(data)
     milestones = parse_milestones(data)
     speedtraps = parse_speedtraps(data)
-    rap_totals = read_rap_sheet_totals(data)
+    try:
+        rap_totals = read_rap_sheet_totals(data)
+    except ValueError:
+        # Unexplained garage record: the whole summary fails closed below.
+        rap_totals = None
     bounty = rap_totals.total_bounty if rap_totals is not None else None
     endgame = is_endgame(data)
     if (

@@ -21,6 +21,7 @@ from core.garage_records import (
     GARAGE_RECORD_SIZE,
     GARAGE_RECORDS_OFFSET,
     SOLD_HISTORY_BOUNTY_OFFSET,
+    is_empty_garage_record,
     is_live_garage_record,
 )
 from core.models import CareerTransplantPlan, OwnedCarRecord
@@ -118,14 +119,22 @@ def count_completed_races(data: bytes) -> Optional[int]:
 
 
 def _live_car_bounties(data: bytes) -> Tuple[Tuple[int, int], ...]:
-    """(slot_index, bounty) for every live garage record."""
+    """(slot_index, bounty) for every live garage record.
+
+    Raises ValueError on a record that is neither empty nor canonically
+    live — normalize must never scale a partial car list.
+    """
 
     out = []
     for k in range(GARAGE_RECORD_COUNT):
         base = GARAGE_RECORDS_OFFSET + k * GARAGE_RECORD_SIZE
         raw = bytes(data[base:base + GARAGE_RECORD_SIZE])
-        if not is_live_garage_record(raw, k):
+        if is_empty_garage_record(raw):
             continue
+        if not is_live_garage_record(raw, k):
+            raise ValueError(
+                f"Garage record {k} is neither empty nor canonically live"
+            )
         out.append((k, int.from_bytes(
             raw[GARAGE_RECORD_BOUNTY_REL:GARAGE_RECORD_BOUNTY_REL + 4], "little"
         )))
@@ -143,11 +152,19 @@ def _bounty_plan_numbers(
     live bounty is scaled proportionally (floored) and the sold history
     carries the rounding remainder; otherwise cars stay untouched and sold
     history is the difference. All zeros/empty when either buffer is not a
-    save.
+    save. Raises ValueError, labeled with the offending side, when either
+    garage table holds an unexplained record (fail closed — a partial
+    aggregate would feed normalize under-counted numbers).
     """
 
-    user_totals = read_rap_sheet_totals(user_data)
-    donor_totals = read_rap_sheet_totals(donor_data)
+    try:
+        user_totals = read_rap_sheet_totals(user_data)
+    except ValueError as exc:
+        raise ValueError(f"User garage records are unreadable: {exc}") from exc
+    try:
+        donor_totals = read_rap_sheet_totals(donor_data)
+    except ValueError as exc:
+        raise ValueError(f"Donor garage records are unreadable: {exc}") from exc
     if user_totals is None or donor_totals is None:
         return (0, 0, 0, 0, 0, ())
     target = donor_totals.total_bounty
@@ -184,6 +201,8 @@ def plan_career_transplant(
     3. donor game-section magic missing -> ``REFUSAL_DONOR_GAME_MAGIC_MISSING``.
     4. donor game-section MD5 invalid -> ``REFUSAL_DONOR_GAME_MD5_INVALID``.
     5. user game-section magic missing -> ``REFUSAL_USER_GAME_MAGIC_MISSING``.
+    6. unexplained garage record on either side -> dynamic reason naming the
+       side and slot (the rap-sheet reader's fail-closed ValueError).
 
     Non-fatal warnings are evaluated only after the refusal ladder: donor
     CurrentBin outside ``DONOR_STAGE_MIN_BIN..DONOR_STAGE_MAX_BIN`` and user
@@ -221,10 +240,17 @@ def plan_career_transplant(
             warnings.append(WARNING_USER_ACTIVE_CAREER_POINTER_INVALID)
 
     compensation, user_total, user_live, donor_total, normalized_sold, scaled_cars = (
-        _bounty_plan_numbers(bytes(save.data), donor_data)
-        if refusal_reason is None
-        else (0, 0, 0, 0, 0, ())
+        0, 0, 0, 0, 0, (),
     )
+    if refusal_reason is None:
+        try:
+            compensation, user_total, user_live, donor_total, normalized_sold, scaled_cars = (
+                _bounty_plan_numbers(bytes(save.data), donor_data)
+            )
+        except ValueError as exc:
+            # Unexplained garage record on either side: refuse the whole
+            # plan rather than hand normalize under-counted totals.
+            refusal_reason = str(exc)
     return CareerTransplantPlan(
         refusal_reason=refusal_reason,
         warnings=tuple(warnings),

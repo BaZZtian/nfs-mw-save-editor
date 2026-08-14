@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from core import career_progress, career_transplant
+from core import career_progress, career_transplant, garage_records
 from ui.icon_map import game_icon_path, nav_icon_path, rival_asset_path
 from ui.main_window import MainWindow
 from ui.pages import career_mixin as career_module
@@ -61,6 +61,11 @@ def _synthetic_career(stage: int = 15, *, endgame: bool = False) -> bytearray:
         career_transplant.GAME_MAGIC_OFFSET:
         career_transplant.GAME_MAGIC_OFFSET + len(career_transplant.GAME_MAGIC)
     ] = career_transplant.GAME_MAGIC
+    # Zero-filled garage records are neither empty nor live; the rap-sheet
+    # reader fails closed on them, so stamp every slot empty.
+    for k in range(garage_records.GARAGE_RECORD_COUNT):
+        data[garage_records.GARAGE_RECORDS_OFFSET
+             + k * garage_records.GARAGE_RECORD_SIZE] = garage_records.GARAGE_EMPTY_HANDLE
     struct.pack_into(
         "<IIII",
         data,

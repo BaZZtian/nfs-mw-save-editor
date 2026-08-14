@@ -20,6 +20,7 @@ from core.garage_records import (
     SOLD_HISTORY_BOUNTY_OFFSET,
     SOLD_HISTORY_BUSTED_OFFSET,
     SOLD_HISTORY_EVADED_OFFSET,
+    is_empty_garage_record,
     is_live_garage_record,
 )
 
@@ -53,6 +54,9 @@ def read_rap_sheet_totals(data: bytes) -> Optional[RapSheetTotals]:
 
     Returns None when the buffer is not a save. Empty garage slots (stale
     payloads included) are skipped via the shared Handle-based occupancy rule.
+    A record that is neither empty nor canonically live raises ValueError —
+    same fail-closed rule as SaveFile.get_pursuit_records; an aggregate over
+    unexplained records would silently under-count.
     """
 
     if len(data) != EXPECTED_SAVE_SIZE:
@@ -61,8 +65,16 @@ def read_rap_sheet_totals(data: bytes) -> Optional[RapSheetTotals]:
     for k in range(GARAGE_RECORD_COUNT):
         base = GARAGE_RECORDS_OFFSET + k * GARAGE_RECORD_SIZE
         raw = bytes(data[base:base + GARAGE_RECORD_SIZE])
-        if not is_live_garage_record(raw, k):
+        if is_empty_garage_record(raw):
             continue
+        if not is_live_garage_record(raw, k):
+            if raw[0] != k:
+                raise ValueError(
+                    f"Garage record {k} has unexpected handle 0x{raw[0]:02X}"
+                )
+            raise ValueError(
+                f"Garage record {k} fails the canonical pad-byte gate"
+            )
         live_bounty += int.from_bytes(
             raw[GARAGE_RECORD_BOUNTY_REL:GARAGE_RECORD_BOUNTY_REL + 4], "little"
         )
