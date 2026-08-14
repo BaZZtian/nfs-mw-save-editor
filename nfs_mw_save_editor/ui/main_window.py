@@ -1626,10 +1626,20 @@ class MainWindow(
         if disk == bytes(self.savefile.data):
             ToastNotification.show_toast(self, "Memory already matches the file")
             return
+        # on_open() below resets staged wants too, so the dialog must name
+        # BOTH classes of pending work when both exist — a "reload" that
+        # silently eats staged edits from other pages is data loss.
+        if self._has_pending_changes():
+            question = (
+                "Discard applied-but-unsaved changes AND staged (not yet "
+                "applied) edits on other pages, then reload the file from disk?"
+            )
+        else:
+            question = "Discard applied-but-unsaved changes and reload the file from disk?"
         answer = QMessageBox.question(
             self,
             "Reload from disk",
-            "Discard applied-but-unsaved changes and reload the file from disk?",
+            question,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
