@@ -27,6 +27,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from api import PROTOCOL_VERSION
+from api.service import EditorService
 from core.savefile import SaveFile
 
 MONEY_PLANTED = 123_456
@@ -264,3 +265,71 @@ def test_shutdown_exits_cleanly(server):
     result = server.result("shutdown")
     assert result == {"ok": True}
     assert server.proc.wait(timeout=5) == 0
+
+
+def test_same_second_resave_reports_overwritten_backup(synthetic_save_path, monkeypatch):
+    """Backup names are second-precision, so a same-second resave OVERWRITES
+    the previous backup file. The service must report that backup, not fail
+    with IO_ERROR because no new name appeared. In-process on purpose: the
+    frozen backup path IS the same-second collision, deterministically."""
+    fixed = synthetic_save_path.parent / (synthetic_save_path.name + ".bak_frozen")
+    monkeypatch.setattr(SaveFile, "backup_path", lambda self: fixed)
+
+    service = EditorService()
+    service.open_save(str(synthetic_save_path))
+    first = service.save_with_backup()
+    assert Path(first.backup_path) == fixed
+    second = service.save_with_backup()
+    assert Path(second.backup_path) == fixed
+
+
+def test_notification_is_processed_but_never_answered(server, synthetic_save_path):
+    """JSON-RPC 2.0: a request without "id" is a notification — the server
+    acts on it and MUST NOT reply. The next reply line must answer the next
+    real request (the client below asserts on the response id)."""
+    notification = {
+        "jsonrpc": "2.0",
+        "method": "openSave",
+        "params": {"path": str(synthetic_save_path)},
+    }
+    server.proc.stdin.write(json.dumps(notification) + "\n")
+    server.proc.stdin.flush()
+
+    state = server.result("getState")
+    assert state["opened"] is True  # the notification really was processed
+
+
+def test_invalid_request_shape_is_rejected(server):
+    """Missing "jsonrpc": "2.0" -> -32600 with the id echoed; a non-object
+    request -> -32600 with id null; the loop survives both."""
+    server.proc.stdin.write(json.dumps({"id": 7, "method": "getState"}) + "\n")
+    server.proc.stdin.flush()
+    response = json.loads(server.proc.stdout.readline())
+    assert response["id"] == 7
+    assert response["error"]["code"] == -32600
+
+    server.proc.stdin.write(json.dumps(["getState"]) + "\n")
+    server.proc.stdin.flush()
+    response = json.loads(server.proc.stdout.readline())
+    assert response["id"] is None
+    assert response["error"]["code"] == -32600
+
+    state = server.result("getState")
+    assert state["opened"] is False
+
+
+def test_string_numbers_are_rejected_by_the_strict_contract(server, synthetic_save_path):
+    """The wire contract does not coerce: "123" is not a money value and
+    "0" is not a slot index. JSON ints remain valid floats (a TS `number`
+    serializes 4.0 as 4)."""
+    server.result("openSave", {"path": str(synthetic_save_path)})
+
+    error = server.error("setMoney", {"value": "123"})
+    assert error["code"] == -32602
+    assert error["data"]["errorCode"] == "INVALID_VALUE"
+
+    error = server.error("setSlotHeat", {"slotIndex": "0", "value": 2.5})
+    assert error["data"]["errorCode"] == "INVALID_VALUE"
+
+    staged = server.result("setSlotHeat", {"slotIndex": 0, "value": 4})["staged"]
+    assert staged["entries"][0]["want"] == 4.0

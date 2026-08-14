@@ -25,12 +25,15 @@ def _to_camel(name: str) -> str:
 
 
 class ApiModel(BaseModel):
-    """Base model with camelCase aliases and unknown-field rejection."""
+    """Base model with camelCase aliases, unknown-field rejection, and
+    strict (no-coercion) validation: `"123"` is not a money value. Ints
+    remain valid floats — JSON has one number type."""
 
     model_config = ConfigDict(
         alias_generator=_to_camel,
         populate_by_name=True,
         extra="forbid",
+        strict=True,
     )
 
 

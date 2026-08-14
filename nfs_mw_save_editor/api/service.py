@@ -243,26 +243,29 @@ class EditorService:
         Disk failures surface as IO_ERROR; the in-memory state stays
         intact so the user can retry.
 
-        The backup path is detected from the directory before and after the
-        core save call because the core API returns only the saved path.
+        The backup path is detected from the directory after the core save
+        call because the core API returns only the saved path. Backup names
+        are second-precision timestamps, so a same-second resave OVERWRITES
+        the previous backup instead of adding a file — "newer than before"
+        is not a usable signal. save(make_backup=True) either writes its
+        backup or raises, so after a successful save the newest match IS
+        the backup it wrote.
         """
         sf = self._require_open()
         self.apply_staged()
 
         parent = sf.path.parent
-        suffix = sf.path.suffix + ".bak_"
         try:
-            before = {p.name for p in parent.glob(sf.path.name + ".bak_*")}
             saved = sf.save(make_backup=True)
-            after = [p for p in parent.glob(sf.path.name + ".bak_*") if p.name not in before]
+            candidates = list(parent.glob(sf.path.name + ".bak_*"))
         except OSError as exc:
             raise ApiError(ApiErrorCode.IO_ERROR, str(exc)) from exc
-        if not after:
+        if not candidates:
             raise ApiError(
                 ApiErrorCode.IO_ERROR,
-                f"save reported success but no new backup appeared next to {sf.path}",
+                f"save reported success but no backup exists next to {sf.path}",
             )
-        backup = max(after, key=lambda p: p.name)
+        backup = max(candidates, key=lambda p: (p.stat().st_mtime_ns, p.name))
         return SaveResult(
             saved_path=str(saved),
             backup_path=str(backup),

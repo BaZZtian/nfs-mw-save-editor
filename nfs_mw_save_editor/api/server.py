@@ -105,26 +105,46 @@ def serve(stdin=None, stdout=None) -> int:
         line = line.strip()
         if not line:
             continue
-        response: Dict[str, Any] = {"jsonrpc": "2.0", "id": None}
         try:
             message = json.loads(line)
         except json.JSONDecodeError:
-            response["error"] = {"code": -32700, "message": "parse error"}
-            _write(stdout, response)
+            _write(stdout, {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": "parse error"},
+            })
             continue
 
-        response["id"] = message.get("id") if isinstance(message, dict) else None
-        method = message.get("method") if isinstance(message, dict) else None
-        params = message.get("params") if isinstance(message, dict) else None
+        # JSON-RPC 2.0 shape gate: an invalid Request object is answered
+        # with -32600 (id echoed when one was readable, else null).
+        if (
+            not isinstance(message, dict)
+            or message.get("jsonrpc") != "2.0"
+            or not isinstance(message.get("method"), str)
+        ):
+            _write(stdout, {
+                "jsonrpc": "2.0",
+                "id": message.get("id") if isinstance(message, dict) else None,
+                "error": {"code": -32600, "message": "invalid request"},
+            })
+            continue
+
+        # A request without "id" is a notification: process it, respond
+        # never — not even with an error (per spec).
+        is_notification = "id" not in message
+        response: Dict[str, Any] = {"jsonrpc": "2.0", "id": message.get("id")}
+        method = message["method"]
+        params = message.get("params")
 
         if method == "shutdown":
-            response["result"] = {"ok": True}
-            _write(stdout, response)
+            if not is_notification:
+                response["result"] = {"ok": True}
+                _write(stdout, response)
             logger.info("shutdown requested, exiting")
             return 0
 
         try:
-            response["result"] = dispatch(service, str(method), params)
+            response["result"] = dispatch(service, method, params)
         except KeyError:
             response["error"] = {
                 "code": -32601,
@@ -149,7 +169,8 @@ def serve(stdin=None, stdout=None) -> int:
                 "message": f"{type(exc).__name__}: {exc}",
                 "data": {"errorCode": ApiErrorCode.INTERNAL.value},
             }
-        _write(stdout, response)
+        if not is_notification:
+            _write(stdout, response)
 
     logger.info("stdin closed, exiting")
     return 0
