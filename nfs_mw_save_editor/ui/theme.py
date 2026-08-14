@@ -528,6 +528,13 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
     return tokens
 
 
+# Tokens are pure functions of the preset, and the paintEvents that ask for
+# them now run at animation rate: rebuilding the dict's dozens of colour
+# mixes per frame is pure waste.  Cached per theme name; a copy is handed
+# out so no caller can quietly edit the shared dict.
+_TOKEN_CACHE: dict[str, dict[str, str]] = {}
+
+
 def resolve_theme_tokens(theme_name: str | None = None) -> dict[str, str]:
     resolved_name = theme_name
     if resolved_name is None:
@@ -541,8 +548,11 @@ def resolve_theme_tokens(theme_name: str | None = None) -> dict[str, str]:
             app_theme = app.property("themeName")
             if isinstance(app_theme, str) and app_theme:
                 resolved_name = app_theme
-    preset = get_theme_preset(resolved_name or load_saved_theme_name())
-    return _build_style_tokens(preset)
+    name = resolved_name or load_saved_theme_name()
+    cached = _TOKEN_CACHE.get(name)
+    if cached is None:
+        cached = _TOKEN_CACHE[name] = _build_style_tokens(get_theme_preset(name))
+    return dict(cached)
 
 
 def _apply_theme_palette(app, tokens: dict[str, str]) -> None:
