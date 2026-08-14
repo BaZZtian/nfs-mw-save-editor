@@ -873,8 +873,11 @@ class MainWindow(
             "Settings": self.page_settings,
             "About": self.page_about,
         }
-        # A dossier left open would hang over whatever page comes next.
-        self.close_career_detail()
+        # A dossier left open would hang over whatever page comes next - and
+        # closing it back into its chip would paint a frozen picture of THIS
+        # page over the incoming one for the length of the run.  It dissolves
+        # instead, in step with the page transition showing through it.
+        self.dismiss_career_detail()
         overlay = self._start_page_transition_overlay()
         self.stack.setCurrentWidget(mapping[name])
         self._ensure_page_theme(name)
@@ -1414,6 +1417,9 @@ class MainWindow(
         self.lbl_limits.setText(f"Limits: Default {default_cap}, Unlocked {unlocked_cap}")
         self._mark_all_heavy_pages_dirty()
         self._refresh_profile_inputs()
+        # An open dossier carries rows copied from the save it was opened
+        # over; refreshed cards beneath it would not reach it.
+        self.dismiss_career_detail()
         self._refresh_career_page()
         current_page = self._current_stack_page_name()
         if current_page == "Garage":

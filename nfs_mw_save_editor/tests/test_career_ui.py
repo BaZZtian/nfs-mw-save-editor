@@ -1481,6 +1481,8 @@ def _land_animation(overlay):
     """Run the overlay's animation to its end without waiting on the clock."""
     animation = overlay._animation
     animation.setCurrentTime(animation.duration())
+    if overlay._farewell is not None:
+        overlay._vanish.setCurrentTime(overlay._vanish.duration())
     QApplication.instance().processEvents()
 
 
@@ -1563,7 +1565,10 @@ def test_a_long_chapter_scrolls_inside_the_panel_instead_of_overflowing():
     window.close()
 
 
-def test_leaving_the_career_page_closes_the_dossier():
+def test_leaving_the_career_page_dissolves_the_dossier():
+    """The dossier has nowhere to close INTO once the page is replaced: it
+    must dissolve - not hard-cut, and not animate a frozen picture of the
+    old page over the incoming one."""
     app = _app()
     rows, boss_rows = _chip_rows(5)
     window, card = _career_window_with_chips(app, rows, boss_rows)
@@ -1576,8 +1581,37 @@ def test_leaving_the_career_page_closes_the_dossier():
 
     window._select_page("Profile")
     app.processEvents()
+    # Mid-dissolve: still on screen, fading as one picture - the geometry
+    # run is NOT what carries it out.
+    assert overlay.isVisible()
+    assert overlay._farewell is not None
+    assert overlay._animation.state() != QAbstractAnimation.Running
     _land_animation(overlay)
     assert not overlay.isVisible()
+    window.close()
+
+
+def test_the_pages_picture_is_retaken_after_the_layout_settles():
+    """A resize re-grabs the page beneath while its layouts still stand at
+    the old size, which left old content and bare background in the picture.
+    Once everything has settled the picture must match the real page."""
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+
+    window.resize(1500, 940)
+    app.processEvents()          # layouts settle...
+    QTest.qWait(150)             # ...and the debounced regrab fires
+    host = overlay.parentWidget()
+    overlay.setVisible(False)
+    settled = host.grab(overlay.geometry()).toImage()
+    overlay.setVisible(True)
+    assert overlay._backdrop.toImage() == settled
     window.close()
 
 

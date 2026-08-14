@@ -1497,6 +1497,11 @@ class _PressableSection(QFrame):
             return
         distance = abs(target - self._card_mark)
         if distance <= 0.0:
+            # Already there - but a run may still be in flight toward
+            # somewhere else (enter, then leave before its first tick), and
+            # left running it would park the edge lit under no cursor.
+            self._mark_run.stop()
+            self._mark_to = target
             return
         self._mark_from, self._mark_to = self._card_mark, target
         self._mark_run.stop()
@@ -1571,6 +1576,15 @@ class _PressableSection(QFrame):
         self._recoil_level = 1.0
         if landed is not None:
             self.update(landed.adjusted(-4, -4, 4, 4))
+
+    def landing_key(self, origin: QRect):
+        """What ``origin`` stood for at press time, by identity rather than by
+        rect: a rect goes stale the moment a resize reflows the card."""
+        return None
+
+    def landing_rect(self, key) -> QRect:
+        """Where that thing stands NOW; the whole card when it is gone."""
+        return self.rect()
 
     def _promise_a_click(self) -> None:
         """Nothing to open means nothing to promise: a hand standing over a
@@ -1764,6 +1778,18 @@ class _ChipPreviewCard(_PressableSection):
                     icon_opacity=opacity,
                 )
         return None
+
+    def landing_key(self, origin: QRect):
+        for rect, row in self._chip_rects:
+            if rect == origin:
+                return row
+        return None
+
+    def landing_rect(self, key) -> QRect:
+        for rect, row in self._chip_rects:
+            if row is key:
+                return QRect(rect)
+        return self.rect()
 
     @staticmethod
     def _hover_border(row: _InspectorRow, boss: bool, opacity: float) -> tuple[str, float]:
@@ -1962,11 +1988,14 @@ class _ChipPreviewCard(_PressableSection):
         """The chips are about to move or be replaced, and every level is keyed
         by where its chip sits - there would be nothing left to land on.  The
         card's own mark goes with them: it belongs to a press on a card that is
-        no longer the one in front of anybody."""
+        no longer the one in front of anybody.  Except the HELD edge: that one
+        belongs to the dossier standing open above, and it is released by the
+        dossier closing, not by the chips reflowing beneath it."""
         self._hover_run.stop()
         self._hover_level, self._hover_from, self._hover_to = {}, {}, {}
         self._hovered_chip = None
-        self._forget_card_edge()
+        if not self._card_held:
+            self._forget_card_edge()
 
     def mouseMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
         if self._rows + self._boss_rows:
@@ -1993,7 +2022,15 @@ class _ChipPreviewCard(_PressableSection):
         pressed, self._pressed_chip = self._pressed_chip, None
         if pressed is not None:
             self.update(pressed)
-        if event.button() == Qt.LeftButton and self._rows + self._boss_rows:
+        # Only a press that SURVIVED may open anything: dragging off the card
+        # takes the press back (leaveEvent), yet Qt's implicit grab still
+        # delivers the release here - and a click the card just visibly
+        # cancelled must not open a dossier from nowhere.
+        if (
+            event.button() == Qt.LeftButton
+            and self._rows + self._boss_rows
+            and (pressed is not None or self._pressed_card)
+        ):
             origin = self._chip_at(event.position().toPoint()) or self.rect()
             # The edge deliberately does NOT go out here.  The panel grows from
             # exactly this outline, and cutting the outline at the moment of
@@ -2118,6 +2155,17 @@ class _RewardOffersCard(_PressableSection):
                     icon_px=self._icon_size(),
                 )
         return None
+
+    def landing_key(self, origin: QRect):
+        for index, (cell, _marker) in enumerate(self._cells):
+            if self._token_rect(cell) == origin:
+                return index
+        return None
+
+    def landing_rect(self, key) -> QRect:
+        if key is not None and 0 <= key < len(self._cells):
+            return self._token_rect(self._cells[key][0])
+        return self.rect()
 
     def dossier(self) -> Tuple[str, str, Tuple, Tuple]:
         """The six offers, each with what it actually buys.
@@ -2294,7 +2342,9 @@ class _RewardOffersCard(_PressableSection):
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt override
-        if event.button() == Qt.LeftButton and self._markers:
+        # Same rule as the chip card: a press taken back by leaveEvent must
+        # not open anything, however Qt's implicit grab routes the release.
+        if event.button() == Qt.LeftButton and self._markers and self._pressed_card:
             index = self._cell_at(event.position().toPoint())
             origin = (
                 self._token_rect(self._cells[index][0])
@@ -2615,6 +2665,12 @@ class _ArrivingContent(QGraphicsEffect):
     def draw(self, painter: QPainter) -> None:  # noqa: N802 - Qt override
         if self._opacity <= 0.0:
             return
+        if self._opacity >= 1.0 and self._scale >= 1.0:
+            # At rest the effect has nothing to add, and the pixmap
+            # round-trip below is not free: without this the open list pays
+            # it on every scroll frame, forever.
+            self.drawSource(painter)
+            return
         # PySide hands back the pixmap alone, so the corner it belongs at is
         # read from the source's own bounds rather than from an out-parameter.
         where = self.sourceBoundingRect(Qt.LogicalCoordinates).topLeft()
@@ -2648,6 +2704,10 @@ class _DetailOverlay(QWidget):
     _OPEN_MS = 300          # the ceiling for interface motion; past it a panel
     _CLOSE_MS = 250         # reads as slow however good the curve is
     _MIN_MS = 120           # a reversal still needs long enough to be seen
+    # The send-off when the page beneath is being replaced: the dossier has
+    # nowhere to close INTO any more, so it dissolves - in step with the page
+    # transition, which must stay visible through it.
+    _VANISH_MS = 120
     # One axis is home this far into the run; the other keeps going.
     _AXIS_LEAD = 0.55
     # How tightly the spring is wound.  Higher arrives sooner and then creeps;
@@ -2699,6 +2759,22 @@ class _DetailOverlay(QWidget):
         self._animation = PacedAnimation(self)
         self._animation.valueChanged.connect(self._apply_progress)
         self._animation.finished.connect(self._on_finished)
+        self._vanish = PacedAnimation(self)
+        self._vanish.setDuration(self._VANISH_MS)
+        self._vanish.valueChanged.connect(self._apply_vanish)
+        self._vanish.finished.connect(self._on_vanished)
+        self._farewell: Optional[QPixmap] = None    # the scene, while it fades
+        self._dissolve = 1.0
+        # A resize re-grabs the page BEFORE its layouts have settled to the
+        # new size, so the picture shows old geometry and bare background.
+        # Retaken one breath after the LAST geometry change: a resize's
+        # layout cascade can span several event-loop passes (a zero-timer
+        # proved to fire mid-cascade), and during an interactive drag this
+        # also means one fresh render instead of one per tick.
+        self._regrab = QTimer(self)
+        self._regrab.setSingleShot(True)
+        self._regrab.setInterval(60)
+        self._regrab.timeout.connect(self._refresh_the_picture)
         self._origin = QRect()
         self._backdrop = QPixmap()
         self._face: Optional[_OriginFace] = None
@@ -2712,6 +2788,9 @@ class _DetailOverlay(QWidget):
         self._scrim_from = 0    # and what it was when the current run began
         self._opening = False
         self._closing = False
+        # Asks the page where the panel should close into NOW - the rect
+        # captured at open time goes stale when a resize reflows the cards.
+        self._rehome = None
 
     def _ease(self, t: float) -> float:
         """A spring rather than a curve, for what happens at the two ends.
@@ -2852,11 +2931,20 @@ class _DetailOverlay(QWidget):
         if host is None or self.size().isEmpty():
             return
         was_visible = self.isVisible()
+        had_focus = self.hasFocus()
         self.setVisible(False)
         self._backdrop = host.grab(self.geometry())
         self.setVisible(was_visible)
+        if had_focus and was_visible:
+            # Hiding the focus widget hands focus to whatever stands beneath,
+            # and Qt never gives it back: Esc would land on a covered button.
+            self.setFocus(Qt.OtherFocusReason)
+        # Compared in device-independent pixels: grab() returns a pixmap
+        # scaled by the devicePixelRatio, and against size() in logical
+        # pixels the opaque flag would never engage on a HiDPI screen.
         self.setAttribute(
-            Qt.WA_OpaquePaintEvent, self._backdrop.size() == self.size()
+            Qt.WA_OpaquePaintEvent,
+            self._backdrop.deviceIndependentSize().toSize() == self.size(),
         )
 
     def _measure(self, width: int) -> QRect:
@@ -2888,7 +2976,15 @@ class _DetailOverlay(QWidget):
         self.listing.set_items(subtitle, rows, boss_rows)
         self._face = face
         self.raise_()
-        if not self.isVisible():
+        if self._farewell is not None:
+            # Caught mid-dissolve: the send-off is cancelled, and the page
+            # may have changed under it, so the picture is retaken.
+            self._vanish.stop()
+            self._farewell = None
+            self._dissolve = 1.0
+            self.scroll.setVisible(True)
+            self._take_the_pages_picture()
+        elif not self.isVisible():
             self._take_the_pages_picture()
         self.setVisible(True)
         self._target = self._measure(self._MAX_WIDTH)
@@ -2898,9 +2994,56 @@ class _DetailOverlay(QWidget):
         self.setFocus(Qt.OtherFocusReason)
 
     def close_overlay(self) -> None:
-        if not self.isVisible() or self._closing:
+        if not self.isVisible() or self._closing or self._farewell is not None:
             return
+        if self._rehome is not None:
+            home = self._rehome()
+            if home is not None and home.isValid():
+                self._origin = QRect(home)
         self._start_run(self.scroll.geometry(), self._origin)
+
+    def dismiss(self) -> None:
+        """Dissolve the overlay: for when the page beneath is being replaced.
+
+        Closing back into the chip would paint a frozen picture of the OLD
+        page over the incoming one for the length of the run; a hard cut is
+        a blink.  So the whole scene is taken as one picture and fades out
+        over the page transition, which stays visible through it.
+        """
+        if not self.isVisible() or self._farewell is not None:
+            return
+        self._animation.stop()
+        self._farewell = self.grab()
+        # The list is IN the picture now; left showing it would paint solid
+        # over its own fade.
+        self.scroll.setVisible(False)
+        # Translucent for the send-off - the incoming page must show through.
+        self.setAttribute(Qt.WA_OpaquePaintEvent, False)
+        self._vanish.start()
+        self.update()
+
+    def _apply_vanish(self, value) -> None:
+        self._dissolve = 1.0 - float(value)
+        self.update()
+
+    def _on_vanished(self) -> None:
+        self._farewell = None
+        self._dissolve = 1.0
+        self.scroll.setVisible(True)
+        self._opening = False
+        self._closing = True
+        # Back to rest, so the next opening fades its content in from
+        # nothing instead of inheriting this one's fully-lit list.
+        self._fade.arrive(0.0, 1.0)
+        self._scrim_alpha = 0
+        self._openness = 0.0
+        self._step = 0.0
+        self._on_finished()
+
+    def _refresh_the_picture(self) -> None:
+        if self.isVisible() and self._farewell is None:
+            self._take_the_pages_picture()
+            self.update()
 
     def _start_run(self, source: QRect, destination: QRect) -> None:
         """Begin a fresh run from where the panel actually stands.
@@ -2930,8 +3073,18 @@ class _DetailOverlay(QWidget):
         if self.geometry() == area:
             return
         self.setGeometry(area)
+        if self._farewell is not None:
+            return
         if self.isVisible():
-            self._take_the_pages_picture()
+            if self._regrab.isActive():
+                # Mid-drag: the last grab no longer covers this size, so the
+                # live page must be allowed to show in the gap.
+                self.setAttribute(Qt.WA_OpaquePaintEvent, False)
+            else:
+                self._take_the_pages_picture()
+            # The grab ran before the page's own layouts settled to the new
+            # size - retake it once they have.
+            self._regrab.start()
             self._target = self._measure(self._MAX_WIDTH)
             if self._opening:
                 self._to_rect = self._target
@@ -2966,6 +3119,12 @@ class _DetailOverlay(QWidget):
             self.closed.emit()
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if self._farewell is not None:
+            painter = QPainter(self)
+            painter.setOpacity(self._dissolve)
+            painter.drawPixmap(0, 0, self._farewell)
+            painter.end()
+            return
         tokens = resolve_theme_tokens()
         painter = QPainter(self)
         if not self._backdrop.isNull():
@@ -3743,7 +3902,10 @@ class CareerMixin:
         else:
             card.release_card_mark()
             self._career_detail_origin = None
-        self._career_detail_landing = (card, QRect(origin))
+        # Alongside the rect, WHAT it was (a row, a token index): rects go
+        # stale when a resize reflows the card, identities do not.
+        self._career_detail_landing = (card, QRect(origin), card.landing_key(origin))
+        overlay._rehome = self._career_detail_home
         # Theme styling is scoped to roots, and the overlay is a root of its
         # own: without this the dossier paints on the bare palette colour, with
         # no card surface and no border.  Re-applied per opening so a theme
@@ -3764,6 +3926,32 @@ class CareerMixin:
         if overlay is not None:
             overlay.close_overlay()
 
+    def dismiss_career_detail(self) -> None:
+        """Drop an open dossier with no animation - for page switches and save
+        loads, where its picture of the page is about to become a lie."""
+        overlay = getattr(self, "career_detail_overlay", None)
+        if overlay is None:
+            return
+        # Nothing lands anywhere: the knock is for a panel that closed back
+        # into its chip, not for one that vanished with its page.
+        self._career_detail_landing = None
+        overlay.dismiss()
+
+    def _career_detail_home(self) -> Optional[QRect]:
+        """Where the open dossier should close into NOW, in overlay coords."""
+        landing = getattr(self, "_career_detail_landing", None)
+        overlay = getattr(self, "career_detail_overlay", None)
+        if landing is None or overlay is None:
+            return None
+        card, _origin, key = landing
+        current = card.landing_rect(key)
+        if not current.isValid():
+            return None
+        # Kept in step so the recoil knocks the chip where it stands today.
+        self._career_detail_landing = (card, QRect(current), key)
+        corner = overlay.mapFromGlobal(card.mapToGlobal(current.topLeft()))
+        return QRect(corner, current.size())
+
     def _on_career_detail_closed(self) -> None:
         """The panel is home: the outline it grew from may let go, and whatever
         it landed on takes the knock."""
@@ -3773,9 +3961,10 @@ class CareerMixin:
         landing = getattr(self, "_career_detail_landing", None)
         self._career_detail_landing = None
         if landing is not None:
-            source, origin = landing
-            if origin != source.rect():
-                source.recoil(origin)
+            source, _origin, key = landing
+            current = source.landing_rect(key)
+            if current != source.rect():
+                source.recoil(current)
 
     def roll_reward_offer_order(self) -> None:
         """Re-deal the bonus cards, once per opened save.
