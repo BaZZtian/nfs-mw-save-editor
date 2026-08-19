@@ -562,89 +562,6 @@ def build_perf_value_host(level: int, max_level: Optional[int], *, object_name: 
     return host
 
 
-class ShimmerFrame(QFrame):
-    """A QFrame with a subtle pink shimmer sweep animation.
-
-    The shimmer is a semi-transparent linear gradient that sweeps
-    left-to-right every ``interval_ms`` (default ~4 s).
-    """
-
-    _SHIMMER_COLOR = QColor(240, 139, 180)  # #F08BB4
-
-    _DEFAULT_INTERVAL_MS = 4000
-    _DEFAULT_SWEEP_MS = 1200
-    _INITIAL_DELAY_MS = 600
-
-    def __init__(self, parent=None, *, interval_ms: int = _DEFAULT_INTERVAL_MS,
-                 sweep_ms: int = _DEFAULT_SWEEP_MS):
-        super().__init__(parent)
-        self._shimmer_pos: float = -0.3  # off-screen left
-        self._interval_ms = interval_ms
-        self._sweep_ms = sweep_ms
-
-        # Animation: sweeps _shimmer_pos from -0.3 to 1.3
-        self._anim = QPropertyAnimation(self, b"shimmerPos", self)
-        self._anim.setDuration(self._sweep_ms)
-        self._anim.setStartValue(-0.3)
-        self._anim.setEndValue(1.3)
-        self._anim.setEasingCurve(QEasingCurve.InOutSine)
-        self._anim.finished.connect(self._schedule_next)
-
-        # Start first cycle after a short delay
-        QTimer.singleShot(self._INITIAL_DELAY_MS, self._start_sweep)
-
-    # ── Qt property for animation ──────────────────────────────
-    def _get_shimmer_pos(self) -> float:
-        return self._shimmer_pos
-
-    def _set_shimmer_pos(self, val: float) -> None:
-        self._shimmer_pos = val
-        self.update()  # trigger repaint
-
-    shimmerPos = Property(float, _get_shimmer_pos, _set_shimmer_pos)
-
-    # ── Animation control ──────────────────────────────────────
-    def _start_sweep(self) -> None:
-        if self.isVisible():
-            self._anim.start()
-
-    def _schedule_next(self) -> None:
-        QTimer.singleShot(self._interval_ms, self._start_sweep)
-
-    # ── Paint overlay ──────────────────────────────────────────
-    def paintEvent(self, event) -> None:
-        super().paintEvent(event)
-
-        # Only paint while the gradient is in visible range
-        if self._shimmer_pos < -0.25 or self._shimmer_pos > 1.25:
-            return
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        rect = QRectF(self.rect())
-        w = rect.width()
-        center_x = rect.left() + w * self._shimmer_pos
-        half_band = w * 0.25  # shimmer band width = 50% of widget
-
-        grad = QLinearGradient(center_x - half_band, 0, center_x + half_band, 0)
-        c = QColor(self._SHIMMER_COLOR)
-        c.setAlphaF(0.0)
-        grad.setColorAt(0.0, c)
-        c2 = QColor(self._SHIMMER_COLOR)
-        c2.setAlphaF(0.18)
-        grad.setColorAt(0.5, c2)
-        c3 = QColor(self._SHIMMER_COLOR)
-        c3.setAlphaF(0.0)
-        grad.setColorAt(1.0, c3)
-
-        painter.setBrush(grad)
-        painter.setPen(Qt.NoPen)
-        # Use rounded rect matching the border-radius from the stylesheet
-        painter.drawRoundedRect(rect, 8, 8)
-        painter.end()
-
-
 class WantSpinBox(QSpinBox):
     """SpinBox that ignores mouse wheel to prevent accidental edits."""
 
@@ -1026,23 +943,6 @@ class TokenCard(QWidget):
         root.addWidget(self.slider)
 
         self._apply_changed_state(want != have)
-
-    def set_have_want(self, have: int, want: int) -> None:
-        self.have_label.setText(f"Have: {have}")
-        self.spin.blockSignals(True)
-        self.spin.setValue(want)
-        self.spin.blockSignals(False)
-        self.slider.blockSignals(True)
-        self.slider.setValue(want)
-        self.slider.blockSignals(False)
-        self._apply_changed_state(want != have)
-
-    def set_max(self, max_val: int) -> None:
-        cur = self.spin.value()
-        self.spin.setRange(0, max_val)
-        self.spin.setValue(min(cur, max_val))
-        self.slider.setRange(0, max_val)
-        self.slider.setValue(min(cur, max_val))
 
     def _bump(self, delta: int) -> None:
         new_val = max(self.spin.minimum(), min(self.spin.maximum(), self.spin.value() + delta))

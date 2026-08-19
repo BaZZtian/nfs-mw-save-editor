@@ -285,14 +285,6 @@ class GarageAllocatorSnapshot:
         return tuple(slot for slot in self.career_slots if slot.reusable)
 
     @property
-    def blocked_owned_slots(self) -> Tuple[OwnedCarSlotStatus, ...]:
-        return tuple(slot for slot in self.owned_slots if not slot.occupied and not slot.reusable)
-
-    @property
-    def blocked_career_slots(self) -> Tuple[CareerSlotStatus, ...]:
-        return tuple(slot for slot in self.career_slots if not slot.reusable and slot.linked_car_count != 1)
-
-    @property
     def reserved_owned_slots(self) -> Tuple[OwnedCarSlotStatus, ...]:
         return tuple(slot for slot in self.owned_slots if slot.status_kind == "reserved")
 

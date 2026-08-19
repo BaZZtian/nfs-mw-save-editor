@@ -149,11 +149,6 @@ def num_parts() -> int:
     return len(_catalog()["parts"])
 
 
-def catalog_source_md5() -> str:
-    """MD5 of the GLOBALB.BUN the catalog was generated from (provenance)."""
-    return _catalog()["source_md5"]
-
-
 def slot_name(slot_id: int) -> Optional[str]:
     if 0 <= slot_id < NUM_SLOTS:
         return CAR_SLOT_NAMES[slot_id]

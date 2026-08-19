@@ -156,12 +156,6 @@ class ProfileMixin:
         edit.setEnabled(enabled)
         edit.blockSignals(False)
 
-    def _set_profile_text_edit(self, edit: QLineEdit, value: str, enabled: bool) -> None:
-        edit.blockSignals(True)
-        edit.setText(value if enabled else "")
-        edit.setEnabled(enabled)
-        edit.blockSignals(False)
-
     def _profile_alias_active_limit(self) -> int:
         return SaveFile.PROFILE_ALIAS_MAX_LEN if self.unlock_profile_alias_16 else SaveFile.PROFILE_ALIAS_DEFAULT_LEN
 

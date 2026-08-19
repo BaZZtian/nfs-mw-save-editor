@@ -128,10 +128,3 @@ def get_model_tuning_limits(model_name: str) -> Optional[Dict[str, int]]:
     if limits is None:
         return None
     return dict(limits)
-
-
-def get_tuning_limit(model_name: str, part_name: str, default: int = 4) -> int:
-    limits = MODEL_TUNING_LIMITS.get(str(model_name))
-    if limits is None:
-        return int(default)
-    return int(limits.get(str(part_name), default))

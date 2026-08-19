@@ -417,46 +417,6 @@ class GarageMixin:
     def _slot_status_display_text(slot) -> str:
         return str(slot.status_detail or slot.blocked_reason or slot.status_code)
 
-    def _garage_allocator_diagnostic_sections_legacy(self) -> List[Tuple[str, List[str]]]:
-        snapshot = self._current_allocator_snapshot()
-        if snapshot is None:
-            return []
-        sections: List[Tuple[str, List[str]]] = []
-        groups = [
-            (
-                "Career reserved",
-                [
-                    f"Career Slot {slot.career_slot + 1} — {self._slot_status_display_text(slot)}"
-                    for slot in snapshot.reserved_career_slots
-                ],
-            ),
-            (
-                "Career blocked",
-                [
-                    f"Career Slot {slot.career_slot + 1} — {self._slot_status_display_text(slot)}"
-                    for slot in snapshot.hard_blocked_career_slots
-                ],
-            ),
-            (
-                "Owned reserved",
-                [
-                    f"Owned Slot {slot.slot_index + 1} — {self._slot_status_display_text(slot)}"
-                    for slot in snapshot.reserved_owned_slots
-                ],
-            ),
-            (
-                "Owned blocked",
-                [
-                    f"Owned Slot {slot.slot_index + 1} — {self._slot_status_display_text(slot)}"
-                    for slot in snapshot.hard_blocked_owned_slots
-                ],
-            ),
-        ]
-        for title, lines in groups:
-            if lines:
-                sections.append((title, lines))
-        return sections
-
     def _garage_allocator_diagnostic_sections(self) -> List[Tuple[str, List[str]]]:
         snapshot = self._current_allocator_snapshot()
         if snapshot is None:
@@ -590,32 +550,6 @@ class GarageMixin:
         for slot_index in self._current_cleared_pursuit_slots():
             current[slot_index] = 0
         return current
-
-    def _current_slot_flags(self) -> Dict[int, int]:
-        return {
-            slot.career_slot: slot.location_bits
-            for slot in self._current_transfer_entries()
-            if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
-        }
-
-    @staticmethod
-    def _supports_pink_slip_toggle(flags: Optional[int]) -> bool:
-        return flags in (SaveFile.CAREER_FLAG, SaveFile.CAREER_FLAG | SaveFile.PINK_SLIP_FLAG)
-
-    @staticmethod
-    def _flags_to_source_kind(flags: Optional[int]) -> str:
-        return SaveFile.derive_source_kind(flags)
-
-    def _pink_slip_badge_icon(self, size: int = 14) -> QPixmap:
-        if self._pink_slip_badge_pixmap is not None:
-            return self._pink_slip_badge_pixmap
-        icon_path = resource_path("assets", "icons", "pol", "pink_slip.png")
-        pix = QPixmap(str(icon_path))
-        if pix.isNull():
-            self._pink_slip_badge_pixmap = QPixmap()
-            return self._pink_slip_badge_pixmap
-        self._pink_slip_badge_pixmap = pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        return self._pink_slip_badge_pixmap
 
     def _make_garage_heat_field_label(self) -> QWidget:
         row = QWidget()
@@ -1317,9 +1251,6 @@ class GarageMixin:
         self._sync_garage_diagnostics_visibility()
         if self._garage_page_visible():
             self._refresh_garage_diagnostics_text()
-
-    def on_toggle_unlinked_pursuits(self) -> None:
-        self.on_toggle_garage_allocator_diagnostics()
 
     def on_garage_transfer_requested(self, abs_off: int, target_mode: str) -> None:
         if self._profile_refreshing or not self.savefile or self.garage_detection_error:

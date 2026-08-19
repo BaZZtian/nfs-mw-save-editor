@@ -364,7 +364,6 @@ class MainWindow(
         self._parts_slot_columns = 0
         self._snapshot_slot_columns = 0
         self._library_slot_columns = 0
-        self._pink_slip_badge_pixmap: Optional[QPixmap] = None
         self.snapshot_library_root = SaveFile.default_snapshot_library_root()
         self.user_snapshot_library_root = _user_snapshot_library_path()
         self.snapshot_library_filter = "Main"
@@ -1182,30 +1181,6 @@ class MainWindow(
                 return cols
         return 1
 
-    def _maybe_reflow_cols(
-        self,
-        scroll_attr: str,
-        col_attr: str,
-        min_width: int,
-        thresholds: tuple,
-        rebuild_fn,
-        force: bool = False,
-        post_fn=None,
-    ) -> None:
-        """Reflow a card grid when column count changes.
-
-        *rebuild_fn* is called when the column count changes (or *force* is
-        True).  Optional *post_fn* is called after *rebuild_fn*.
-        """
-        if not hasattr(self, scroll_attr):
-            return
-        cols = self._detect_col_count(scroll_attr, min_width, thresholds)
-        if force or cols != getattr(self, col_attr):
-            setattr(self, col_attr, cols)
-            rebuild_fn()
-            if post_fn is not None:
-                post_fn()
-
     def _reset_all_edit_state(self) -> None:
         """Clear every have_* and want_* field — used when closing / failing to load a file."""
         self.have_counts = {}
@@ -1658,6 +1633,3 @@ class MainWindow(
 
 
     # ===================================================================
-
-def build_window() -> MainWindow:
-    return MainWindow()

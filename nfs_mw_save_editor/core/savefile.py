@@ -188,9 +188,7 @@ class SaveFile:
         self.data = data
         self.layout = layout or SaveLayout()
         self.hash_scheme = hash_scheme or self.detect_hash_scheme()
-        self._junk_base_cache: Optional[int] = None
         self.junkman = JunkmanInventory(self)
-        self._junk_base_cache = self.junkman.base_rel
 
     @staticmethod
     def load(path: str | Path) -> "SaveFile":
@@ -327,9 +325,6 @@ class SaveFile:
         s, e = self.saved_data_slice()
         return bytes(self.data[s:e])
 
-    def abs_to_rel(self, abs_off: int) -> int:
-        return abs_off - self.saved_data_start()
-
     def tail_md5(self) -> bytes:
         return bytes(self.data[-self.layout.md5_len:])
 
@@ -374,24 +369,6 @@ class SaveFile:
     def compute_crc_block2(self) -> int:
         a, b = self.layout.crc_block2_range
         return ea_crc32(self._bounded_slice(a, b))
-
-    # --- scanning helpers ---
-
-    def find_u32_in_saved_data(self, value: int, limit: Optional[int] = 5000) -> list[int]:
-        needle = struct.pack("<I", int(value) & 0xFFFFFFFF)
-        start, end = self.saved_data_slice()
-        hay = self.data[start:end]
-        res: list[int] = []
-        i = 0
-        while True:
-            j = hay.find(needle, i)
-            if j == -1:
-                break
-            res.append(start + j)
-            i = j + 1
-            if limit is not None and len(res) >= limit:
-                break
-        return res
 
     # --- economy / garage bounty ---
 
@@ -1618,10 +1595,6 @@ class SaveFile:
                 return entry
         raise ValueError(f"Career slot {wanted} does not map to a resolved parts entry")
 
-    def set_part_level(self, career_slot: int, part_name: str, level: int) -> None:
-        entry = self._parts_entry_for_career_slot(career_slot)
-        self.set_part_level_for_parts_slot(entry.parts_slot, part_name, level, model_name=entry.display_name)
-
     def set_part_level_for_parts_slot(
         self,
         parts_slot: int,
@@ -1663,14 +1636,6 @@ class SaveFile:
             raise ValueError("Junkman NOS requires regular NOS > 0")
 
         self._write_u32(record.block_abs_off + self.PARTS_JUNKMAN_MASK_OFFSET, wanted)
-
-    def set_junkman_enabled(self, career_slot: int, category: str, enabled: bool) -> None:
-        entry = self._parts_entry_for_career_slot(career_slot)
-        bit = next((bit for bit, name in self.JUNKMAN_MASK_BITS if name == str(category)), None)
-        if bit is None:
-            raise ValueError(f"Unsupported Junkman category: {category}")
-        new_mask = entry.junkman_mask | bit if enabled else entry.junkman_mask & ~bit
-        self.set_junkman_mask(career_slot, new_mask)
 
     def get_my_cars_parts_entries(self) -> List[ResolvedMyCarsEntry]:
         entries: List[ResolvedMyCarsEntry] = []
@@ -1737,19 +1702,6 @@ class SaveFile:
                 self._write_pursuit_heat(slot.abs_off, normalized)
                 return
         raise ValueError(f"Garage slot {wanted} was not detected")
-
-    def set_slot_pink_slip(self, slot_index: int, enabled: bool) -> None:
-        wanted = int(slot_index)
-        matches = [record for record in self.get_career_vehicle_records() if record.career_slot == wanted]
-        if len(matches) != 1:
-            raise ValueError(f"Garage slot {wanted} does not map to a unique career vehicle")
-
-        record = matches[0]
-        if record.flags not in (self.CAREER_FLAG, self.CAREER_FLAG | self.PINK_SLIP_FLAG):
-            raise ValueError(f"Garage slot {wanted} has unsupported flags 0x{record.flags:02X}")
-
-        new_flags = (record.flags | self.PINK_SLIP_FLAG) if enabled else (record.flags & ~self.PINK_SLIP_FLAG)
-        self._write_u16(record.abs_off + self.CAREER_VEHICLE_FLAGS_OFFSET, new_flags)
 
     def get_rap_sheet_totals(self) -> Optional[rap_sheet_totals.RapSheetTotals]:
         """Shared Rap Sheet aggregates (live garage + sold-car history).
@@ -1845,115 +1797,6 @@ class SaveFile:
     def is_empty_slot(raw12: bytes) -> bool:
         return len(raw12) >= 9 and raw12[0] == 0 and raw12[8] == 0
 
-    @staticmethod
-    def is_clean_empty(raw12: bytes) -> bool:
-        return len(raw12) == 12 and all(b == 0 for b in raw12)
-
-    @staticmethod
-    def is_clean_filled(raw12: bytes) -> bool:
-        if len(raw12) != 12:
-            return False
-        type_id = raw12[0]
-        if not (1 <= type_id <= 64):
-            return False
-        if raw12[8] != 1:
-            return False
-        return all(b == 0 for b in raw12[1:8]) and all(b == 0 for b in raw12[9:12])
-
-    def write_token_into_slot(self, abs_off: int, type_id: int, count: int = 1) -> None:
-        if not (0 <= type_id <= 0xFF) or not (0 <= count <= 0xFF):
-            raise ValueError("type_id/count must be u8")
-        payload = bytearray(self.SLOT_SIZE)
-        payload[self.SLOT_TYPE_OFF] = type_id
-        payload[self.SLOT_COUNT_OFF] = count
-        self.data[abs_off:abs_off + self.SLOT_SIZE] = payload
-
-    def clear_slot(self, abs_off: int) -> None:
-        self.data[abs_off:abs_off + self.SLOT_SIZE] = b"\x00" * self.SLOT_SIZE
-
-    def locate_junkman_base(self, max_slots: int = 80) -> Optional[int]:
-        """Return detected junkman base (saved_data-relative)."""
-        return self.junkman.base_rel
-
-    def locate_junkman_base_from_diff(
-        self, save_a: str | Path, save_b: str | Path, max_slots: int = 80
-    ) -> Tuple[Optional[int], List[Tuple[int, bytes, bytes]], Tuple[int, int, int]]:
-        """
-        Deterministic locator from two saves:
-        Finds offsets where block A matches [type,0..0,1,0,0,0] (type 1..64) and B has 12x00.
-        Returns (base_rel, hit_details[(off, block_a, block_b)], (score_total, covered_hits, clean_filled)).
-        """
-        a = SaveFile.load(save_a)
-        b = SaveFile.load(save_b)
-        a_start, a_end = a.saved_data_slice()
-        b_start, b_end = b.saved_data_slice()
-        if (a_end - a_start) != (b_end - b_start):
-            raise ValueError("Saved data size mismatch between A and B")
-        sa = a.saved_data()
-        sb = b.saved_data()
-        hits: List[Tuple[int, bytes, bytes]] = []
-        for off in range(0, len(sa) - self.SLOT_SIZE + 1):
-            block_a = sa[off: off + self.SLOT_SIZE]
-            block_b = sb[off: off + self.SLOT_SIZE]
-            if not self.is_clean_filled(block_a):
-                continue
-            if not self.is_clean_empty(block_b):
-                continue
-            hits.append((off, block_a, block_b))
-        if not hits:
-            return None, [], (0, 0)
-
-        def score_base(base_rel: int) -> Optional[Tuple[int, int, int, int]]:
-            if base_rel < 0:
-                return None
-            clean_empty = 0
-            clean_filled = 0
-            filled = 0
-            covered_hits = 0
-            start = a_start
-            end = a_end
-            for idx in range(min(max_slots, self.SLOT_MAX)):
-                abs_off = start + base_rel + idx * self.SLOT_STRIDE
-                if abs_off + self.SLOT_SIZE > end:
-                    break
-                raw = sa[abs_off - start: abs_off - start + self.SLOT_SIZE]
-                if self.is_clean_empty(raw):
-                    clean_empty += 1
-                elif self.is_clean_filled(raw):
-                    clean_filled += 1
-                    filled += 1
-                else:
-                    break
-            for h, _, _ in hits:
-                if h < base_rel:
-                    continue
-                if (h - base_rel) % self.SLOT_STRIDE == 0:
-                    covered_hits += 1
-            if filled == 0:
-                return None
-            if covered_hits == 0:
-                return None
-            score_total = clean_empty + clean_filled
-            return (score_total, covered_hits, clean_filled, -base_rel)
-
-        best: Optional[Tuple[int, int, int, int]] = None
-        best_base: Optional[int] = None
-        best_counts: Tuple[int, int, int] = (0, 0, 0)
-        for h, _, _ in hits:
-            for k in range(0, 201):
-                cand = h - k * self.SLOT_STRIDE
-                sc = score_base(cand)
-                if sc is None:
-                    continue
-                if best is None or sc > best:
-                    best = sc
-                    best_base = cand
-                    best_counts = (sc[0], sc[1], sc[2])  # total, covered_hits, clean_filled
-        if best_base is None:
-            return None, hits, (0, 0, 0)
-        self._junk_base_cache = best_base
-        return best_base, hits, best_counts
-
     def read_slots(self, max_slots: int = 20) -> List[Tuple[int, int, int, int, int, bytes]]:
         """
         Return (index, rel_offset, abs_offset, type_id, count, raw12) for slots within saved_data.
@@ -1969,9 +1812,6 @@ class SaveFile:
     # Junkman convenience wrappers for UI
     def get_junkman_counts(self) -> Dict[int, int]:
         return self.junkman.get_counts()
-
-    def set_junkman_count(self, type_id: int, count: int, clamp_max: int = 63) -> None:
-        self.junkman.apply_counts({type_id: count}, clamp_max=clamp_max)
 
     def set_junkman_counts(self, mapping: Dict[int, int], clamp_max: int = 63) -> None:
         self.junkman.apply_counts(mapping, clamp_max=clamp_max)

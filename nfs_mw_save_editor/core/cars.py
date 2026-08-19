@@ -120,7 +120,3 @@ CAR_SIGNATURES: Dict[bytes, str] = {
 
 def resolve_car_name(signature: bytes) -> Optional[str]:
     return CAR_SIGNATURES.get(bytes(signature))
-
-
-def format_signature(signature: bytes) -> str:
-    return bytes(signature).hex(" ").upper()

@@ -93,9 +93,6 @@ class JunkmanInventory:
             counts[slot.type_id] = counts.get(slot.type_id, 0) + 1
         return counts
 
-    def free_slots(self) -> int:
-        return sum(1 for s in self.read_slots() if self.is_empty_slot(s.raw))
-
     def apply_counts(self, desired: Dict[int, int], clamp_max: int = 63) -> None:
         """
         Apply counts transactionally using one-slot-per-token.

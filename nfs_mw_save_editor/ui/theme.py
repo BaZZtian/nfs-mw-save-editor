@@ -193,14 +193,6 @@ def _relative_luminance(color: str) -> float:
     return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
 
 
-def _contrast_ratio(color_a: str, color_b: str) -> float:
-    lum_a = _relative_luminance(color_a)
-    lum_b = _relative_luminance(color_b)
-    lighter = max(lum_a, lum_b)
-    darker = min(lum_a, lum_b)
-    return (lighter + 0.05) / (darker + 0.05)
-
-
 def _hue_degrees(color: str) -> float:
     r, g, b = (channel / 255.0 for channel in _hex_to_rgb(color))
     max_channel = max(r, g, b)
@@ -616,10 +608,6 @@ QLabel#gridSectionLabel {{
     border-bottom: 1px solid {BORDER};
     margin-bottom: 2px;
 }}
-QFrame#sectionLine {{
-    background: {BORDER};
-    max-height: 1px;
-}}
 QLabel#pillLabel {{
     background: {STATUS_INFO_BG};
     color: {STATUS_INFO_FG};
@@ -670,9 +658,7 @@ QFrame#footerChrome {{
 }}
 QWidget#footerContext,
 QWidget#footerActions,
-QWidget#junkmanFooterContext,
-QFrame#profileFooterContext,
-QFrame#footerMetric {{
+QWidget#junkmanFooterContext {{
     background: transparent;
     border: none;
 }}
@@ -736,11 +722,6 @@ QPushButton#partsLevelBtn:disabled {{
     border-color: {DISABLED_BORDER};
     color: {MUTED_DARK};
 }}
-QPushButton#iconBtn {{
-    padding: 0px 0px;
-    min-height: 24px;
-}}
-
 /* Token Card */
 QWidget#tokenCard {{
     background: {BG_CARD};
@@ -801,29 +782,9 @@ QSlider#cardSlider::sub-page:horizontal {{
     border-radius: 3px;
 }}
 
-/* Legacy TokenRow (compat) */
-QWidget#tokenRow {{
-    background: {BG_PANEL};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_LG};
-}}
-QWidget#tokenRow[changed="true"] {{
-    border: 1px solid {ACCENT};
-    background: {CARD_CHANGED_BG};
-}}
 QLabel#haveLabel {{
     color: {MUTED};
     font-size: 11.5px;
-}}
-QWidget#tokenRow QLineEdit {{
-    background: transparent;
-    border: none;
-    padding: 4px 6px;
-}}
-QWidget#tokenRow QSpinBox {{
-    background: {BG_INPUT};
-    border: 1px solid {BORDER};
-    border-radius: {RADIUS_MD};
 }}
 QWidget#partsPerfControlHost {{
     background: transparent;
