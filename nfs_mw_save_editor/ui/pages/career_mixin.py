@@ -2723,6 +2723,10 @@ class _DetailOverlay(QWidget):
     # content this whole transition is built to avoid.
     _CONTENT_RISE = 0.96
     _SCRIM_ALPHA = 150
+    # Match the shell cards around the content stack.  A square scrim makes
+    # the stack's otherwise quiet corners conspicuous as soon as the page is
+    # dimmed behind a dossier.
+    _SCRIM_RADIUS = 12.0
     _HINT_BAND = 26
     # How far into the run the panel stops looking like the thing it grew out
     # of.  The glyph goes first, well before the list arrives, so the two never
@@ -3133,13 +3137,17 @@ class _DetailOverlay(QWidget):
         # Keyed to how open the panel is, not to the run: an interruption then
         # picks the scrim up where it stands instead of jumping.
         scrim.setAlpha(self._scrim_alpha)
-        painter.fillRect(event.rect(), scrim)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(scrim)
+        painter.drawRoundedRect(
+            QRectF(self.rect()), self._SCRIM_RADIUS, self._SCRIM_RADIUS
+        )
 
         # The surface is drawn here, opaque, and only the list on top of it
         # fades in: fading the whole panel left a hole travelling across the
         # page instead of a card opening.  Same colour underneath, so the two
         # never disagree.
-        painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         panel = self.scroll.geometry()
         surface = QColor(tokens["BG_CARD"])

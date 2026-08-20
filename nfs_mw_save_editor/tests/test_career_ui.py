@@ -1515,6 +1515,28 @@ def test_clicking_a_chip_opens_the_dossier_it_stands_for():
     window.close()
 
 
+def test_dossier_scrim_keeps_the_content_stack_corners_rounded():
+    """Dimming should preserve the shell's rounded outer silhouette."""
+    app = _app()
+    rows, boss_rows = _chip_rows(6)
+    window, card = _career_window_with_chips(app, rows, boss_rows)
+
+    QTest.mouseClick(card, Qt.LeftButton, Qt.NoModifier, card._chip_rects[0][0].center())
+    app.processEvents()
+    overlay = window.career_detail_overlay
+    _land_animation(overlay)
+
+    backdrop = overlay._backdrop.toImage()
+    dimmed = overlay.grab().toImage()
+    corner = QPoint(0, 0)
+    inside = QPoint(24, 24)
+    assert dimmed.pixelColor(corner) == backdrop.pixelColor(corner)
+    assert sum(dimmed.pixelColor(inside).getRgb()[:3]) < sum(
+        backdrop.pixelColor(inside).getRgb()[:3]
+    )
+    window.close()
+
+
 def test_escape_and_a_click_outside_close_the_dossier():
     app = _app()
     rows, boss_rows = _chip_rows(6)
