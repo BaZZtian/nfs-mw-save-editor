@@ -1537,6 +1537,11 @@ def test_dossier_scrim_keeps_the_content_stack_corners_rounded():
     window.close()
 
 
+def test_painted_geometry_reads_pixel_radius_tokens_with_a_safe_fallback():
+    assert career_module._theme_px({"RADIUS_XL": "18px"}, "RADIUS_XL", 12.0) == 18.0
+    assert career_module._theme_px({"RADIUS_XL": "invalid"}, "RADIUS_XL", 12.0) == 12.0
+
+
 def test_escape_and_a_click_outside_close_the_dossier():
     app = _app()
     rows, boss_rows = _chip_rows(6)

@@ -145,6 +145,15 @@ _RANK_INK_SAMPLE = "#0123456789"
 _ELLIPSIS = "…"
 
 
+def _theme_px(tokens: dict[str, str], name: str, fallback: float) -> float:
+    """Read a QSS pixel token for geometry painted outside the stylesheet."""
+    raw = str(tokens.get(name, fallback)).removesuffix("px").strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return fallback
+
+
 class _HeroTagline(QLabel):
     """The banner's one-line rival tagline: it elides instead of wrapping.
 
@@ -1597,7 +1606,7 @@ class _PressableSection(QFrame):
         # Drawn over the sheet's own border rather than restyling it: the card
         # is painted by the page stylesheet, and a repolish to light one edge
         # for a hundred milliseconds is not worth its cost.
-        radius = float(str(tokens["RADIUS_XL"]).removesuffix("px"))
+        radius = _theme_px(tokens, "RADIUS_XL", 12.0)
         lit = QColor(tokens["ACCENT"])
         lit.setAlphaF(self._card_mark)
         painter.setBrush(Qt.NoBrush)
@@ -2723,10 +2732,6 @@ class _DetailOverlay(QWidget):
     # content this whole transition is built to avoid.
     _CONTENT_RISE = 0.96
     _SCRIM_ALPHA = 150
-    # Match the shell cards around the content stack.  A square scrim makes
-    # the stack's otherwise quiet corners conspicuous as soon as the page is
-    # dimmed behind a dossier.
-    _SCRIM_RADIUS = 12.0
     _HINT_BAND = 26
     # How far into the run the panel stops looking like the thing it grew out
     # of.  The glyph goes first, well before the list arrives, so the two never
@@ -3140,8 +3145,9 @@ class _DetailOverlay(QWidget):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setPen(Qt.NoPen)
         painter.setBrush(scrim)
+        radius = _theme_px(tokens, "RADIUS_XL", 12.0)
         painter.drawRoundedRect(
-            QRectF(self.rect()), self._SCRIM_RADIUS, self._SCRIM_RADIUS
+            QRectF(self.rect()), radius, radius
         )
 
         # The surface is drawn here, opaque, and only the list on top of it
