@@ -978,7 +978,7 @@ def test_career_totals_strip_lives_on_page_and_tracks_summary():
     assert window.page_career.isAncestorOf(strip)
     assert not window.footer_chrome.isAncestorOf(strip)
     assert window.findChild(QFrame, "careerLifetimeStrip") is None
-    assert window.career_total_races_value.text() == "—"
+    assert window.career_total_races_value.text() == "N/A"
 
     window.savefile = SimpleNamespace(data=_synthetic_career(8))
     window._refresh_career_page()
@@ -1458,7 +1458,7 @@ def _chip_rows(count: int, *, boss: int = 0):
             icon_path=game_icon_path("race_circuit"),
             detail="WON · 1:00.00",
             fraction=None,
-            tooltip=f"Event {index} — completed",
+            tooltip=f"Event {index}: completed",
         )
 
     return (

@@ -82,7 +82,7 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
         tx = rect.left() + (rect.width() - text_w) / 2.0
         ty = rect.top() + (rect.height() + fm.ascent()) / 2.0 - fm.descent() / 2.0
 
-        # 3. Draw "Aa" — both letters in accent colour
+        # 3. Draw "Aa" with both letters in accent colour
         painter.setPen(QColor(accent))
         painter.drawText(tx, ty, full_text)
 

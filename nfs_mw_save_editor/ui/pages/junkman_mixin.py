@@ -467,7 +467,7 @@ class JunkmanMixin:
         else:
             self.lbl_free.setText(f"Free slots: {free}/{cap}")
 
-        # Update progress bar — realtime performance coverage (IDs 1..7)
+        # Update progress bar: realtime performance coverage (IDs 1..7)
         perf_unlocked = self._projected_perf_unlocked_count()
         self.progress_bar.setRange(0, PERF_TOTAL)
         self.progress_bar.setValue(perf_unlocked)

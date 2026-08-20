@@ -709,7 +709,7 @@ class PresetsMixin:
             action_row.addStretch(1)
             card_layout.addLayout(action_row)
 
-            # Refusal line — visible reason when injection is blocked
+            # Refusal line: visible reason when injection is blocked
             refusal_texts: List[str] = []
             if not self.savefile:
                 refusal_texts.append("Open a save to stage an injection")
@@ -726,7 +726,7 @@ class PresetsMixin:
                 refusal_label.setWordWrap(True)
                 card_layout.addWidget(refusal_label)
 
-            # Tooltip — technical details for power users
+            # Tooltip: technical details for power users
             tooltip_parts = [
                 f"File: {entry.file_label}",
                 f"Snapshot ID: {entry.snapshot_id[:60]}...",
@@ -880,7 +880,7 @@ class PresetsMixin:
             action_row.addStretch(1)
             card_layout.addLayout(action_row)
 
-            # Tooltip — technical details for power users
+            # Tooltip: technical details for power users
             tooltip_parts = [
                 f"Car #{snapshot.car_number:02X}",
                 f"Loc 0x{snapshot.location_bits:02X} | Misc 0x{snapshot.misc_bits:02X}",

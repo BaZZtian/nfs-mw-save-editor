@@ -122,7 +122,7 @@ def _live_car_bounties(data: bytes) -> Tuple[Tuple[int, int], ...]:
     """(slot_index, bounty) for every live garage record.
 
     Raises ValueError on a record that is neither empty nor canonically
-    live — normalize must never scale a partial car list.
+    live; normalize must never scale a partial car list.
     """
 
     out = []
@@ -153,7 +153,7 @@ def _bounty_plan_numbers(
     carries the rounding remainder; otherwise cars stay untouched and sold
     history is the difference. All zeros/empty when either buffer is not a
     save. Raises ValueError, labeled with the offending side, when either
-    garage table holds an unexplained record (fail closed — a partial
+    garage table holds an unexplained record (fail closed: a partial
     aggregate would feed normalize under-counted numbers).
     """
 

@@ -7,7 +7,7 @@ milestones/bin_NN/challenge_NN_<stat> and speedtraps/bin_NN/speedtrapN.
 Speedtrap required/best speeds in the save are stored in m/s.
 
 Known EA data quirk: bounty milestones (type bounty_in_pursuit) live in VLT
-nodes named challenge_N_cops_destroyed — the mechanic was renamed during
+nodes named challenge_N_cops_destroyed; the mechanic was renamed during
 development, the node names were not.
 
 The table is derived from the game's VLT data and each key is verified as the

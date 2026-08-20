@@ -232,7 +232,7 @@ def test_footer_strip_regrows_when_its_numbers_arrive():
 
     Regression: the strip is capped at its own size hint, and only a window
     resize or a page switch recomputed that cap.  Opening a save while already
-    standing on Career grew the totals from "—" to "100 / 173" against a cap
+    standing on Career grew the totals from "N/A" to "100 / 173" against a cap
     frozen at the empty-state width, so the footer read "100 / 1", "MILESTON".
     """
 
@@ -308,7 +308,7 @@ def test_moved_totals_refresh_without_page_parent_dependencies():
     window._refresh_profile_summary(False)
     assert {label.text() for label in window.profile_summary_values.values()} == {"-"}
     window._update_career_totals(None)
-    assert window.career_total_races_value.text() == "—"
+    assert window.career_total_races_value.text() == "N/A"
 
     window._select_page("Profile")
     APP.processEvents()

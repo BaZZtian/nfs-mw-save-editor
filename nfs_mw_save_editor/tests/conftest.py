@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 # Test modules that need a Qt environment: they import PySide6 (directly or
-# through ui.*), and several build a QApplication at import time — so a
+# through ui.*), and several build a QApplication at import time, so a
 # marker filter alone cannot exclude them; they must be skipped at
 # collection. Keep this list current when adding Qt-dependent test modules;
 # `pytest -m "not qt"` runs the core + api contract suite without importing

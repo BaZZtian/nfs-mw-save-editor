@@ -766,7 +766,7 @@ class GarageMixin:
     def _pink_slip_tooltip(self, slot: ResolvedTransferCarEntry) -> str:
         # Provenance keys off the car MODEL, not its looks: every Blacklist
         # rival drives a unique model, and an organic 0x42 row only exists as
-        # a claimed pink slip — so the model names the boss even after the
+        # a claimed pink slip, so the model names the boss even after the
         # player repaints or re-vinyls the car.
         provenance = RIVAL_CAR_MODELS.get(slot.display_name)
         if provenance is not None:

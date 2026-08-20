@@ -304,7 +304,7 @@ class MainWindow(
 
     Staged-state cleanup note: the former ``want_slot_flags`` and
     ``want_cleared_pursuit_slots`` projection caches were removed as dead
-    state — pursuit/flag projections are recomputed from transfer state.
+    state; pursuit/flag projections are recomputed from transfer state.
     """
 
     def __init__(self):
@@ -1182,7 +1182,7 @@ class MainWindow(
         return 1
 
     def _reset_all_edit_state(self) -> None:
-        """Clear every have_* and want_* field — used when closing / failing to load a file."""
+        """Clear every have_* and want_* field when closing or failing to load a file."""
         self.have_counts = {}
         self.staged_state.counts.clear()
         self.have_money = 0
@@ -1205,7 +1205,7 @@ class MainWindow(
         self.staged_state.snapshot_injections.clear_all()
 
     def _reset_want_edit_state(self) -> None:
-        """Clear all want_* fields back to None / {} — used after Apply or open-file."""
+        """Clear all want_* fields back to None / {} after Apply or open-file."""
         self.staged_state.counts.clear()
         self.staged_state.money.clear()
         self.staged_state.profile_alias.clear()
@@ -1602,7 +1602,7 @@ class MainWindow(
             ToastNotification.show_toast(self, "Memory already matches the file")
             return
         # on_open() below resets staged wants too, so the dialog must name
-        # BOTH classes of pending work when both exist — a "reload" that
+        # BOTH classes of pending work when both exist; a "reload" that
         # silently eats staged edits from other pages is data loss.
         if self._has_pending_changes():
             question = (

@@ -67,7 +67,7 @@ class StagedMapTests(unittest.TestCase):
 
     def test_prune_keeps_staged_key_absent_from_have(self) -> None:
         # Regression: `have[key]` must not be evaluated eagerly for keys that
-        # only exist in staged state — that raised KeyError despite the guard.
+        # only exist in staged state; that raised KeyError despite the guard.
         staged = StagedMap[str, int]()
         have = {"a": 1}
 

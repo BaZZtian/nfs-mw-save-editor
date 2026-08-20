@@ -421,9 +421,9 @@ def _untracked_boss_row(
         detail=detail,
         fraction=None,
         tooltip=(
-            f"{title} — rival race\n"
+            f"{title}: rival race\n"
             f"{type_label} · {event_id} · boss race{_cop_note(event_id)}\n"
-            "The save keeps no record for this event — its state follows "
+            "The save keeps no record for this event. Its state follows "
             "the rest of the rival series."
         ),
     )
@@ -944,7 +944,7 @@ def _stage_title(stage: int) -> str:
 
 
 def _display_name_text(text: str) -> str:
-    return text.replace(" — ", ": ")
+    return text.replace(" \N{EM DASH} ", ": ")
 
 
 def _fmt_num(value: float) -> str:
@@ -1355,7 +1355,7 @@ class _BlacklistTimeline(QWidget):
             self.setToolTip("")
         else:
             state = self._state(stage).replace("_", " ")
-            self.setToolTip(f"{_stage_title(stage)} — {state}")
+            self.setToolTip(f"{_stage_title(stage)} · {state}")
         super().mouseMoveEvent(event)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt override
@@ -3180,7 +3180,7 @@ class _DetailOverlay(QWidget):
             painter.drawText(
                 QRect(panel.left(), panel.bottom() + 4, panel.width(), self._HINT_BAND),
                 Qt.AlignCenter,
-                "Esc — close",
+                "Esc to close",
             )
         painter.end()
 
@@ -3344,7 +3344,7 @@ class _ChapterInspectorPage(QFrame):
             recorded = _milestone_display(record.type_key, record.recorded_value)
             # No progress bar: GMilestone.recorded stays zero while active
             # (the game writes it only at award time), so a bar could never
-            # show anything but 0%. Speedtrap rows below keep theirs —
+            # show anything but 0%. Speedtrap rows below keep theirs;
             # best_speed is live data.
             if record.is_awarded:
                 state = "done"
@@ -3362,7 +3362,7 @@ class _ChapterInspectorPage(QFrame):
                 detail=detail,
                 fraction=None,
                 tooltip=(
-                    f"{title} — {status}\n"
+                    f"{title}: {status}\n"
                     f"Required {required} · recorded {recorded}"
                 ),
             ))
@@ -3374,9 +3374,9 @@ class _ChapterInspectorPage(QFrame):
             ordinal = milestone_names.speedtrap_ordinal(trap.trap_hash) or index
             required_mph = trap.required_speed * 2.2369362920544
             best_mph = trap.best_speed * 2.2369362920544
-            best = f"{best_mph:.1f} mph" if trap.best_speed > 0 else "—"
+            best = f"{best_mph:.1f} mph" if trap.best_speed > 0 else "not recorded"
             # The 0..5 counter is chapter-wide (shared by every trap record of
-            # the bin), so it never appears on individual rows — only the
+            # the bin), so it never appears on individual rows; only the
             # trap's own speeds do; the shared counter stays in the tooltip.
             if trap.is_complete:
                 state = "done"
@@ -3399,7 +3399,7 @@ class _ChapterInspectorPage(QFrame):
                 detail=detail,
                 fraction=fraction,
                 tooltip=(
-                    f"Speedtrap {ordinal} — required {required_mph:.1f} mph\n"
+                    f"Speedtrap {ordinal}: required {required_mph:.1f} mph\n"
                     f"Chapter counter {trap.counter}/{career_progress.SPEEDTRAP_COMPLETE_COUNT}"
                     f" · best {best}"
                 ),
@@ -3478,7 +3478,7 @@ def _race_row(record: career_progress.RaceRecord, *, boss: bool) -> _InspectorRo
         icon_path=game_icon_path(_race_type_icon(route_id)),
         detail=detail,
         fraction=None,
-        tooltip=f"{title} — {tooltip_detail}\n{kind_line}",
+        tooltip=f"{title}: {tooltip_detail}\n{kind_line}",
     )
 
 
@@ -4017,10 +4017,10 @@ class CareerMixin:
         row = QHBoxLayout(plate)
         row.setContentsMargins(24, 22, 24, 22)
         row.setSpacing(0)
-        self.career_total_races_value = QLabel("—")
-        self.career_total_milestones_value = QLabel("—")
-        self.career_total_bounty_value = QLabel("—")
-        self.career_total_prologue_value = QLabel("—")
+        self.career_total_races_value = QLabel("N/A")
+        self.career_total_milestones_value = QLabel("N/A")
+        self.career_total_bounty_value = QLabel("N/A")
+        self.career_total_prologue_value = QLabel("N/A")
         cells = (
             ("race", "RACES", self.career_total_races_value),
             ("milestone", "MILESTONES", self.career_total_milestones_value),
@@ -4147,7 +4147,7 @@ class CareerMixin:
                 self.career_total_bounty_value,
                 self.career_total_prologue_value,
             ):
-                label.setText("—")
+                label.setText("N/A")
             if hasattr(self, "_sync_footer_context_visibility"):
                 self._sync_footer_context_visibility()
             return

@@ -76,7 +76,7 @@ MILESTONE_STATE_AWARDED = 4
 # 0x10 kUnlocked_Online. World races gain Career|QuickRace when a chapter
 # opens, boss-series races gain them at the rival gate, and Online is a static
 # roster flag unrelated to career availability.
-# Prologue events (chapter 16) end 0x02 only — hence their completion test.
+# Prologue events (chapter 16) end 0x02 only; hence their completion test.
 RACE_FLAG_PROLOGUE_DONE = 0x02
 RACE_FLAG_UNLOCKED_CAREER = 0x08
 
@@ -174,7 +174,7 @@ class RaceRecord:
     @property
     def chapter(self) -> Optional[int]:
         """Route-family chapter from the EventID prefix (NOT where it is
-        offered — use offering_chapter for play-order grouping)."""
+        offered; use offering_chapter for play-order grouping)."""
         if not self.event_id:
             return None
         return int(self.event_id.split(".", 1)[0])
@@ -314,7 +314,7 @@ def _locate_tables(data: bytes) -> Optional[Tuple[int, int, int, int]]:
     if not (0 <= num_traps <= MAX_SPEEDTRAP_COUNT):
         return None
 
-    # timer[0].name — require the terminating NUL of the char[20] field so a
+    # timer[0].name: require the terminating NUL of the char[20] field so a
     # stray substring inside the persistent pool cannot masquerade as anchor.
     anchor = bytes(data).find(
         ANCHOR_TIMER_NAME + b"\x00", GAME_SECTION_START, GAME_SECTION_END

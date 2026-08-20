@@ -2,12 +2,12 @@
 
 These tests exercise the REAL process boundary: they spawn
 `python -m api.server` (cwd = nfs_mw_save_editor/) as a subprocess and speak
-newline-delimited JSON-RPC over its stdio — no in-process shortcuts, so a
+newline-delimited JSON-RPC over its stdio; no in-process shortcuts, so a
 green run certifies exactly what the Electron shell will use.
 
 Fixture save: synthetic, full-size 0xF86C buffer written to a tmp file with
 `fix_integrity()` applied. Planted state: money, ASCII alias, story rank 5
-(heat cap x4 — the over-cap test needs headroom to x5), and one live
+(heat cap x4; the over-cap test needs headroom to x5), and one live
 pursuit record in slot 0 (canonical pad bytes, known heat/bounty) with the
 remaining 24 slots empty (handle 0xFF). No owned-car record on purpose:
 the resolver reports the slot as 'Unlinked vehicle' / 'Unknown', which the
@@ -284,7 +284,7 @@ def test_same_second_resave_reports_overwritten_backup(synthetic_save_path, monk
 
 
 def test_notification_is_processed_but_never_answered(server, synthetic_save_path):
-    """JSON-RPC 2.0: a request without "id" is a notification — the server
+    """JSON-RPC 2.0: a request without "id" is a notification; the server
     acts on it and MUST NOT reply. The next reply line must answer the next
     real request (the client below asserts on the response id)."""
     notification = {

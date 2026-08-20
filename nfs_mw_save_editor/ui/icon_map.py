@@ -39,7 +39,7 @@ _FALLBACK_TOKEN_ICON = "nav/unknown.png"
 
 # -- Token ID -> "back side" icon for the hover coin-flip (relative to
 # _ICONS_ROOT). INDUCTION (4) is one engine type covering turbo AND
-# supercharger, and the game ships marker icons for both — the card shows
+# supercharger, and the game ships marker icons for both; the card shows
 # turbo and flips to supercharger on hover, echoing the in-game marker
 # spin animation.
 TOKEN_BACK_ICONS: Dict[int, str] = {

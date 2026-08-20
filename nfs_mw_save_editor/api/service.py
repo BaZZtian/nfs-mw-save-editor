@@ -171,7 +171,7 @@ class EditorService:
     def set_slot_heat(self, slot_index: int, value: float) -> SaveState:
         """Stage a heat edit for one career slot; dry-run validated.
 
-        Over-cap raises BLOCKED with the core's reason (never clamps —
+        Over-cap raises BLOCKED with the core's reason (never clamps;
         silent clamping is banned by the state/safety rules).
         """
         sf = self._require_open()
@@ -246,7 +246,7 @@ class EditorService:
         The backup path is detected from the directory after the core save
         call because the core API returns only the saved path. Backup names
         are second-precision timestamps, so a same-second resave OVERWRITES
-        the previous backup instead of adding a file — "newer than before"
+        the previous backup instead of adding a file; "newer than before"
         is not a usable signal. save(make_backup=True) either writes its
         backup or raises, so after a successful save the newest match IS
         the backup it wrote.

@@ -54,7 +54,7 @@ def read_rap_sheet_totals(data: bytes) -> Optional[RapSheetTotals]:
 
     Returns None when the buffer is not a save. Empty garage slots (stale
     payloads included) are skipped via the shared Handle-based occupancy rule.
-    A record that is neither empty nor canonically live raises ValueError —
+    A record that is neither empty nor canonically live raises ValueError;
     same fail-closed rule as SaveFile.get_pursuit_records; an aggregate over
     unexplained records would silently under-count.
     """

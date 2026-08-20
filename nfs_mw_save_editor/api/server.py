@@ -1,7 +1,7 @@
-"""JSON-RPC 2.0 server over stdio — the process boundary.
+"""JSON-RPC 2.0 server over stdio: the process boundary.
 
 Framing: one JSON-RPC message per line (newline-delimited), UTF-8.
-stdout carries protocol frames ONLY — a single stray print would corrupt
+stdout carries protocol frames ONLY; a single stray print would corrupt
 the stream, so all logging goes to stderr via the `logging` module.
 
 Method table (wire names are camelCase; params/results are the schema
@@ -27,7 +27,7 @@ line -> -32700 with id null. Request errors are isolated to their response;
 only `shutdown` or stdin EOF ends the process.
 
 Entry point: `python -m api.server`, run with `nfs_mw_save_editor/` as the
-working directory — same top-level package layout (`core`, `ui`, `api`) the
+working directory: the same top-level package layout (`core`, `ui`, `api`) the
 rest of the app uses.
 """
 from __future__ import annotations
@@ -130,7 +130,7 @@ def serve(stdin=None, stdout=None) -> int:
             continue
 
         # A request without "id" is a notification: process it, respond
-        # never — not even with an error (per spec).
+        # never, not even with an error (per spec).
         is_notification = "id" not in message
         response: Dict[str, Any] = {"jsonrpc": "2.0", "id": message.get("id")}
         method = message["method"]

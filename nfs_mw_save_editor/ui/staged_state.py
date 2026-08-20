@@ -113,7 +113,7 @@ class StagedMap(Generic[K, V]):
         With ``default`` set, comparison is effective-value based over the
         union of staged and ``have`` keys: a key missing from one side counts
         as ``default``.  Use this for sparse maps such as junkman counts,
-        where ``get_counts()`` only reports nonzero token ids — staging an
+        where ``get_counts()`` only reports nonzero token ids; staging an
         absent token to 0 is not a pending change.
         """
         if self._values is None:

@@ -105,7 +105,7 @@ def test_reload_from_disk_restores_disk_bytes(tmp_path) -> None:
 def test_reload_dialog_names_staged_edits_when_pending(tmp_path) -> None:
     """Regression (review 2026-08-14): on_open() after Reload resets staged
     wants from other pages too, but the dialog only admitted to
-    applied-but-unsaved changes — silent data loss for staged edits."""
+    applied-but-unsaved changes, causing silent data loss for staged edits."""
 
     window, _save_path = _window_with_save(tmp_path)
     try:

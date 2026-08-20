@@ -10,7 +10,7 @@ assets/visual_parts_catalog.json so the editor needs no game install.
 `name` is the engine-internal one (GLOSS_L1_COLOR24, BODY02, HOOD 6 CARBON);
 `display_name` is the canon in-game label resolved at catalog-generation time
 from the part's LANGUAGEHASH attribute via LANGUAGES/English.bin ("Overdial",
-"Light Black") — present for 2689 parts (hoods/spoilers/roofs/bodies/vinyls/
+"Light Black"); present for 2689 parts (hoods/spoilers/roofs/bodies/vinyls/
 tints/HUDs; paints and wheels have no LANGUAGEHASH by design). Prettifying
 engine names stays a UI concern. The index space is install-specific: saves
 made on installs with modded part data shift indices, so resolved names are

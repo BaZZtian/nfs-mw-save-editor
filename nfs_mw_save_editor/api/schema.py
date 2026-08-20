@@ -5,7 +5,7 @@ types in the web repo are generated from the JSON Schema this module dumps;
 the schema's sha256 travels with the generated file as the drift detector.
 
 Wire naming: camelCase on the wire, snake_case in Python. The mapping is
-defined once, here, by the alias generator on `ApiModel` — nothing else may
+defined once, here, by the alias generator on `ApiModel`; nothing else may
 rename fields.
 
 Run `python -m nfs_mw_save_editor.api.schema` to print the combined JSON
@@ -27,7 +27,7 @@ def _to_camel(name: str) -> str:
 class ApiModel(BaseModel):
     """Base model with camelCase aliases, unknown-field rejection, and
     strict (no-coercion) validation: `"123"` is not a money value. Ints
-    remain valid floats — JSON has one number type."""
+    remain valid floats because JSON has one number type."""
 
     model_config = ConfigDict(
         alias_generator=_to_camel,
@@ -142,7 +142,7 @@ class SaveState(ApiModel):
     """The single whole-truth state model; every mutation returns it.
 
     When `opened` is False every optional field is None and lists are
-    empty — the frontend renders the empty state from this same shape.
+    empty; the frontend renders the empty state from this same shape.
     """
 
     opened: bool
@@ -210,7 +210,7 @@ def dump_schema() -> str:
     """Return the combined JSON Schema for CONTRACT_MODELS as a string.
 
     Deterministic: models in CONTRACT_MODELS order, keys sorted, no
-    whitespace variance — the sha256 of this exact string is the contract
+    whitespace variance; the sha256 of this exact string is the contract
     fingerprint the web repo pins.
     """
     import json

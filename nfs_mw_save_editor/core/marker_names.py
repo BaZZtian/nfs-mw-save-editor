@@ -8,7 +8,7 @@ through LANGUAGES/English.bin (chunk 0x00039000 hash tables).
 
 FE facts worth knowing:
 - DECAL (15) and PAINT (16) are nameless in the FE table (null label
-  hashes) — the marker-select screen never names them; they are absent
+  hashes); the marker-select screen never names them; they are absent
   here and callers must keep their own fallback names.
 - INDUCTION (4) is displayed by the game as "Unique Supercharger
   Upgrades" (label MARKER_NAME_SUPERCHARGER); turbo and supercharger are

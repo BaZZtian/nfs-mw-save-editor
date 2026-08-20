@@ -513,7 +513,7 @@ def build_perf_level_row(name: str, level: int, max_level: Optional[int]) -> tup
     Returns ``(row_widget, row_layout)`` so callers can append page-specific
     controls (e.g. +/- buttons on the Tuning tab).
 
-    Pure function — no page state, no signal wiring.
+    Pure function with no page state or signal wiring.
     """
     row_w = QWidget()
     row_w.setObjectName("partsLevelRow")
@@ -874,7 +874,7 @@ class TokenCard(QWidget):
         back_path = token_back_icon_path(token_id)
         if self._icon_front is not None and back_path and back_path.exists():
             # Coin-flip on hover: a single half-spin to the back-side icon,
-            # back again on leave — echo of the in-game marker-select spin
+            # back again on leave, echoing the in-game marker-select spin
             # (INDUCTION shows turbo up front, supercharger on the back).
             self._icon_back = QPixmap(str(back_path)).scaled(
                 self.ICON_SIZE,
