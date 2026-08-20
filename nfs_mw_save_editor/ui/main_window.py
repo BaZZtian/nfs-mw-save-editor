@@ -668,8 +668,8 @@ class MainWindow(
             "Junkman": self.footer_junkman_context,
         }
         for name, context in self._footer_contexts.items():
-            context.setVisible(name == "Junkman")
             contexts.addWidget(context)
+            context.setVisible(name == "Junkman")
         row.addWidget(self.footer_context, 0, Qt.AlignVCenter)
         row.addStretch(1)
 

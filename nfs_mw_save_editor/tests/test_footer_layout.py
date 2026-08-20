@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QPoint
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QGridLayout, QLabel, QSizePolicy, QWidget
 
@@ -35,6 +35,29 @@ def _close_window(window: MainWindow) -> None:
     window.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     APP.processEvents()
+
+
+def test_building_main_window_never_shows_an_orphan_top_level_child():
+    shown: list[tuple[str, str, str]] = []
+
+    class _TopLevelShowSpy(QObject):
+        def eventFilter(self, obj, event):  # noqa: N802 - Qt override
+            if event.type() == QEvent.Show and isinstance(obj, QWidget) and obj.isWindow():
+                shown.append((type(obj).__name__, obj.objectName(), obj.windowTitle()))
+            return False
+
+    spy = _TopLevelShowSpy()
+    APP.installEventFilter(spy)
+    try:
+        window = MainWindow()
+    finally:
+        APP.removeEventFilter(spy)
+
+    assert shown == [], f"constructor exposed top-level widgets before show(): {shown}"
+    assert window.footer_junkman_context.parentWidget() is window.footer_context
+    window.show()
+    APP.processEvents()
+    _close_window(window)
 
 
 def test_footer_floats_over_the_stack_and_preserves_public_controls():
