@@ -193,6 +193,32 @@ def _relative_luminance(color: str) -> float:
     return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
 
 
+def _contrast_ratio(color_a: str, color_b: str) -> float:
+    luminance_a = _relative_luminance(color_a)
+    luminance_b = _relative_luminance(color_b)
+    lighter = max(luminance_a, luminance_b)
+    darker = min(luminance_a, luminance_b)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _ensure_text_contrast(
+    color: str,
+    surface: str,
+    readable_fallback: str,
+    *,
+    minimum_ratio: float = 4.5,
+) -> str:
+    """Move a muted color toward readable text only as far as needed."""
+
+    if _contrast_ratio(color, surface) >= minimum_ratio:
+        return color
+    for step in range(1, 257):
+        candidate = _mix(color, readable_fallback, step / 256.0)
+        if _contrast_ratio(candidate, surface) >= minimum_ratio:
+            return candidate
+    return readable_fallback
+
+
 def _hue_degrees(color: str) -> float:
     r, g, b = (channel / 255.0 for channel in _hex_to_rgb(color))
     max_channel = max(r, g, b)
@@ -506,6 +532,14 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
     # without leaking underlying content.
     tokens.setdefault("BG_GLASS", _mix(tokens["BG"], tokens["BG_CARD"], 0.62))
     tokens.setdefault("BORDER_GLASS", _mix(tokens["BG"], tokens["BORDER"], 0.70))
+    tokens.setdefault(
+        "HEADER_EMPTY_TEXT",
+        _ensure_text_contrast(
+            tokens["MUTED_DARK"],
+            tokens["BG_GLASS"],
+            tokens["TEXT"],
+        ),
+    )
     dark_on_accent = _mix(tokens["BG"], "#000000", 0.36)
     if preset.text_on_accent_mode == "dark":
         tokens["TEXT_ON_ACCENT"] = dark_on_accent
@@ -882,7 +916,7 @@ QLabel#headerInfoCaption {{
     background: transparent;
     border: none;
     color: {MUTED_DARK};
-    font-size: 8px;
+    font-size: 9.5px;
     font-weight: 700;
     letter-spacing: 1px;
 }}
@@ -925,17 +959,21 @@ QLabel#headerStateLabel[state="saved"] {{
 QLabel#filePath {{
     background: transparent;
     border: none;
-    color: {TEXT};
+    color: {HEADER_EMPTY_TEXT};
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
+}}
+QLabel#filePath[loaded="true"] {{
+    color: {TEXT};
 }}
 QLabel#headerIntegrityBadge {{
     background: {STATUS_NEUTRAL_BG};
     border: 1px solid {STATUS_NEUTRAL_BORDER};
     border-radius: {RADIUS_SM};
     color: {STATUS_NEUTRAL_FG};
-    font-size: 8px;
-    font-weight: 700;
+    font-family: 'Cascadia Mono', 'Consolas', monospace;
+    font-size: 9px;
+    font-weight: 600;
     padding: 0px 3px;
 }}
 QLabel#headerIntegrityBadge[verdict="ok"] {{

@@ -16,6 +16,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from ui.main_window import MainWindow
+from ui.theme import available_theme_names, build_shell_stylesheet, resolve_theme_tokens
 from ui.widgets import HeaderStateChip, ToastNotification
 
 
@@ -46,6 +47,26 @@ def _header_geometry(window: MainWindow) -> tuple[tuple[int, int, int, int], ...
             window.lbl_unsaved,
             window.header_integrity_plate,
         )
+    )
+
+
+def _contrast_ratio(color_a: str, color_b: str) -> float:
+    def relative_luminance(color: str) -> float:
+        channels = []
+        value = color.lstrip("#")
+        for index in (0, 2, 4):
+            channel = int(value[index:index + 2], 16) / 255.0
+            channels.append(
+                channel / 12.92
+                if channel <= 0.03928
+                else ((channel + 0.055) / 1.055) ** 2.4
+            )
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+    luminance_a = relative_luminance(color_a)
+    luminance_b = relative_luminance(color_b)
+    return (max(luminance_a, luminance_b) + 0.05) / (
+        min(luminance_a, luminance_b) + 0.05
     )
 
 
@@ -218,6 +239,17 @@ def test_header_path_keeps_full_value_in_tooltip_when_elided() -> None:
         assert window.header_file_plate.geometry().getRect() == geometry
     finally:
         _close(window)
+
+
+def test_header_empty_path_keeps_readable_contrast_in_every_theme() -> None:
+    for theme_name in available_theme_names():
+        tokens = resolve_theme_tokens(theme_name)
+        assert _contrast_ratio(tokens["HEADER_EMPTY_TEXT"], tokens["BG_GLASS"]) >= 4.5, theme_name
+
+    tokens = resolve_theme_tokens("Solarized")
+    stylesheet = build_shell_stylesheet("Solarized")
+    file_path_rule = stylesheet.split("QLabel#filePath {", 1)[1].split("}", 1)[0]
+    assert f"color: {tokens['HEADER_EMPTY_TEXT']};" in file_path_rule
 
 
 def test_header_state_chip_crossfades_and_retargets_in_place() -> None:

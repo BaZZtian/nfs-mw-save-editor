@@ -532,6 +532,7 @@ class MainWindow(
         file_meta.addWidget(self.lbl_unsaved)
         self.lbl_file = QLabel("No save opened")
         self.lbl_file.setObjectName("filePath")
+        self.lbl_file.setProperty("loaded", False)
         self.lbl_file.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         file_layout.addLayout(file_meta)
         file_layout.addWidget(self.lbl_file)
@@ -1506,8 +1507,13 @@ class MainWindow(
         self.lbl_unsaved.setState(text, state)
 
     def _update_header_path(self):
-        text = "No save opened" if not self.savefile else str(self.savefile.path)
-        self.lbl_file.setToolTip(text if self.savefile else "")
+        loaded = bool(self.savefile)
+        text = "No save opened" if not loaded else str(self.savefile.path)
+        self.lbl_file.setToolTip(text if loaded else "")
+        if self.lbl_file.property("loaded") != loaded:
+            self.lbl_file.setProperty("loaded", loaded)
+            self.lbl_file.style().unpolish(self.lbl_file)
+            self.lbl_file.style().polish(self.lbl_file)
         fm = self.lbl_file.fontMetrics()
         available = max(80, self.lbl_file.width())
         self.lbl_file.setText(fm.elidedText(text, Qt.ElideMiddle, available))
