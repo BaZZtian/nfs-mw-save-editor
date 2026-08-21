@@ -114,7 +114,7 @@ class StagedInfo(ApiModel):
 
     dirty = at least one staged entry exists (Qt: 'Unsaved changes').
     applied_not_saved = the in-memory buffer differs from the file on disk
-    (Qt: 'Applied - not saved'), computed by byte comparison, never by
+    (Qt: 'Applied, not saved'), computed by byte comparison, never by
     bookkeeping flags.
     """
 

@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -73,6 +74,7 @@ from ui.theme import (
     save_theme_name,
 )
 from ui.widgets import (
+    HeaderStateChip,
     ScrollBottomMask,
     ScrollTopFade,
     ShellActionButton,
@@ -87,6 +89,9 @@ logger = logging.getLogger(__name__)
 # button can reserve room for the longer one and keep a steady width.
 FOOTER_RESET_LABEL = "Reset Want=Have"
 FOOTER_RELOAD_LABEL = "Reload from disk"
+HEADER_PATH_WIDTH = 200
+HEADER_INTEGRITY_WIDTH = 236
+HEADER_SIDE_WIDTH = HeaderStateChip.SLOT_WIDTH + 8 + HEADER_INTEGRITY_WIDTH
 
 
 def _appdata_dir() -> Path:
@@ -395,6 +400,7 @@ class MainWindow(
 
         self.header_chrome = QWidget()
         self.header_chrome.setLayout(self._build_header())
+        self.header_chrome.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         base.addWidget(self.header_chrome, 0, 1)
 
         self.nav_chrome = QFrame()
@@ -480,9 +486,14 @@ class MainWindow(
         self._presets_search_timer.timeout.connect(lambda: self._refresh_presets_page(reason="search_change"))
 
     def _build_header(self):
-        row = QHBoxLayout()
+        row = QGridLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
+        row.setSpacing(0)
+        # The normal shell has room for all three anchored zones. Do not let
+        # that desktop composition raise the top-level minimum width: narrow
+        # windows may clip header chrome, but their page/footer reflow must
+        # remain reachable and preserve the existing hysteresis contract.
+        row.setSizeConstraint(QLayout.SetNoConstraint)
         self.btn_open = ShellActionButton("Open save", height=36)
         self.btn_fix = ShellActionButton("Fix checksums", height=36)
         self.btn_open.clicked.connect(self.on_open)
@@ -493,25 +504,71 @@ class MainWindow(
         self._set_game_button_icon(self.btn_open, "action_open")
         self._set_game_button_icon(self.btn_fix, "action_checksums")
 
-        self.lbl_file = QLabel("File: (not opened)")
-        self.lbl_file.setObjectName("filePath")
-        self.lbl_file.setAlignment(Qt.AlignCenter)
-        self.lbl_status = QLabel("Status: -")
-        self.lbl_status.setObjectName("mutedLabel")
-        self.lbl_unsaved = QLabel("")
-        self.lbl_unsaved.setObjectName("unsavedLabel")
-        self.lbl_unsaved.setAlignment(Qt.AlignCenter)
-        self.lbl_unsaved.setContentsMargins(14, 5, 14, 5)
-        self.lbl_unsaved.setMinimumHeight(28)
-        self.lbl_unsaved.setProperty("pending", False)
-        self.lbl_unsaved.setVisible(False)
+        self.header_actions = QWidget()
+        self.header_actions.setObjectName("headerActions")
+        self.header_actions.setFixedWidth(HEADER_SIDE_WIDTH)
+        actions_layout = QHBoxLayout(self.header_actions)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(8)
+        actions_layout.addWidget(self.btn_open)
+        actions_layout.addWidget(self.btn_fix)
+        actions_layout.addStretch(1)
 
-        for w in [self.btn_open, self.btn_fix]:
-            row.addWidget(w)
-        row.addStretch(1)
-        row.addWidget(self.lbl_file, 1)
-        row.addWidget(self.lbl_unsaved)
-        row.addWidget(self.lbl_status)
+        self.header_file_plate = QFrame()
+        self.header_file_plate.setObjectName("headerInfoPlate")
+        self.header_file_plate.setFixedSize(HEADER_PATH_WIDTH, 44)
+        self.header_file_plate.setAccessibleName("Open save file")
+        file_layout = QVBoxLayout(self.header_file_plate)
+        file_layout.setContentsMargins(10, 4, 10, 4)
+        file_layout.setSpacing(0)
+        file_caption = QLabel("SAVE FILE")
+        file_caption.setObjectName("headerInfoCaption")
+        self.lbl_file = QLabel("No save opened")
+        self.lbl_file.setObjectName("filePath")
+        self.lbl_file.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        file_layout.addWidget(file_caption)
+        file_layout.addWidget(self.lbl_file)
+
+        self.lbl_unsaved = HeaderStateChip()
+
+        self.header_integrity_plate = QFrame()
+        self.header_integrity_plate.setObjectName("headerInfoPlate")
+        self.header_integrity_plate.setFixedSize(HEADER_INTEGRITY_WIDTH, 44)
+        self.header_integrity_plate.setAccessibleName("Save integrity")
+        integrity_layout = QVBoxLayout(self.header_integrity_plate)
+        integrity_layout.setContentsMargins(8, 4, 8, 4)
+        integrity_layout.setSpacing(1)
+        self.lbl_status = QLabel("INTEGRITY")
+        self.lbl_status.setObjectName("headerInfoCaption")
+        integrity_layout.addWidget(self.lbl_status)
+        integrity_badges = QHBoxLayout()
+        integrity_badges.setContentsMargins(0, 0, 0, 0)
+        integrity_badges.setSpacing(4)
+        self.header_integrity_badges: dict[str, QLabel] = {}
+        for key, caption in (("md5", "MD5"), ("crc1", "CRC1"), ("data", "DATA"), ("crc2", "CRC2")):
+            badge = QLabel(f"{caption} ?")
+            badge.setObjectName("headerIntegrityBadge")
+            badge.setProperty("verdict", "unknown")
+            badge.setAlignment(Qt.AlignCenter)
+            integrity_badges.addWidget(badge, 1)
+            self.header_integrity_badges[key] = badge
+        integrity_layout.addLayout(integrity_badges)
+
+        self.header_status_area = QWidget()
+        self.header_status_area.setObjectName("headerStatusArea")
+        self.header_status_area.setFixedWidth(HEADER_SIDE_WIDTH)
+        status_layout = QHBoxLayout(self.header_status_area)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(8)
+        status_layout.addWidget(self.lbl_unsaved)
+        status_layout.addWidget(self.header_integrity_plate)
+
+        row.addWidget(self.header_actions, 0, 0)
+        row.addWidget(self.header_file_plate, 0, 1, Qt.AlignCenter)
+        row.addWidget(self.header_status_area, 0, 2)
+        row.setColumnMinimumWidth(0, HEADER_SIDE_WIDTH)
+        row.setColumnMinimumWidth(2, HEADER_SIDE_WIDTH)
+        row.setColumnStretch(1, 1)
         return row
 
     def _tight_icon(self, path: Path, size: QSize) -> QIcon:
@@ -1245,19 +1302,9 @@ class MainWindow(
             btn.setEnabled(loaded)
 
         if loaded:
-            self.lbl_file.setText(f"File: {self.savefile.path}")
+            self._update_header_path()
             integrity = self.savefile.validate_integrity()
-            parts = []
-            if integrity.md5_ok is True:
-                parts.append("MD5 OK")
-            elif integrity.md5_ok is False:
-                parts.append("MD5 BAD")
-            for name, ok in [("CRC1", integrity.crc_block1_ok),
-                             ("CRCdata", integrity.crc_data_ok),
-                             ("CRC2", integrity.crc_block2_ok)]:
-                if ok:
-                    parts.append(f"{name} OK")
-            self.lbl_status.setText("Status: " + ", ".join(parts) if parts else "Status: -")
+            self._update_header_integrity(integrity)
             self.profile_info.setText(
                 f"Hash scheme: {integrity.hash_scheme}\n"
                 f"File size ok: {integrity.file_size_ok} ({integrity.actual_size})\n"
@@ -1372,8 +1419,8 @@ class MainWindow(
                 self.staged_state.parts_levels.prune_to_keys(set(have_parts_levels), have_parts_levels)
                 self.staged_state.parts_masks.prune_to_keys(set(self.have_parts_masks), self.have_parts_masks)
         else:
-            self.lbl_file.setText("File: (not opened)")
-            self.lbl_status.setText("Status: -")
+            self._update_header_path()
+            self._update_header_integrity(None)
             self.profile_info.setText("")
             self._reset_all_edit_state()
             self.garage_slots = []
@@ -1441,23 +1488,48 @@ class MainWindow(
         has_error = bool(self.profile_alias_error)
         self.btn_apply.setEnabled(enabled and pending and not has_error)
         self.btn_reset_want.setEnabled(enabled)
-        # Two badge states: staged wants ("Unsaved changes") win; otherwise a
-        # buffer that differs from disk - applied edits, transplants,
-        # injections - shows "Applied - not saved" until Save + backup.
+        # Staged wants ("Unsaved changes") win; otherwise a buffer that differs
+        # from disk - applied edits, transplants, injections - shows "Applied,
+        # not saved" until Save + backup. A matching loaded buffer is "Saved".
         applied_dirty = not pending and enabled and not self._buffer_matches_disk()
-        text = "Unsaved changes" if pending else ("Applied - not saved" if applied_dirty else "")
-        show = pending or applied_dirty
-        self.lbl_unsaved.setText(text)
-        self.lbl_unsaved.setProperty("pending", show)
-        self.lbl_unsaved.setVisible(show)
-        self.lbl_unsaved.style().unpolish(self.lbl_unsaved)
-        self.lbl_unsaved.style().polish(self.lbl_unsaved)
+        text = (
+            "Unsaved changes"
+            if pending
+            else ("Applied, not saved" if applied_dirty else ("Saved" if enabled else ""))
+        )
+        state = "pending" if pending else ("applied" if applied_dirty else ("saved" if enabled else ""))
+        self.lbl_unsaved.setState(text, state)
 
     def _update_header_path(self):
-        text = "File: (not opened)" if not self.savefile else f"{self.savefile.path}"
+        text = "No save opened" if not self.savefile else str(self.savefile.path)
+        self.lbl_file.setToolTip(text if self.savefile else "")
         fm = self.lbl_file.fontMetrics()
-        available = max(120, self.lbl_file.width())
+        available = max(80, self.lbl_file.width())
         self.lbl_file.setText(fm.elidedText(text, Qt.ElideMiddle, available))
+
+    def _update_header_integrity(self, integrity) -> None:
+        values = {
+            "md5": None if integrity is None else integrity.md5_ok,
+            "crc1": None if integrity is None else integrity.crc_block1_ok,
+            "data": None if integrity is None else integrity.crc_data_ok,
+            "crc2": None if integrity is None else integrity.crc_block2_ok,
+        }
+        captions = {"md5": "MD5", "crc1": "CRC1", "data": "DATA", "crc2": "CRC2"}
+        tooltip_names = {"md5": "MD5", "crc1": "CRC1", "data": "CRC data", "crc2": "CRC2"}
+        summary = []
+        for key, ok in values.items():
+            verdict = "ok" if ok is True else ("bad" if ok is False else "unknown")
+            verdict_text = "OK" if ok is True else ("BAD" if ok is False else "?")
+            badge = self.header_integrity_badges[key]
+            badge.setText(f"{captions[key]} {verdict_text}")
+            if badge.property("verdict") != verdict:
+                badge.setProperty("verdict", verdict)
+                badge.style().unpolish(badge)
+                badge.style().polish(badge)
+            summary.append(f"{tooltip_names[key]}: {verdict_text}")
+        tooltip = "\n".join(summary)
+        self.header_integrity_plate.setToolTip(tooltip)
+        self.lbl_status.setToolTip(tooltip)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

@@ -30,6 +30,7 @@ from PySide6.QtGui import (
     QTransform,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -174,6 +175,210 @@ class ShellActionButton(QPushButton):
             text,
             QPalette.ButtonText,
         )
+
+
+class HeaderStateChip(QWidget):
+    """Fixed header slot whose change-state chip crossfades in place.
+
+    The host always reserves the widest supported caption, so the save path
+    and integrity block never move when a state appears or disappears. Two
+    label layers make text-to-text changes a real crossfade instead of a width
+    animation or an abrupt caption swap.
+    """
+
+    _DURATION_MS = 180
+    SLOT_WIDTH = 150
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("headerStateSlot")
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setFixedSize(self.SLOT_WIDTH, 36)
+
+        layout = QStackedLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setStackingMode(QStackedLayout.StackAll)
+
+        self._layers: list[QWidget] = []
+        self._labels: list[QLabel] = []
+        self._effects: list[QGraphicsOpacityEffect] = []
+        for _ in range(2):
+            layer = QWidget(self)
+            layer.setObjectName("headerStateLayer")
+            layer_layout = QHBoxLayout(layer)
+            layer_layout.setContentsMargins(0, 0, 0, 0)
+            layer_layout.addStretch(1)
+            label = QLabel(layer)
+            label.setObjectName("headerStateLabel")
+            label.setAlignment(Qt.AlignCenter)
+            label.setContentsMargins(12, 0, 12, 0)
+            label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            label.setFixedHeight(36)
+            label.setProperty("state", "pending")
+            effect = QGraphicsOpacityEffect(label)
+            effect.setOpacity(0.0)
+            effect.setEnabled(False)
+            label.setGraphicsEffect(effect)
+            label.hide()
+            layer_layout.addWidget(label)
+            layer_layout.addStretch(1)
+            layout.addWidget(layer)
+            self._layers.append(layer)
+            self._labels.append(label)
+            self._effects.append(effect)
+
+        self._current_index = 0
+        self._target_text = ""
+        self._target_state = ""
+        self._transition_group: Optional[QParallelAnimationGroup] = None
+
+    def text(self) -> str:
+        """Return the semantic target even while the visual transition runs."""
+
+        return self._target_text
+
+    def stateKey(self) -> str:  # noqa: N802 - Qt-style companion to text()
+        return self._target_state
+
+    def setState(self, text: str, state: str, *, animated: bool = True) -> None:  # noqa: N802
+        text = str(text)
+        state = str(state)
+        if text == self._target_text and state == self._target_state:
+            return
+
+        self._target_text = text
+        self._target_state = state
+        if not animated or not self.isVisible() or not self._motion_allowed():
+            self._snap_to_target()
+            return
+
+        self._start_transition()
+
+    def _motion_allowed(self) -> bool:
+        app = QApplication.instance()
+        if app is None:
+            return False
+        return bool(app.style().styleHint(QStyle.SH_Widget_Animate, None, self))
+
+    def _stop_transition(self) -> None:
+        group = self._transition_group
+        self._transition_group = None
+        if group is not None:
+            group.stop()
+            group.deleteLater()
+
+    @staticmethod
+    def _repolish(label: QLabel) -> None:
+        label.style().unpolish(label)
+        label.style().polish(label)
+
+    def _prepare_label(self, index: int, text: str, state: str) -> None:
+        label = self._labels[index]
+        label.setText(text)
+        label.setProperty("state", state)
+        self._repolish(label)
+        label.setFixedWidth(min(label.sizeHint().width(), self.SLOT_WIDTH))
+
+    def _snap_to_target(self) -> None:
+        self._stop_transition()
+        self._prepare_label(self._current_index, self._target_text, self._target_state)
+        stack = self.layout()
+        if isinstance(stack, QStackedLayout):
+            stack.setCurrentIndex(self._current_index)
+        self._layers[self._current_index].raise_()
+        for index, (label, effect) in enumerate(zip(self._labels, self._effects)):
+            current = index == self._current_index and bool(self._target_text)
+            effect.setOpacity(1.0 if current else 0.0)
+            label.setVisible(current)
+            effect.setEnabled(False)
+
+    def _start_transition(self) -> None:
+        self._stop_transition()
+        outgoing_index = self._current_index
+        outgoing = self._labels[outgoing_index]
+        outgoing_effect = self._effects[outgoing_index]
+
+        if self._target_text:
+            incoming_index = 1 - outgoing_index
+            incoming = self._labels[incoming_index]
+            incoming_effect = self._effects[incoming_index]
+            self._prepare_label(incoming_index, self._target_text, self._target_state)
+            incoming_effect.setOpacity(0.0)
+            incoming_effect.setEnabled(True)
+            incoming.show()
+            self._current_index = incoming_index
+            stack = self.layout()
+            if isinstance(stack, QStackedLayout):
+                stack.setCurrentIndex(incoming_index)
+            self._layers[incoming_index].raise_()
+        else:
+            incoming = None
+            incoming_effect = None
+
+        group = QParallelAnimationGroup(self)
+        if outgoing.isVisible() and outgoing.text():
+            outgoing_effect.setEnabled(True)
+            fade_out = QPropertyAnimation(outgoing_effect, b"opacity", group)
+            fade_out.setDuration(self._DURATION_MS)
+            fade_out.setStartValue(outgoing_effect.opacity())
+            fade_out.setEndValue(0.0)
+            fade_out.setEasingCurve(QEasingCurve.OutCubic)
+            group.addAnimation(fade_out)
+        if incoming is not None and incoming_effect is not None:
+            fade_in = QPropertyAnimation(incoming_effect, b"opacity", group)
+            fade_in.setDuration(self._DURATION_MS)
+            fade_in.setStartValue(0.0)
+            fade_in.setEndValue(1.0)
+            fade_in.setEasingCurve(QEasingCurve.OutCubic)
+            group.addAnimation(fade_in)
+
+        if group.animationCount() == 0:
+            group.deleteLater()
+            self._snap_to_target()
+            return
+
+        self._transition_group = group
+        group.finished.connect(lambda active=group: self._finish_transition(active))
+        group.start()
+
+    def _finish_transition(self, group: QParallelAnimationGroup) -> None:
+        if group is not self._transition_group:
+            return
+        self._transition_group = None
+        stack = self.layout()
+        if isinstance(stack, QStackedLayout):
+            stack.setCurrentIndex(self._current_index)
+        self._layers[self._current_index].raise_()
+        for index, (label, effect) in enumerate(zip(self._labels, self._effects)):
+            current = index == self._current_index and bool(self._target_text)
+            effect.setOpacity(1.0 if current else 0.0)
+            label.setVisible(current)
+            # A live QGraphicsOpacityEffect keeps an offscreen cache even at
+            # full opacity. Moving this fixed chip during a window resize can
+            # otherwise repaint an empty cache until another page refreshes.
+            effect.setEnabled(False)
+        group.deleteLater()
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().changeEvent(event)
+        if event.type() in {QEvent.FontChange, QEvent.StyleChange}:
+            for label in self._labels:
+                if label.text():
+                    label.setFixedWidth(min(label.sizeHint().width(), self.SLOT_WIDTH))
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        stack = self.layout()
+        if isinstance(stack, QStackedLayout):
+            stack.setCurrentIndex(self._current_index)
+        self._layers[self._current_index].raise_()
+        if self._transition_group is None and self._target_text:
+            current = self._labels[self._current_index]
+            current_effect = self._effects[self._current_index]
+            current_effect.setOpacity(1.0)
+            current_effect.setEnabled(False)
+            current.show()
+            current.update()
 
 
 class _SegmentHitButton(QPushButton):

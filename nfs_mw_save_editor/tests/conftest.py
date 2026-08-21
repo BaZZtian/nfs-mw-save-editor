@@ -29,6 +29,7 @@ QT_TEST_FILES = {
     "test_garage_heat_ui.py",
     "test_garage_registry_presentation.py",
     "test_garage_staged_transfer_visibility.py",
+    "test_header_layout.py",
     "test_popup_theme_reentrancy.py",
     "test_reload_from_disk.py",
     "test_rendering.py",

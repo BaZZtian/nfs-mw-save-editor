@@ -2,7 +2,7 @@
 
 Reset Want=Have stays staged-only by design; the Career footer slot turns
 into "Reload from disk" because transplants apply immediately and staged
-wants never exist there. The "Applied - not saved" badge closes the gap
+wants never exist there. The "Applied, not saved" badge closes the gap
 where an applied buffer differed from disk with no indication at all.
 """
 
@@ -68,15 +68,15 @@ def test_applied_dirty_badge_tracks_buffer_vs_disk(tmp_path) -> None:
     window, _save_path = _window_with_save(tmp_path)
     try:
         window._update_action_states()
-        assert not window.lbl_unsaved.isVisible() or window.lbl_unsaved.text() == ""
+        assert window.lbl_unsaved.text() == "Saved"
 
         window.savefile.data[0x4038] ^= 0xFF  # any applied edit
         window._update_action_states()
-        assert window.lbl_unsaved.text() == "Applied - not saved"
+        assert window.lbl_unsaved.text() == "Applied, not saved"
 
         window.savefile.save(make_backup=False)
         window._update_action_states()
-        assert window.lbl_unsaved.text() == ""
+        assert window.lbl_unsaved.text() == "Saved"
     finally:
         _close_window(window)
 

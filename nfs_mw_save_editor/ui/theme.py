@@ -873,21 +873,79 @@ QToolButton {{
     border-radius: {RADIUS_MD};
     padding: 8px 12px;
 }}
-QLabel#unsavedLabel {{
+QFrame#headerInfoPlate {{
+    background: {BG_GLASS};
+    border: 1px solid {BORDER_GLASS};
+    border-radius: {RADIUS_MD};
+}}
+QLabel#headerInfoCaption {{
     background: transparent;
-    color: {STATUS_PENDING_FG};
+    border: none;
+    color: {MUTED_DARK};
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}}
+QWidget#headerStateSlot {{
+    background: transparent;
+    border: none;
+}}
+QWidget#headerActions,
+QWidget#headerStatusArea {{
+    background: transparent;
+    border: none;
+}}
+QWidget#headerStateLayer {{
+    background: transparent;
+    border: none;
+}}
+QLabel#headerStateLabel {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: {RADIUS_PILL};
     font-weight: 600;
     padding: 0px;
 }}
-QLabel#unsavedLabel[pending="true"] {{
+QLabel#headerStateLabel[state="pending"] {{
     background: {STATUS_PENDING_BG};
     border: 1px solid {STATUS_PENDING_BORDER};
-    border-radius: {RADIUS_PILL};
     color: {STATUS_PENDING_FG};
-    padding: 0px;
+}}
+QLabel#headerStateLabel[state="applied"] {{
+    background: {STATUS_ALT_INFO_BG};
+    border: 1px solid {STATUS_ALT_INFO_BORDER};
+    color: {STATUS_ALT_INFO_FG};
+}}
+QLabel#headerStateLabel[state="saved"] {{
+    background: {STATUS_SUCCESS_BG};
+    border: 1px solid {STATUS_SUCCESS_BORDER};
+    color: {STATUS_SUCCESS_FG};
 }}
 QLabel#filePath {{
+    background: transparent;
+    border: none;
     color: {TEXT};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#headerIntegrityBadge {{
+    background: {STATUS_NEUTRAL_BG};
+    border: 1px solid {STATUS_NEUTRAL_BORDER};
+    border-radius: {RADIUS_SM};
+    color: {STATUS_NEUTRAL_FG};
+    font-size: 8px;
+    font-weight: 700;
+    padding: 0px 3px;
+}}
+QLabel#headerIntegrityBadge[verdict="ok"] {{
+    background: {STATUS_SUCCESS_BG};
+    border-color: {STATUS_SUCCESS_BORDER};
+    color: {STATUS_SUCCESS_FG};
+}}
+QLabel#headerIntegrityBadge[verdict="bad"] {{
+    background: {TOAST_ERROR_BG};
+    border-color: {TOAST_ERROR_BORDER};
+    color: {TOAST_ERROR_FG};
 }}
 QMenu {{
     background: {BG_PANEL};
