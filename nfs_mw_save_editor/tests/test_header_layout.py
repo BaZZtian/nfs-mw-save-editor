@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QApplication
 
 from ui.main_window import MainWindow
 from ui.theme import available_theme_names, build_shell_stylesheet, resolve_theme_tokens
-from ui.widgets import HeaderStateChip, ToastNotification
+from ui.widgets import HeaderStateChip, ShellActionButton, ToastNotification
 
 
 APP = QApplication.instance() or QApplication([])
@@ -102,6 +102,48 @@ def test_header_info_slots_do_not_move_when_change_state_changes() -> None:
         assert _header_geometry(window) == clean_geometry
     finally:
         _close(window)
+
+
+def test_footer_primary_action_follows_apply_then_save_workflow() -> None:
+    window = _window()
+    try:
+        window.savefile = SimpleNamespace(path=Path("C:/TESTSAVE"))
+        with mock.patch.object(window, "_has_pending_changes", return_value=True), mock.patch.object(
+            window, "_buffer_matches_disk", return_value=True
+        ):
+            window._update_action_states()
+        assert window.btn_apply.property("nextAction") is True
+        assert window.btn_save_footer.property("nextAction") is False
+
+        with mock.patch.object(window, "_has_pending_changes", return_value=False), mock.patch.object(
+            window, "_buffer_matches_disk", return_value=False
+        ):
+            window._update_action_states()
+        assert window.btn_apply.property("nextAction") is False
+        assert window.btn_save_footer.property("nextAction") is True
+
+        with mock.patch.object(window, "_has_pending_changes", return_value=False), mock.patch.object(
+            window, "_buffer_matches_disk", return_value=True
+        ):
+            window._update_action_states()
+        assert window.btn_apply.property("nextAction") is False
+        assert window.btn_save_footer.property("nextAction") is False
+    finally:
+        _close(window)
+
+
+def test_next_action_attention_respects_disabled_motion() -> None:
+    button = ShellActionButton("Apply")
+    button.show()
+    APP.processEvents()
+    try:
+        with mock.patch.object(button, "_motion_allowed", return_value=False):
+            button.setNextAction(True)
+        assert button.property("nextAction") is True
+        assert button._attention_level == 0.0
+        assert button._attention_animation.state() == QAbstractAnimation.Stopped
+    finally:
+        _close(button)
 
 
 def test_header_uses_fixed_left_center_right_anchors_at_every_width() -> None:
@@ -250,6 +292,18 @@ def test_header_empty_path_keeps_readable_contrast_in_every_theme() -> None:
     stylesheet = build_shell_stylesheet("Solarized")
     file_path_rule = stylesheet.split("QLabel#filePath {", 1)[1].split("}", 1)[0]
     assert f"color: {tokens['HEADER_EMPTY_TEXT']};" in file_path_rule
+
+
+def test_primary_action_text_keeps_readable_contrast_in_every_theme() -> None:
+    for theme_name in available_theme_names():
+        tokens = resolve_theme_tokens(theme_name)
+        assert _contrast_ratio(tokens["ACTION_TEXT"], tokens["ACCENT"]) >= 4.5, theme_name
+
+    stylesheet = build_shell_stylesheet("Mango")
+    action_rule = stylesheet.split(
+        'QPushButton#shellActionButton[nextAction="true"],', 1
+    )[1].split("}", 1)[0]
+    assert f"color: {resolve_theme_tokens('Mango')['ACTION_TEXT']};" in action_rule
 
 
 def test_header_state_chip_crossfades_and_retargets_in_place() -> None:

@@ -550,6 +550,10 @@ def _build_style_tokens(preset: ThemePreset) -> dict[str, str]:
             tokens["ACCENT"],
             dark_on_accent,
         )
+    tokens["ACTION_TEXT"] = max(
+        (tokens["TEXT_ON_ACCENT"], "#FFFFFF", "#000000"),
+        key=lambda color: _contrast_ratio(color, tokens["ACCENT"]),
+    )
     tokens.update(_derive_semantic_status_tokens(tokens))
     return tokens
 
@@ -666,6 +670,38 @@ QPushButton:disabled {{ color: {DISABLED_TEXT}; border-color: {DISABLED_BORDER};
 QPushButton#shellActionButton {{
     min-height: 44px;
     padding: 0px;
+}}
+QPushButton#shellActionButton[nextAction="true"],
+QPushButton[popupAction="primary"] {{
+    background: {ACCENT};
+    color: {ACTION_TEXT};
+    border-color: {ACCENT_BRIGHT};
+}}
+QPushButton#shellActionButton[nextAction="true"]:hover,
+QPushButton[popupAction="primary"]:hover {{
+    background: {ACCENT};
+    border-color: {ACTION_TEXT};
+}}
+QPushButton#shellActionButton[nextAction="true"]:pressed,
+QPushButton[popupAction="primary"]:pressed {{
+    background: {ACCENT_SOFT};
+    color: {TEXT};
+    border-color: {ACCENT_BRIGHT};
+}}
+QPushButton[popupAction="danger"] {{
+    background: {TOAST_ERROR_BG};
+    color: {TOAST_ERROR_FG};
+    border-color: {TOAST_ERROR_BORDER};
+}}
+QPushButton[popupAction="danger"]:hover {{
+    border-color: {TOAST_ERROR_FG};
+}}
+QPushButton#shellActionButton:disabled,
+QPushButton[popupAction="primary"]:disabled,
+QPushButton[popupAction="danger"]:disabled {{
+    background: {BG_BUTTON};
+    color: {DISABLED_TEXT};
+    border-color: {DISABLED_BORDER};
 }}
 QPushButton:checked {{
     background: {ACCENT};
@@ -1876,6 +1912,41 @@ def build_popup_stylesheet(theme_name: str | None = None) -> str:
     return build_stylesheet(theme_name)
 
 
+def _style_popup_action_buttons(widget) -> None:
+    """Give dialog choices a consistent primary/danger hierarchy."""
+
+    try:
+        from PySide6.QtWidgets import QDialogButtonBox, QMessageBox, QPushButton
+    except Exception:
+        return
+
+    role_by_button = {}
+    if isinstance(widget, QMessageBox):
+        for button in widget.buttons():
+            role_by_button[button] = widget.buttonRole(button)
+    for button_box in widget.findChildren(QDialogButtonBox):
+        for button in button_box.buttons():
+            role_by_button[button] = button_box.buttonRole(button)
+
+    primary_roles = {"AcceptRole", "YesRole", "ApplyRole"}
+    for button in widget.findChildren(QPushButton):
+        role = role_by_button.get(button)
+        role_name = getattr(role, "name", "")
+        if role_name == "DestructiveRole":
+            action = "danger"
+        elif role_name in primary_roles or (
+            role_name == "ActionRole" and button.isDefault()
+        ):
+            action = "primary"
+        else:
+            action = ""
+        if button.property("popupAction") == action:
+            continue
+        button.setProperty("popupAction", action)
+        button.style().unpolish(button)
+        button.style().polish(button)
+
+
 def apply_theme_palette(app, theme_name: str | None = None) -> str:
     """Apply only app-level theme state and palette, without global QSS."""
     preset = get_theme_preset(theme_name or load_saved_theme_name())
@@ -1901,6 +1972,7 @@ def apply_popup_theme(widget, theme_name: str | None = None) -> str:
         resolved_name = app_theme if isinstance(app_theme, str) and app_theme else load_saved_theme_name()
     if bool(widget.property(_SCOPED_POPUP_THEME_APPLYING_PROPERTY)):
         return resolved_name
+    _style_popup_action_buttons(widget)
     stylesheet = build_popup_stylesheet(resolved_name)
     applied_name = widget.property("_scopedThemeName")
     if applied_name == resolved_name and widget.styleSheet() == stylesheet:

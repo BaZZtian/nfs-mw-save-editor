@@ -26,6 +26,7 @@ from PySide6.QtGui import (
     QLinearGradient,
     QPainter,
     QPalette,
+    QPen,
     QPixmap,
     QTransform,
 )
@@ -67,6 +68,7 @@ class ShellActionButton(QPushButton):
     _ICON_TEXT_GAP = 8
     _HEIGHT = 44
     _MIN_WIDTH = 140
+    _ATTENTION_DURATION_MS = 360
 
     def __init__(
         self,
@@ -79,7 +81,42 @@ class ShellActionButton(QPushButton):
         self.setObjectName("shellActionButton")
         self._height = int(height) if height is not None else self._HEIGHT
         self._reserved_texts: tuple[str, ...] = ()
+        self._attention_level = 0.0
+        self.setProperty("nextAction", False)
+        self._attention_animation = QVariantAnimation(self)
+        self._attention_animation.setDuration(self._ATTENTION_DURATION_MS)
+        self._attention_animation.setStartValue(0.0)
+        self._attention_animation.setKeyValueAt(0.32, 1.0)
+        self._attention_animation.setEndValue(0.0)
+        self._attention_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._attention_animation.valueChanged.connect(self._set_attention_level)
         self.setMinimumHeight(self._height)
+
+    def setNextAction(self, active: bool, *, animated: bool = True) -> None:  # noqa: N802
+        """Mark this as the next workflow action and announce a state change once."""
+
+        active = bool(active)
+        if bool(self.property("nextAction")) == active:
+            return
+        self.setProperty("nextAction", active)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        if active and animated and self.isVisible() and self._motion_allowed():
+            self._attention_animation.stop()
+            self._attention_animation.start()
+        else:
+            self._attention_animation.stop()
+            self._set_attention_level(0.0)
+
+    def _motion_allowed(self) -> bool:
+        app = QApplication.instance()
+        if app is None:
+            return False
+        return bool(app.style().styleHint(QStyle.SH_Widget_Animate, None, self))
+
+    def _set_attention_level(self, value) -> None:
+        self._attention_level = max(0.0, min(1.0, float(value)))
+        self.update()
 
     def reserve_text_widths(self, *texts: str) -> None:
         """Size the button for the widest label it will ever show.
@@ -150,6 +187,23 @@ class ShellActionButton(QPushButton):
         option.text = ""
         option.icon = QIcon()
         painter.drawControl(QStyle.CE_PushButton, option)
+
+        if self._attention_level > 0.0 and self.isEnabled():
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            pulse_rect = QRectF(self.rect()).adjusted(1.25, 1.25, -1.25, -1.25)
+            pulse_color = option.palette.color(QPalette.ButtonText)
+            fill_color = QColor(pulse_color)
+            fill_color.setAlpha(round(28 * self._attention_level))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(fill_color)
+            painter.drawRoundedRect(pulse_rect, 7.0, 7.0)
+            border_color = QColor(pulse_color)
+            border_color.setAlpha(round(120 * self._attention_level))
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(border_color, 1.5))
+            painter.drawRoundedRect(pulse_rect, 7.0, 7.0)
+            painter.restore()
 
         icon_rect, text_rect = self._content_rects()
         if option.state & QStyle.State_Sunken:

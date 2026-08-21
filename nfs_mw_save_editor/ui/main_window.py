@@ -1498,6 +1498,8 @@ class MainWindow(
         # from disk - applied edits, transplants, injections - shows "Applied,
         # not saved" until Save + backup. A matching loaded buffer is "Saved".
         applied_dirty = not pending and enabled and not self._buffer_matches_disk()
+        self.btn_apply.setNextAction(enabled and pending and not has_error)
+        self.btn_save_footer.setNextAction(applied_dirty)
         text = (
             "Unsaved changes"
             if pending
