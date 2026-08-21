@@ -98,6 +98,8 @@ def test_header_uses_fixed_left_center_right_anchors_at_every_width() -> None:
             assert path.geometry().center().x() == header.rect().center().x()
             assert actions.geometry().left() == header.rect().left()
             assert status.geometry().right() == header.rect().right()
+            assert window.header_file_plate.isAncestorOf(window.lbl_unsaved)
+            assert window.header_integrity_plate.geometry().right() == status.rect().right()
             positions.append(
                 (
                     actions.width(),

@@ -89,9 +89,9 @@ logger = logging.getLogger(__name__)
 # button can reserve room for the longer one and keep a steady width.
 FOOTER_RESET_LABEL = "Reset Want=Have"
 FOOTER_RELOAD_LABEL = "Reload from disk"
-HEADER_PATH_WIDTH = 200
+HEADER_PATH_WIDTH = 300
 HEADER_INTEGRITY_WIDTH = 236
-HEADER_SIDE_WIDTH = HeaderStateChip.SLOT_WIDTH + 8 + HEADER_INTEGRITY_WIDTH
+HEADER_SIDE_WIDTH = 288
 
 
 def _appdata_dir() -> Path:
@@ -523,13 +523,18 @@ class MainWindow(
         file_layout.setSpacing(0)
         file_caption = QLabel("SAVE FILE")
         file_caption.setObjectName("headerInfoCaption")
+        self.lbl_unsaved = HeaderStateChip()
+        file_meta = QHBoxLayout()
+        file_meta.setContentsMargins(0, 0, 0, 0)
+        file_meta.setSpacing(8)
+        file_meta.addWidget(file_caption)
+        file_meta.addStretch(1)
+        file_meta.addWidget(self.lbl_unsaved)
         self.lbl_file = QLabel("No save opened")
         self.lbl_file.setObjectName("filePath")
         self.lbl_file.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        file_layout.addWidget(file_caption)
+        file_layout.addLayout(file_meta)
         file_layout.addWidget(self.lbl_file)
-
-        self.lbl_unsaved = HeaderStateChip()
 
         self.header_integrity_plate = QFrame()
         self.header_integrity_plate.setObjectName("headerInfoPlate")
@@ -559,8 +564,8 @@ class MainWindow(
         self.header_status_area.setFixedWidth(HEADER_SIDE_WIDTH)
         status_layout = QHBoxLayout(self.header_status_area)
         status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setSpacing(8)
-        status_layout.addWidget(self.lbl_unsaved)
+        status_layout.setSpacing(0)
+        status_layout.addStretch(1)
         status_layout.addWidget(self.header_integrity_plate)
 
         row.addWidget(self.header_actions, 0, 0)

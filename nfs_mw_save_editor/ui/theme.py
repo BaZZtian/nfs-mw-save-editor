@@ -901,24 +901,25 @@ QWidget#headerStateLayer {{
 }}
 QLabel#headerStateLabel {{
     background: transparent;
-    border: 1px solid transparent;
-    border-radius: {RADIUS_PILL};
+    border: none;
+    color: {MUTED};
+    font-size: 9px;
     font-weight: 600;
     padding: 0px;
 }}
 QLabel#headerStateLabel[state="pending"] {{
-    background: {STATUS_PENDING_BG};
-    border: 1px solid {STATUS_PENDING_BORDER};
+    background: transparent;
+    border: none;
     color: {STATUS_PENDING_FG};
 }}
 QLabel#headerStateLabel[state="applied"] {{
-    background: {STATUS_ALT_INFO_BG};
-    border: 1px solid {STATUS_ALT_INFO_BORDER};
+    background: transparent;
+    border: none;
     color: {STATUS_ALT_INFO_FG};
 }}
 QLabel#headerStateLabel[state="saved"] {{
-    background: {STATUS_SUCCESS_BG};
-    border: 1px solid {STATUS_SUCCESS_BORDER};
+    background: transparent;
+    border: none;
     color: {STATUS_SUCCESS_FG};
 }}
 QLabel#filePath {{

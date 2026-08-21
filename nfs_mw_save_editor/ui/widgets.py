@@ -178,22 +178,24 @@ class ShellActionButton(QPushButton):
 
 
 class HeaderStateChip(QWidget):
-    """Fixed header slot whose change-state chip crossfades in place.
+    """Compact header status whose save-state captions crossfade in place.
 
     The host always reserves the widest supported caption, so the save path
-    and integrity block never move when a state appears or disappears. Two
-    label layers make text-to-text changes a real crossfade instead of a width
-    animation or an abrupt caption swap.
+    never moves when a state appears or disappears. Two label layers make
+    text-to-text changes a real crossfade instead of a width animation or an
+    abrupt caption swap.
     """
 
     _DURATION_MS = 180
-    SLOT_WIDTH = 150
+    SLOT_WIDTH = 118
+    SLOT_HEIGHT = 14
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("headerStateSlot")
+        self.setAccessibleName("Save state")
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self.setFixedSize(self.SLOT_WIDTH, 36)
+        self.setFixedSize(self.SLOT_WIDTH, self.SLOT_HEIGHT)
 
         layout = QStackedLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -210,10 +212,10 @@ class HeaderStateChip(QWidget):
             layer_layout.addStretch(1)
             label = QLabel(layer)
             label.setObjectName("headerStateLabel")
-            label.setAlignment(Qt.AlignCenter)
-            label.setContentsMargins(12, 0, 12, 0)
+            label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            label.setContentsMargins(0, 0, 0, 0)
             label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            label.setFixedHeight(36)
+            label.setFixedHeight(self.SLOT_HEIGHT)
             label.setProperty("state", "pending")
             effect = QGraphicsOpacityEffect(label)
             effect.setOpacity(0.0)
@@ -221,7 +223,6 @@ class HeaderStateChip(QWidget):
             label.setGraphicsEffect(effect)
             label.hide()
             layer_layout.addWidget(label)
-            layer_layout.addStretch(1)
             layout.addWidget(layer)
             self._layers.append(layer)
             self._labels.append(label)
@@ -248,6 +249,7 @@ class HeaderStateChip(QWidget):
 
         self._target_text = text
         self._target_state = state
+        self.setToolTip(text)
         if not animated or not self.isVisible() or not self._motion_allowed():
             self._snap_to_target()
             return
