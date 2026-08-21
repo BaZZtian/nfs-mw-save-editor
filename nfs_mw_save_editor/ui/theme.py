@@ -671,18 +671,15 @@ QPushButton#shellActionButton {{
     min-height: 44px;
     padding: 0px;
 }}
-QPushButton#shellActionButton[nextAction="true"],
 QPushButton[popupAction="primary"] {{
     background: {ACCENT};
     color: {ACTION_TEXT};
     border-color: {ACCENT_BRIGHT};
 }}
-QPushButton#shellActionButton[nextAction="true"]:hover,
 QPushButton[popupAction="primary"]:hover {{
     background: {ACCENT};
     border-color: {ACTION_TEXT};
 }}
-QPushButton#shellActionButton[nextAction="true"]:pressed,
 QPushButton[popupAction="primary"]:pressed {{
     background: {ACCENT_SOFT};
     color: {TEXT};
@@ -696,7 +693,6 @@ QPushButton[popupAction="danger"] {{
 QPushButton[popupAction="danger"]:hover {{
     border-color: {TOAST_ERROR_FG};
 }}
-QPushButton#shellActionButton:disabled,
 QPushButton[popupAction="primary"]:disabled,
 QPushButton[popupAction="danger"]:disabled {{
     background: {BG_BUTTON};

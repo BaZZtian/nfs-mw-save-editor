@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtCore import QAbstractAnimation, QCoreApplication, QEvent
+from PySide6.QtCore import QAbstractAnimation, QCoreApplication, QEasingCurve, QEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -140,8 +140,36 @@ def test_next_action_attention_respects_disabled_motion() -> None:
         with mock.patch.object(button, "_motion_allowed", return_value=False):
             button.setNextAction(True)
         assert button.property("nextAction") is True
-        assert button._attention_level == 0.0
+        assert button._attention_level == 1.0
         assert button._attention_animation.state() == QAbstractAnimation.Stopped
+    finally:
+        _close(button)
+
+
+def test_next_action_attention_crossfades_and_retargets() -> None:
+    button = ShellActionButton("Apply")
+    button.show()
+    APP.processEvents()
+    try:
+        with mock.patch.object(button, "_motion_allowed", return_value=True):
+            button.setNextAction(True)
+            animation = button._attention_animation
+            assert animation.state() == QAbstractAnimation.Running
+            assert animation.duration() == button._ATTENTION_ENTER_MS
+            assert animation.easingCurve().type() == QEasingCurve.OutCubic
+
+            animation.setCurrentTime(animation.duration() // 2)
+            halfway = button._attention_level
+            assert 0.0 < halfway < 1.0
+
+            button.setNextAction(False)
+            assert animation.state() == QAbstractAnimation.Running
+            assert animation.startValue() == halfway
+            assert animation.endValue() == 0.0
+            assert animation.duration() == round(button._ATTENTION_EXIT_MS * halfway)
+
+            animation.setCurrentTime(animation.duration())
+            assert button._attention_level == 0.0
     finally:
         _close(button)
 
@@ -300,9 +328,7 @@ def test_primary_action_text_keeps_readable_contrast_in_every_theme() -> None:
         assert _contrast_ratio(tokens["ACTION_TEXT"], tokens["ACCENT"]) >= 4.5, theme_name
 
     stylesheet = build_shell_stylesheet("Mango")
-    action_rule = stylesheet.split(
-        'QPushButton#shellActionButton[nextAction="true"],', 1
-    )[1].split("}", 1)[0]
+    action_rule = stylesheet.split('QPushButton[popupAction="primary"]', 1)[1].split("}", 1)[0]
     assert f"color: {resolve_theme_tokens('Mango')['ACTION_TEXT']};" in action_rule
 
 
