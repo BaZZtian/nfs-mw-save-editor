@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     QSize,
     Qt,
 )
-from PySide6.QtGui import QFont, QIcon, QMouseEvent, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QMouseEvent, QPixmap
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -108,24 +108,69 @@ def test_hero_art_layers_are_packaged_at_runtime_size():
         assert 0 < portrait_size.height() <= 1024
 
 
-def test_progress_marker_icons_keep_original_pixels_across_themes():
-    path = game_icon_path("race_circuit")
-    assert path is not None
-    _ProgressRowList._pixmap_cache.clear()
+def test_dossier_icons_share_the_preview_chip_visual_contract():
+    from ui.pages.career_mixin import (
+        _ChipPreviewCard,
+        _InspectorRow,
+        _inspector_icon_tokens,
+    )
 
-    apply_theme_palette(_app(), "Cherry")
-    cherry = _ProgressRowList._source_pixmap(path, 25).toImage()
-    apply_theme_palette(_app(), "Kiwi")
-    kiwi = _ProgressRowList._source_pixmap(path, 25).toImage()
+    def row(state: str, kind: str = "race") -> _InspectorRow:
+        return _InspectorRow(
+            title="x",
+            tag="",
+            state=state,
+            kind=kind,
+            icon_path=game_icon_path("race_circuit"),
+            detail="",
+            fraction=None,
+            tooltip="",
+        )
 
-    assert cherry == kiwi
-    opaque_colors = {
-        cherry.pixelColor(x, y).name()
-        for y in range(cherry.height())
-        for x in range(cherry.width())
-        if cherry.pixelColor(x, y).alpha() == 255
+    assert _inspector_icon_tokens(row("done")) == (
+        "ACCENT_SOFT", "ACCENT", "TEXT", 1.0
+    )
+    assert _inspector_icon_tokens(row("done", "boss")) == (
+        "BOSS_GOLD_BG", "BOSS_GOLD", "TEXT", 1.0
+    )
+    assert _inspector_icon_tokens(row("open")) == (
+        "BG_INPUT", "ACCENT", None, 1.0
+    )
+    assert _inspector_icon_tokens(row("locked")) == (
+        "BG_INPUT", "BORDER", None, 0.38
+    )
+    for state in ("done", "open", "locked"):
+        item = row(state)
+        assert _ChipPreviewCard._chip_colours(item) == _inspector_icon_tokens(item)
+
+    apply_theme_palette(_app(), "Blueprint")
+    tokens = resolve_theme_tokens("Blueprint")
+    _ChipPreviewCard._pixmap_cache.clear()
+    glyph = _ChipPreviewCard._tinted(
+        row("done").icon_path,
+        25,
+        QColor(tokens["TEXT"]),
+    ).toImage()
+    tinted_pixels = {
+        glyph.pixelColor(x, y).name()
+        for y in range(glyph.height())
+        for x in range(glyph.width())
+        if glyph.pixelColor(x, y).alpha() == 255
     }
-    assert "#ffffff" in opaque_colors
+    assert tinted_pixels == {tokens["TEXT"].lower()}
+
+    listing = _ProgressRowList("RACE SCHEDULE")
+    listing.set_items("", (row("done"),), (row("done", "boss"),))
+    listing.resize(520, listing._content_height())
+    listing.show()
+    _app().processEvents()
+    image = listing.grab().toImage()
+    normal_y = listing._ROWS_TOP + listing._ROW_HEIGHT // 2
+    boss_y = listing._ROWS_TOP + listing._ROW_HEIGHT + listing._SECTION_GAP
+    boss_y += listing._ROW_HEIGHT // 2
+    assert image.pixelColor(18, normal_y).name() == tokens["ACCENT_SOFT"].lower()
+    assert image.pixelColor(18, boss_y).name() == tokens["BOSS_GOLD_BG"].lower()
+    listing.close()
 
 
 def test_game_icons_are_wired_to_hero_actions_and_tuning_nav():

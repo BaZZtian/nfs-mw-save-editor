@@ -1382,6 +1382,22 @@ class _InspectorRow:
     note: str = ""
 
 
+def _inspector_icon_tokens(
+    row: _InspectorRow,
+) -> tuple[str, str, Optional[str], float]:
+    """Fill, border, glyph tint and opacity shared by previews and dossiers."""
+
+    boss = row.kind == "boss"
+    accent = "BOSS_GOLD" if boss else "ACCENT"
+    if row.state == "done":
+        # A soft state surface leaves the glyph in charge instead of turning a
+        # whole list of completed events into solid accent blocks.
+        return ("BOSS_GOLD_BG" if boss else "ACCENT_SOFT"), accent, "TEXT", 1.0
+    if row.state == "open":
+        return "BG_INPUT", accent, None, 1.0
+    return "BG_INPUT", ("BOSS_GOLD_DIM" if boss else "BORDER"), None, 0.38
+
+
 def _towards(rest: QColor, lit: QColor, level: float) -> QColor:
     """``rest`` moved ``level`` of the way to ``lit``."""
     return QColor(
@@ -1761,18 +1777,7 @@ class _ChipPreviewCard(_PressableSection):
         very face - a panel that borrows the chip's paint from somewhere else
         would drift from it the first time either was touched.
         """
-        boss = row.kind == "boss"
-        accent = "BOSS_GOLD" if boss else "ACCENT"
-        if row.state == "done":
-            # A tinted surface rather than the accent itself: a row of solid
-            # accent tiles was the loudest thing on the page.  TEXT, not
-            # TEXT_ON_ACCENT - the latter is picked to read on the accent, and
-            # on the soft fill it collapses (1.7:1 in the themes whose accent
-            # is bright).  TEXT never drops below 6.1:1 there.
-            return ("BOSS_GOLD_BG" if boss else "ACCENT_SOFT"), accent, "TEXT", 1.0
-        if row.state == "open":
-            return "BG_INPUT", accent, None, 1.0
-        return "BG_INPUT", ("BOSS_GOLD_DIM" if boss else "BORDER"), None, 0.38
+        return _inspector_icon_tokens(row)
 
     def face_for(self, origin: QRect) -> Optional[_OriginFace]:
         for rect, row in self._chip_rects:
@@ -2403,7 +2408,6 @@ class _RewardOffersCard(_PressableSection):
 class _ProgressRowList(QFrame):
     """Painted dossier list: one readable row per event with state and result."""
 
-    _pixmap_cache: "OrderedDict[tuple[str, int], QPixmap]" = OrderedDict()
     _ROWS_TOP = 58
     _ROW_HEIGHT = 30
     _NOTE_ROW_HEIGHT = 46
@@ -2451,31 +2455,6 @@ class _ProgressRowList(QFrame):
         self.updateGeometry()
         self.update()
 
-    @classmethod
-    def _source_pixmap(cls, path: Optional[Path], size: int) -> QPixmap:
-        if path is None:
-            return QPixmap()
-        key = (str(path), size)
-        cached = cls._pixmap_cache.get(key)
-        if cached is not None:
-            cls._pixmap_cache.move_to_end(key)
-            return cached
-        source = QPixmap(str(path))
-        if source.isNull():
-            return QPixmap()
-        source = source.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        original = QPixmap(size, size)
-        original.fill(Qt.transparent)
-        painter = QPainter(original)
-        x = (size - source.width()) // 2
-        y = (size - source.height()) // 2
-        painter.drawPixmap(x, y, source)
-        painter.end()
-        cls._pixmap_cache[key] = original
-        while len(cls._pixmap_cache) > 128:
-            cls._pixmap_cache.popitem(last=False)
-        return original
-
     def _row_font(self, painter: QPainter, size: float, *, bold: bool) -> None:
         font = painter.font()
         font.setBold(bold)
@@ -2517,24 +2496,19 @@ class _ProgressRowList(QFrame):
             rect = QRect(10, top, width - 20, self._row_height(row))
             self._row_rects.append((rect, row))
             boss = row.kind == "boss"
+            fill_token, border_token, tint_token, icon_opacity = _inspector_icon_tokens(row)
+            box_fill = QColor(tokens[fill_token])
+            box_border = QColor(tokens[border_token])
+            icon_colour = QColor(tokens[tint_token]) if tint_token else None
             if row.state == "done":
-                box_fill = QColor(tokens["BOSS_GOLD" if boss else "ACCENT"])
-                box_border = QColor(tokens["BOSS_GOLD_BRIGHT" if boss else "ACCENT_BRIGHT"])
                 title_color = QColor(tokens["TEXT"])
                 detail_color = QColor(tokens["BOSS_GOLD_BRIGHT" if boss else "ACCENT_BRIGHT"])
-                icon_opacity = 1.0
             elif row.state == "open":
-                box_fill = QColor(tokens["BG_INPUT"])
-                box_border = QColor(tokens["BOSS_GOLD" if boss else "ACCENT"])
                 title_color = QColor(tokens["TEXT"])
                 detail_color = QColor(tokens["MUTED"])
-                icon_opacity = 1.0
             else:
-                box_fill = QColor(tokens["BG_INPUT"])
-                box_border = QColor(tokens["BOSS_GOLD_DIM" if boss else "BORDER"])
                 title_color = QColor(tokens["MUTED_DARK"])
                 detail_color = QColor(tokens["MUTED_DARK"])
-                icon_opacity = 0.38
 
             # A row with a note has the room for a bigger token, and needs it:
             # the marker art is a detailed diamond that turns to mush at 16px,
@@ -2547,7 +2521,7 @@ class _ProgressRowList(QFrame):
             painter.setPen(QPen(box_border, 1.2))
             box_radius = 4.0 if boss else 6.0
             painter.drawRoundedRect(box, box_radius, box_radius)
-            icon = self._source_pixmap(row.icon_path, glyph)
+            icon = _ChipPreviewCard._tinted(row.icon_path, glyph, icon_colour)
             if not icon.isNull():
                 painter.setOpacity(icon_opacity)
                 painter.drawPixmap(int(box.left()) + 4, int(box.top()) + 4, icon)
