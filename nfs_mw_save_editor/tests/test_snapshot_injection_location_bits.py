@@ -29,7 +29,6 @@ def _make_snapshot(*, source_kind: str, location_bits: int) -> SnapshotLibraryEn
         normalized_primary_build_block=b"",
         performance_levels=(),
         primary_visual_fields=(),
-        requires_unresolved_global_visual_state=False,
         has_visual_sidecar=False,
     )
 

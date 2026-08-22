@@ -55,17 +55,5 @@
       "Gauge D": "6F"
     }
   },
-  "optional_visual_sidecar": null,
-  "requires_unresolved_global_visual_state": true,
-  "global_visual_table": {
-    "base_offset": 21879,
-    "entry_count": 57,
-    "stride": 8,
-    "default_value": 1,
-    "uniform_value": 0,
-    "unique_values": [
-      0
-    ],
-    "values_hex": "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00"
-  }
+  "optional_visual_sidecar": null
 }

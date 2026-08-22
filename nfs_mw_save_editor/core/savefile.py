@@ -131,12 +131,6 @@ class SaveFile:
     PARTS_NOS_OFFSET = 0x130
     PARTS_JUNKMAN_MASK_OFFSET = 0x134
     PARTS_CONFIRMED_SLICE_END = 0x138
-    VISUAL_TABLE_BASE_OFFSET = 0x5577
-    VISUAL_TABLE_ENTRY_COUNT = 57
-    VISUAL_TABLE_ENTRY_STRIDE = 0x08
-    VISUAL_TABLE_DEFAULT_VALUE = 0x01
-    VISUAL_TABLE_LEGACY_VALUE_OFFSET = 0x00
-    VISUAL_TABLE_MODE_OFFSET = 0x04
     EMPTY_PARTS_BLOCK_HEAD_FILL = 0xFF
     EMPTY_PARTS_BLOCK_ZERO_TAIL_OFFSET = 0x190
     EMPTY_PARTS_BLOCK_MARKER = b"\xFF\xCD\xCD\xCD"
@@ -1329,7 +1323,6 @@ class SaveFile:
         return snapshot_library.SnapshotLibraryFormat(
             parts_block_size=cls.PARTS_BLOCK_SIZE,
             career_vehicle_signature_size=cls.CAREER_VEHICLE_SIGNATURE_SIZE,
-            visual_table_mode_offset=cls.VISUAL_TABLE_MODE_OFFSET,
         )
 
     @classmethod

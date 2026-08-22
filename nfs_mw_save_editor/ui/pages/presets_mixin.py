@@ -496,16 +496,6 @@ class PresetsMixin:
         tooltip_parts.extend(self._snapshot_provenance_lines(entry))
         if entry.has_visual_sidecar:
             tooltip_parts.append("Has visual sidecar")
-        if entry.requires_unresolved_global_visual_state:
-            if entry.global_visual_table_mode_uniform_value is not None:
-                tooltip_parts.append(
-                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} mode 0x{entry.global_visual_table_mode_uniform_value:02X} "
-                    "(not injected in v1)"
-                )
-            else:
-                tooltip_parts.append(
-                    f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} visual mode state (not injected in v1)"
-                )
         utility_text, utility_tooltip = self._snapshot_library_utility_summary(vm)
         tooltip_parts.append(f"State: {utility_text}")
         if utility_tooltip:
@@ -662,16 +652,6 @@ class PresetsMixin:
                 warn_badge.setObjectName("contentCardNote")
                 warn_badge.setWordWrap(True)
                 card_layout.addWidget(warn_badge)
-            if entry.requires_unresolved_global_visual_state:
-                mode_text = (
-                    f"Uses extra 0x5577+{entry.global_visual_table_mode_offset:X} visual state not replayed in this preview"
-                    if entry.global_visual_table_mode_uniform_value is not None
-                    else "Uses extra 0x5577 visual state not replayed in this preview"
-                )
-                warn_badge = QLabel(mode_text)
-                warn_badge.setObjectName("contentCardNote")
-                warn_badge.setWordWrap(True)
-                card_layout.addWidget(warn_badge)
 
             # Separator
             card_layout.addWidget(self._make_card_separator())
@@ -733,16 +713,6 @@ class PresetsMixin:
             ]
             if entry.has_visual_sidecar:
                 tooltip_parts.append("Has visual sidecar")
-            if entry.requires_unresolved_global_visual_state:
-                if entry.global_visual_table_mode_uniform_value is not None:
-                    tooltip_parts.append(
-                        f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} mode 0x{entry.global_visual_table_mode_uniform_value:02X} "
-                        "(not injected in v1)"
-                    )
-                else:
-                    tooltip_parts.append(
-                        f"Requires 0x5577+{entry.global_visual_table_mode_offset:X} visual mode state (not injected in v1)"
-                    )
             card.setToolTip("\n".join(tooltip_parts))
 
             row = idx // columns
@@ -852,18 +822,6 @@ class PresetsMixin:
             name_label.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
-            mode_label = QLabel(
-                f"0x5577+{snapshot.global_visual_table_mode_offset:X} visual mode: "
-                + (
-                    f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
-                    if snapshot.global_visual_table_mode_uniform_value is not None
-                    else "mixed"
-                )
-            )
-            mode_label.setObjectName("contentCardNote")
-            mode_label.setWordWrap(True)
-            card_layout.addWidget(mode_label)
-
             # Separator
             card_layout.addWidget(self._make_card_separator())
 
@@ -889,23 +847,6 @@ class PresetsMixin:
             if snapshot.optional_visual_sidecar:
                 sc = snapshot.optional_visual_sidecar
                 tooltip_parts.append(f"Sidecar: slot {sc.sidecar_parts_slot}, block 0x{sc.sidecar_block_abs_off:05X}")
-            if snapshot.global_visual_table_values:
-                if snapshot.global_visual_table_mode_uniform_value is not None:
-                    tooltip_parts.append(
-                        f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: "
-                        f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
-                    )
-                else:
-                    tooltip_parts.append(f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: mixed")
-                if snapshot.global_visual_table_mode_tail_value is not None:
-                    tooltip_parts.append(
-                        f"0x5577+{snapshot.global_visual_table_mode_offset:X} Tail: "
-                        f"0x{snapshot.global_visual_table_mode_tail_value:02X}"
-                    )
-                if snapshot.global_visual_table_uniform_value is not None:
-                    tooltip_parts.append(f"0x5577+0 Legacy: 0x{snapshot.global_visual_table_uniform_value:02X}")
-                else:
-                    tooltip_parts.append("0x5577+0 Legacy: mixed values")
             card.setToolTip("\n".join(tooltip_parts))
 
             row = idx // columns
@@ -1024,16 +965,6 @@ class PresetsMixin:
 
         if entry.has_visual_sidecar:
             warn_badge = QLabel("Needs adjacent sidecar slots")
-            warn_badge.setObjectName("contentCardNote")
-            warn_badge.setWordWrap(True)
-            card_layout.addWidget(warn_badge)
-        if entry.requires_unresolved_global_visual_state:
-            mode_text = (
-                f"Uses extra 0x5577+{entry.global_visual_table_mode_offset:X} visual state not replayed in this preview"
-                if entry.global_visual_table_mode_uniform_value is not None
-                else "Uses extra 0x5577 visual state not replayed in this preview"
-            )
-            warn_badge = QLabel(mode_text)
             warn_badge.setObjectName("contentCardNote")
             warn_badge.setWordWrap(True)
             card_layout.addWidget(warn_badge)
@@ -1159,18 +1090,6 @@ class PresetsMixin:
         name_label.setAlignment(Qt.AlignCenter)
         card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
-        mode_label = QLabel(
-            f"0x5577+{snapshot.global_visual_table_mode_offset:X} visual mode: "
-            + (
-                f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
-                if snapshot.global_visual_table_mode_uniform_value is not None
-                else "mixed"
-            )
-        )
-        mode_label.setObjectName("contentCardNote")
-        mode_label.setWordWrap(True)
-        card_layout.addWidget(mode_label)
-
         card_layout.addWidget(self._make_card_separator())
 
         card_layout.addWidget(self._make_card_field_label("Performance"))
@@ -1195,23 +1114,6 @@ class PresetsMixin:
         if snapshot.optional_visual_sidecar:
             sc = snapshot.optional_visual_sidecar
             tooltip_parts.append(f"Sidecar: slot {sc.sidecar_parts_slot}, block 0x{sc.sidecar_block_abs_off:05X}")
-        if snapshot.global_visual_table_values:
-            if snapshot.global_visual_table_mode_uniform_value is not None:
-                tooltip_parts.append(
-                    f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: "
-                    f"0x{snapshot.global_visual_table_mode_uniform_value:02X}"
-                )
-            else:
-                tooltip_parts.append(f"0x5577+{snapshot.global_visual_table_mode_offset:X} Mode: mixed")
-            if snapshot.global_visual_table_mode_tail_value is not None:
-                tooltip_parts.append(
-                    f"0x5577+{snapshot.global_visual_table_mode_offset:X} Tail: "
-                    f"0x{snapshot.global_visual_table_mode_tail_value:02X}"
-                )
-            if snapshot.global_visual_table_uniform_value is not None:
-                tooltip_parts.append(f"0x5577+0 Legacy: 0x{snapshot.global_visual_table_uniform_value:02X}")
-            else:
-                tooltip_parts.append("0x5577+0 Legacy: mixed values")
         card.setToolTip("\n".join(tooltip_parts))
 
         card.setMinimumHeight(card.sizeHint().height() + 4)

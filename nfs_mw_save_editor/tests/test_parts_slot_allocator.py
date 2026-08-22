@@ -104,7 +104,6 @@ class PlannerTailSlotTests(unittest.TestCase):
             normalized_primary_build_block=bytes(block),
             performance_levels=(),
             primary_visual_fields=(),
-            requires_unresolved_global_visual_state=False,
             has_visual_sidecar=False,
             optional_visual_sidecar=None,
         )

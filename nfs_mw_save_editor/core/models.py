@@ -392,14 +392,6 @@ class FullCarBuildSnapshot:
     performance_levels: Tuple[Tuple[str, int], ...]
     primary_visual_fields: Tuple[Tuple[str, str], ...]
     optional_visual_sidecar: Optional[VisualSidecarTemplate]
-    requires_unresolved_global_visual_state: bool
-    global_visual_table_entries: Tuple[bytes, ...]
-    global_visual_table_values: Tuple[int, ...]
-    global_visual_table_uniform_value: Optional[int]
-    global_visual_table_mode_offset: int
-    global_visual_table_mode_values: Tuple[int, ...]
-    global_visual_table_mode_uniform_value: Optional[int]
-    global_visual_table_mode_tail_value: Optional[int]
 
 
 @dataclass(frozen=True)
@@ -415,13 +407,8 @@ class SnapshotLibraryEntry:
     normalized_primary_build_block: bytes
     performance_levels: Tuple[Tuple[str, int], ...]
     primary_visual_fields: Tuple[Tuple[str, str], ...]
-    requires_unresolved_global_visual_state: bool
     has_visual_sidecar: bool
     optional_visual_sidecar: Optional[SnapshotVisualSidecarEntry] = None
-    global_visual_table_uniform_value: Optional[int] = None
-    global_visual_table_mode_offset: int = 4
-    global_visual_table_mode_uniform_value: Optional[int] = None
-    global_visual_table_mode_tail_value: Optional[int] = None
     provenance: Tuple[Tuple[str, str], ...] = ()
 
 

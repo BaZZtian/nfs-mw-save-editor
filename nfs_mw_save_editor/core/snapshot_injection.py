@@ -184,8 +184,6 @@ def plan_snapshot_injection(
         refusal = f"Unsupported injector target: {target}"
     else:
         target_location_bits = snapshot_target_location_bits(save, snapshot, target)
-        if snapshot.requires_unresolved_global_visual_state:
-            warnings.append("Global visual table 0x5577 is not injected in v1.")
         if snapshot.has_visual_sidecar:
             if snapshot.optional_visual_sidecar is None:
                 refusal = "Snapshot sidecar payload is missing"

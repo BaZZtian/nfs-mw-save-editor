@@ -69,10 +69,12 @@ def _snapshot_json_payload(
                 "Body Vinyl": "01 00",
             },
         },
-        "requires_unresolved_global_visual_state": False,
+        # Legacy metadata is intentionally retained in this fixture to prove
+        # old user snapshots still load after the obsolete 0x5577 model was removed.
+        "requires_unresolved_global_visual_state": True,
         "global_visual_table": {
             "uniform_value": 1,
-            "mode_offset": SaveFile.VISUAL_TABLE_MODE_OFFSET,
+            "mode_offset": 4,
             "mode_uniform_value": 1,
             "mode_tail_value": None,
         },
@@ -110,7 +112,6 @@ def _make_snapshot(
     misc_bits: int = 9,
     signature: bytes = b"\x22" * 8,
     normalized_block: bytes | None = None,
-    requires_unresolved_global_visual_state: bool = False,
     sidecar_offset: int | None = None,
     sidecar_block: bytes | None = None,
 ) -> SnapshotLibraryEntry:
@@ -143,7 +144,6 @@ def _make_snapshot(
         normalized_primary_build_block=normalized_block or _normalized_block(0x20),
         performance_levels=(),
         primary_visual_fields=(),
-        requires_unresolved_global_visual_state=requires_unresolved_global_visual_state,
         has_visual_sidecar=has_sidecar,
         optional_visual_sidecar=sidecar,
     )
@@ -259,14 +259,6 @@ def _make_full_car_build_snapshot(*, with_sidecar: bool) -> FullCarBuildSnapshot
         performance_levels=(("Tires", 3), ("Engine", 4)),
         primary_visual_fields=(("Paint", "05"), ("Body Vinyl", "01 00")),
         optional_visual_sidecar=sidecar,
-        requires_unresolved_global_visual_state=True,
-        global_visual_table_entries=(b"\x01\xFF\xFF\xFF\x02\xFF\xFF\xFF",),
-        global_visual_table_values=(1,),
-        global_visual_table_uniform_value=1,
-        global_visual_table_mode_offset=SaveFile.VISUAL_TABLE_MODE_OFFSET,
-        global_visual_table_mode_values=(2,),
-        global_visual_table_mode_uniform_value=2,
-        global_visual_table_mode_tail_value=None,
     )
 
 
@@ -323,8 +315,6 @@ class SnapshotLibraryLoadingTests(unittest.TestCase):
         self.assertEqual(entry.optional_visual_sidecar.sidecar_parts_slot_offset, 1)
         self.assertEqual(entry.optional_visual_sidecar.normalized_sidecar_build_block, sidecar_block)
         self.assertEqual(entry.optional_visual_sidecar.sidecar_marker, SaveFile.EMPTY_PARTS_BLOCK_MARKER)
-        self.assertEqual(entry.global_visual_table_mode_offset, SaveFile.VISUAL_TABLE_MODE_OFFSET)
-        self.assertEqual(entry.global_visual_table_mode_uniform_value, 1)
 
     def test_load_snapshot_library_orders_main_blacklist_then_bonus_then_user(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir_text:
@@ -478,6 +468,8 @@ class SnapshotLibraryRoundTripTests(unittest.TestCase):
         self.assertEqual(entry.performance_levels, snapshot.performance_levels)
         self.assertFalse(entry.has_visual_sidecar)
         self.assertIsNone(entry.optional_visual_sidecar)
+        self.assertNotIn("requires_unresolved_global_visual_state", payload)
+        self.assertNotIn("global_visual_table", payload)
 
     def test_snapshot_to_dict_round_trip_preserves_primary_and_sidecar_fields(self) -> None:
         snapshot = _make_full_car_build_snapshot(with_sidecar=True)
@@ -527,7 +519,7 @@ class SnapshotLibraryRoundTripTests(unittest.TestCase):
 class SnapshotInjectionPlannerTests(unittest.TestCase):
     def test_my_cars_plan_uses_first_reusable_owned_and_parts_slots(self) -> None:
         sf = object.__new__(SaveFile)
-        snapshot = _make_snapshot(requires_unresolved_global_visual_state=True)
+        snapshot = _make_snapshot()
 
         sf.get_owned_car_slot_statuses = lambda **kwargs: [
             _owned_slot(0, reusable=False),
@@ -546,7 +538,7 @@ class SnapshotInjectionPlannerTests(unittest.TestCase):
         self.assertEqual(plan.target_owned_abs_off, SaveFile.CAREER_VEHICLE_BASE_OFFSET + SaveFile.CAREER_VEHICLE_SIZE)
         self.assertEqual(plan.target_parts_slot, 32)
         self.assertIsNone(plan.target_career_slot)
-        self.assertEqual(plan.warnings, ("Global visual table 0x5577 is not injected in v1.",))
+        self.assertEqual(plan.warnings, ())
 
     def test_sidecar_plan_requires_adjacent_owned_and_parts_slots(self) -> None:
         sf = object.__new__(SaveFile)

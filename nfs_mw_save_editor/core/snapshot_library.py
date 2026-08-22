@@ -51,7 +51,6 @@ class SnapshotLibraryFormat:
 
     parts_block_size: int
     career_vehicle_signature_size: int
-    visual_table_mode_offset: int
 
 
 def default_snapshot_library_root() -> Path:
@@ -168,27 +167,8 @@ def load_snapshot_library_entry(
         normalized_primary_build_block=block,
         performance_levels=performance,
         primary_visual_fields=visuals,
-        requires_unresolved_global_visual_state=bool(payload.get("requires_unresolved_global_visual_state")),
         has_visual_sidecar=sidecar_entry is not None,
         optional_visual_sidecar=sidecar_entry,
-        global_visual_table_uniform_value=(
-            None
-            if payload.get("global_visual_table", {}).get("uniform_value") is None
-            else int(payload["global_visual_table"]["uniform_value"])
-        ),
-        global_visual_table_mode_offset=int(
-            payload.get("global_visual_table", {}).get("mode_offset", format_config.visual_table_mode_offset)
-        ),
-        global_visual_table_mode_uniform_value=(
-            None
-            if payload.get("global_visual_table", {}).get("mode_uniform_value") is None
-            else int(payload["global_visual_table"]["mode_uniform_value"])
-        ),
-        global_visual_table_mode_tail_value=(
-            None
-            if payload.get("global_visual_table", {}).get("mode_tail_value") is None
-            else int(payload["global_visual_table"]["mode_tail_value"])
-        ),
         provenance=provenance,
     )
 
