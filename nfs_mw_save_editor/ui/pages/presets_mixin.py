@@ -432,10 +432,11 @@ class PresetsMixin:
             )
             if vm.staged_plan is not None and vm.staged_plan.refusal_reason is None:
                 target_bits: List[str] = []
-                if vm.staged_plan.target_car_number is not None:
-                    target_bits.append(f"Car #{vm.staged_plan.target_car_number}")
-                if vm.staged_plan.target_parts_slot is not None:
-                    target_bits.append(f"Parts Slot {vm.staged_plan.target_parts_slot}")
+                if getattr(self, "show_technical_card_details", False):
+                    if vm.staged_plan.target_car_number is not None:
+                        target_bits.append(f"Car #{vm.staged_plan.target_car_number}")
+                    if vm.staged_plan.target_parts_slot is not None:
+                        target_bits.append(f"Parts Slot {vm.staged_plan.target_parts_slot}")
                 if vm.staged_plan.target_career_slot is not None:
                     target_bits.append(f"Career Slot {vm.staged_plan.target_career_slot + 1}")
                 if target_bits:
@@ -500,6 +501,21 @@ class PresetsMixin:
         tooltip_parts.append(f"State: {utility_text}")
         if utility_tooltip:
             tooltip_parts.append(utility_tooltip)
+        return "\n".join(tooltip_parts)
+
+    def _snapshot_card_tooltip(self, snapshot: FullCarBuildSnapshot) -> str:
+        if not getattr(self, "show_technical_card_details", False):
+            return ""
+        tooltip_parts = [
+            f"Car #{snapshot.car_number:02X}",
+            f"Loc 0x{snapshot.location_bits:02X} | Misc 0x{snapshot.misc_bits:02X}",
+            f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
+        ]
+        if snapshot.optional_visual_sidecar:
+            sidecar = snapshot.optional_visual_sidecar
+            tooltip_parts.append(
+                f"Sidecar: slot {sidecar.sidecar_parts_slot}, block 0x{sidecar.sidecar_block_abs_off:05X}"
+            )
         return "\n".join(tooltip_parts)
 
     def _apply_snapshot_library_card_vm(self, handle: SnapshotLibraryCardHandle, vm: SnapshotLibraryCardVm) -> None:
@@ -802,25 +818,28 @@ class PresetsMixin:
         for idx, snapshot in enumerate(visible_entries):
             card, card_layout = self._make_card_frame(minimum_width=360)
 
-            # Header: parts slot badge + source badge
+            # Header: optional technical slot above the name, plus source badge.
             header_row = QHBoxLayout()
             header_row.setSpacing(8)
             slot_badge = QLabel(f"Parts Slot {snapshot.parts_slot}")
             slot_badge.setObjectName("contentCardSlot")
             slot_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             slot_badge.setAlignment(Qt.AlignCenter)
-            source_badge = self._make_garage_source_badge(snapshot.source_kind)
-            header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
-            header_row.addStretch(1)
-            header_row.addWidget(source_badge, 0, Qt.AlignRight)
-            card_layout.addLayout(header_row)
-
-            # Car name
+            slot_badge.setVisible(bool(self.show_technical_card_details))
             name_label = QLabel(snapshot.display_name)
             name_label.setObjectName("contentCardMeta")
             name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
             name_label.setAlignment(Qt.AlignCenter)
-            card_layout.addWidget(name_label, 0, Qt.AlignLeft)
+            identity_column = QVBoxLayout()
+            identity_column.setContentsMargins(0, 0, 0, 0)
+            identity_column.setSpacing(6)
+            identity_column.addWidget(slot_badge, 0, Qt.AlignLeft)
+            identity_column.addWidget(name_label, 0, Qt.AlignLeft)
+            source_badge = self._make_garage_source_badge(snapshot.source_kind)
+            header_row.addLayout(identity_column)
+            header_row.addStretch(1)
+            header_row.addWidget(source_badge, 0, Qt.AlignRight | Qt.AlignTop)
+            card_layout.addLayout(header_row)
 
             # Separator
             card_layout.addWidget(self._make_card_separator())
@@ -838,16 +857,7 @@ class PresetsMixin:
             action_row.addStretch(1)
             card_layout.addLayout(action_row)
 
-            # Tooltip: technical details for power users
-            tooltip_parts = [
-                f"Car #{snapshot.car_number:02X}",
-                f"Loc 0x{snapshot.location_bits:02X} | Misc 0x{snapshot.misc_bits:02X}",
-                f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
-            ]
-            if snapshot.optional_visual_sidecar:
-                sc = snapshot.optional_visual_sidecar
-                tooltip_parts.append(f"Sidecar: slot {sc.sidecar_parts_slot}, block 0x{sc.sidecar_block_abs_off:05X}")
-            card.setToolTip("\n".join(tooltip_parts))
+            card.setToolTip(self._snapshot_card_tooltip(snapshot))
 
             row = idx // columns
             col = idx % columns
@@ -1079,16 +1089,24 @@ class PresetsMixin:
         slot_badge.setObjectName("contentCardSlot")
         slot_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         slot_badge.setAlignment(Qt.AlignCenter)
-        header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
-        header_row.addStretch(1)
-        header_row.addWidget(self._make_garage_source_badge(snapshot.source_kind), 0, Qt.AlignRight)
-        card_layout.addLayout(header_row)
-
+        slot_badge.setVisible(bool(self.show_technical_card_details))
         name_label = QLabel(snapshot.display_name)
         name_label.setObjectName("contentCardMeta")
         name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         name_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(name_label, 0, Qt.AlignLeft)
+        identity_column = QVBoxLayout()
+        identity_column.setContentsMargins(0, 0, 0, 0)
+        identity_column.setSpacing(6)
+        identity_column.addWidget(slot_badge, 0, Qt.AlignLeft)
+        identity_column.addWidget(name_label, 0, Qt.AlignLeft)
+        header_row.addLayout(identity_column)
+        header_row.addStretch(1)
+        header_row.addWidget(
+            self._make_garage_source_badge(snapshot.source_kind),
+            0,
+            Qt.AlignRight | Qt.AlignTop,
+        )
+        card_layout.addLayout(header_row)
 
         card_layout.addWidget(self._make_card_separator())
 
@@ -1106,15 +1124,7 @@ class PresetsMixin:
         action_row.addStretch(1)
         card_layout.addLayout(action_row)
 
-        tooltip_parts = [
-            f"Car #{snapshot.car_number:02X}",
-            f"Loc 0x{snapshot.location_bits:02X} | Misc 0x{snapshot.misc_bits:02X}",
-            f"Block 0x{snapshot.primary_build_block_abs_off:05X}",
-        ]
-        if snapshot.optional_visual_sidecar:
-            sc = snapshot.optional_visual_sidecar
-            tooltip_parts.append(f"Sidecar: slot {sc.sidecar_parts_slot}, block 0x{sc.sidecar_block_abs_off:05X}")
-        card.setToolTip("\n".join(tooltip_parts))
+        card.setToolTip(self._snapshot_card_tooltip(snapshot))
 
         card.setMinimumHeight(card.sizeHint().height() + 4)
         card.updateGeometry()

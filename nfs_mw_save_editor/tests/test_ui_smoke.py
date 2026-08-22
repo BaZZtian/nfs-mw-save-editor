@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
@@ -8,16 +9,24 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
-from PySide6.QtWidgets import QApplication, QLabel, QWidget
+from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QWidget
 
-from core.models import OwnedCarTransferPlan, ResolvedTransferCarEntry
+from core.models import (
+    FullCarBuildSnapshot,
+    OwnedCarTemplate,
+    OwnedCarTransferPlan,
+    ResolvedTransferCarEntry,
+)
 from core.savefile import SaveFile
 from ui.main_window import MainWindow
 from ui.pages.garage_mixin import GarageCardVm
+from ui.pages.parts_mixin import PartsCardVm, ReusablePartsCardWidget, TuningCardEntry
+from ui.pages.presets_mixin import SnapshotCardVm
 from ui.theme import (
     available_theme_names,
     build_page_stylesheet,
     build_shell_stylesheet,
+    load_ui_setting,
     resolve_theme_tokens,
 )
 
@@ -116,6 +125,75 @@ def _garage_card_vm() -> GarageCardVm:
         plan_my_cars=_plan(slot, target_location_bits=SaveFile.MY_CARS_FLAG, target_career_slot=None),
         plan_career=_plan(slot, target_location_bits=SaveFile.CAREER_FLAG, target_career_slot=slot.career_slot),
     )
+
+
+def _tuning_card_vm() -> PartsCardVm:
+    entry = TuningCardEntry(
+        raw_entry=object(),
+        display_name="BMW M3 GTR",
+        source_kind="My Cars",
+        pink_slip=False,
+        parts_slot=32,
+        block_abs_off=0xA32D,
+        career_slot=1,
+        car_number=0x31,
+        marker=b"\x20\xCD\xCD\xCD",
+        confirmed_raw=b"\x00" * 0x20,
+        junkman_mask=0,
+    )
+    return PartsCardVm(
+        card_entry=entry,
+        changed=False,
+        is_active=False,
+        levels={},
+        mask=0,
+        statuses=["Stock"],
+        limits=None,
+    )
+
+
+def _build_snapshot() -> FullCarBuildSnapshot:
+    signature = b"\x01" * SaveFile.CAREER_VEHICLE_SIGNATURE_SIZE
+    block = b"\x00" * SaveFile.PARTS_BLOCK_SIZE
+    return FullCarBuildSnapshot(
+        car_abs_off=SaveFile.CAREER_VEHICLE_BASE_OFFSET,
+        display_name="BMW M3 GTR",
+        source_kind="Career",
+        car_number=0x31,
+        signature=signature,
+        location_bits=SaveFile.CAREER_FLAG,
+        misc_bits=0x0F,
+        parts_slot=32,
+        career_slot=1,
+        primary_owned_record_template=OwnedCarTemplate(
+            car_number=0x31,
+            signature=signature,
+            location_bits=SaveFile.CAREER_FLAG,
+            misc_bits=0x0F,
+            source_kind="Career",
+        ),
+        primary_build_block_abs_off=0xA32D,
+        primary_build_block=block,
+        normalized_primary_build_block=block,
+        performance_levels=(),
+        primary_visual_fields=(),
+        optional_visual_sidecar=None,
+    )
+
+
+def _garage_my_cars_vm() -> GarageCardVm:
+    vm = _garage_card_vm()
+    slot = replace(
+        vm.slot,
+        source_kind="My Cars",
+        location_bits=SaveFile.MY_CARS_FLAG,
+        career_slot=SaveFile.EMPTY_CAREER_SLOT,
+        is_career=False,
+        is_my_cars=True,
+        has_pursuit_link=False,
+        pursuit_abs_off=None,
+    )
+    return replace(vm, slot=slot, projected_slot=slot)
 
 
 class UiSmokeTests(unittest.TestCase):
@@ -232,6 +310,109 @@ class UiSmokeTests(unittest.TestCase):
         self.assertIsNotNone(logo.pixmap())
         self.assertFalse(logo.pixmap().isNull())
         self.assertIsNone(logo.graphicsEffect())
+
+    def test_diagnostic_settings_are_independent_and_persist(self) -> None:
+        self.assertFalse(self.window.show_technical_card_details)
+        self.assertFalse(self.window.show_garage_allocator_diagnostics)
+        self.assertFalse(self.window.show_tuning_raw_diagnostics)
+        self.assertFalse(hasattr(self.window, "chk_show_parts_diagnostics"))
+
+        tuning_page_toggles = [
+            checkbox.text()
+            for checkbox in self.window.page_parts.findChildren(QCheckBox)
+        ]
+        self.assertNotIn("Show parts diagnostics", tuning_page_toggles)
+
+        self.window.chk_show_technical_card_details.setChecked(True)
+        self.window.chk_show_garage_allocator_diagnostics.setChecked(True)
+        self.window.chk_show_tuning_raw_diagnostics.setChecked(True)
+        self.app.processEvents()
+
+        self.assertTrue(load_ui_setting("show_technical_card_details"))
+        self.assertTrue(load_ui_setting("show_garage_allocator_diagnostics"))
+        self.assertTrue(load_ui_setting("show_tuning_raw_diagnostics"))
+
+        self.window.close()
+        self.window = MainWindow()
+        self.assertTrue(self.window.show_technical_card_details)
+        self.assertTrue(self.window.show_garage_allocator_diagnostics)
+        self.assertTrue(self.window.show_tuning_raw_diagnostics)
+        self.assertTrue(self.window.chk_show_technical_card_details.isChecked())
+        self.assertTrue(self.window.chk_show_garage_allocator_diagnostics.isChecked())
+        self.assertTrue(self.window.chk_show_tuning_raw_diagnostics.isChecked())
+
+    def test_technical_card_details_toggle_garage_tuning_and_builds_metadata(self) -> None:
+        garage_vm = _garage_card_vm()
+        garage_handle = self.window._garage_card_handles[garage_vm.slot.abs_off]
+        self.assertFalse(garage_handle.slot_label.isHidden())
+        self.assertEqual(garage_handle.slot_label.text(), "Career Slot 2")
+        self.assertTrue(garage_handle.parts_badge.isHidden())
+        self.assertTrue(garage_handle.loc_badge.isHidden())
+        self.assertTrue(garage_handle.misc_badge.isHidden())
+        self.assertEqual(garage_handle.card.toolTip(), "")
+
+        tuning_vm = _tuning_card_vm()
+        tuning_card = ReusablePartsCardWidget(self.window, diagnostics=False)
+        tuning_card.apply_vm(tuning_vm)
+        tuning_handle = tuning_card.handle
+        self.assertTrue(tuning_handle.slot_badge.isHidden())
+        self.assertTrue(tuning_handle.parts_badge.isHidden())
+        self.assertTrue(tuning_handle.block_badge.isHidden())
+        self.assertTrue(tuning_handle.career_badge.isHidden())
+
+        snapshot_vm = SnapshotCardVm(snapshot=_build_snapshot())
+        snapshot_card = self.window._build_snapshot_card(snapshot_vm)
+        snapshot_slot = next(
+            label for label in snapshot_card.findChildren(QLabel)
+            if label.text() == "Parts Slot 32"
+        )
+        self.assertTrue(snapshot_slot.isHidden())
+        self.assertEqual(snapshot_card.toolTip(), "")
+
+        self.window.show_technical_card_details = True
+        self.window._apply_garage_card_vm(garage_handle, garage_vm)
+        tuning_card.apply_vm(tuning_vm)
+        detailed_snapshot_card = self.window._build_snapshot_card(snapshot_vm)
+        detailed_snapshot_slot = next(
+            label for label in detailed_snapshot_card.findChildren(QLabel)
+            if label.text() == "Parts Slot 32"
+        )
+
+        self.assertFalse(garage_handle.parts_badge.isHidden())
+        self.assertFalse(garage_handle.loc_badge.isHidden())
+        self.assertFalse(garage_handle.misc_badge.isHidden())
+        self.assertIn("Loc 0x02", garage_handle.card.toolTip())
+        self.assertFalse(tuning_handle.slot_badge.isHidden())
+        self.assertEqual(tuning_handle.slot_badge.text(), "Car #31")
+        self.assertFalse(tuning_handle.parts_badge.isHidden())
+        self.assertFalse(tuning_handle.block_badge.isHidden())
+        self.assertFalse(tuning_handle.career_badge.isHidden())
+        self.assertEqual(tuning_handle.career_badge.text(), "Career Slot 2")
+        self.assertFalse(detailed_snapshot_slot.isHidden())
+        self.assertIn("Block 0x0A32D", detailed_snapshot_card.toolTip())
+
+    def test_hidden_identity_badge_collapses_into_the_name_row(self) -> None:
+        garage_card = self.window._build_garage_card(_garage_my_cars_vm())
+        garage_handle = self.window._garage_card_handles[0x6200]
+        tuning_card = ReusablePartsCardWidget(self.window, diagnostics=False)
+        tuning_card.apply_vm(_tuning_card_vm())
+        snapshot_card = self.window._build_snapshot_card(SnapshotCardVm(snapshot=_build_snapshot()))
+
+        cases = (
+            (garage_card, garage_handle.slot_label, garage_handle.name_label),
+            (tuning_card, tuning_card.handle.slot_badge, tuning_card.handle.name_label),
+            (
+                snapshot_card,
+                next(label for label in snapshot_card.findChildren(QLabel) if label.text() == "Parts Slot 32"),
+                next(label for label in snapshot_card.findChildren(QLabel) if label.text() == "BMW M3 GTR"),
+            ),
+        )
+        for card, technical_badge, name_label in cases:
+            header_layout = card.layout().itemAt(0).layout()
+            identity_layout = header_layout.itemAt(0).layout()
+            self.assertIs(identity_layout.itemAt(0).widget(), technical_badge)
+            self.assertIs(identity_layout.itemAt(1).widget(), name_label)
+            self.assertTrue(technical_badge.isHidden())
 
 
 if __name__ == "__main__":

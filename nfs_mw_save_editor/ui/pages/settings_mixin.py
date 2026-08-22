@@ -198,6 +198,21 @@ class ThemeComboItemDelegate(QStyledItemDelegate):
 
 
 class SettingsMixin:
+    def on_toggle_technical_card_details(self) -> None:
+        self.show_technical_card_details = self.chk_show_technical_card_details.isChecked()
+        save_ui_setting("show_technical_card_details", self.show_technical_card_details)
+        for mark_name, refresh_name in (
+            ("_mark_garage_cards_dirty", "_refresh_garage_page"),
+            ("_mark_parts_cards_dirty", "_refresh_parts_page"),
+            ("_mark_presets_cards_dirty", "_refresh_presets_page"),
+        ):
+            mark = getattr(self, mark_name, None)
+            refresh = getattr(self, refresh_name, None)
+            if callable(mark):
+                mark()
+            if callable(refresh):
+                refresh(reason="data_change")
+
     def on_toggle_profile_alias_unlock(self) -> None:
         self.unlock_profile_alias_16 = self.chk_unlock_profile_alias_16.isChecked()
         save_ui_setting("unlock_profile_alias_16", self.unlock_profile_alias_16)
@@ -375,14 +390,29 @@ class SettingsMixin:
 
         # Display
         self.chk_show_integrity = QCheckBox("Show integrity panel on Profile")
-        self.chk_show_integrity.setChecked(False)
+        self.chk_show_integrity.setChecked(bool(self.show_integrity_panel))
         self.chk_show_integrity.stateChanged.connect(self.on_toggle_show_integrity)
-        self.chk_show_garage_allocator_diagnostics = QCheckBox("Show allocator diagnostics on the Garage page")
-        self.chk_show_garage_allocator_diagnostics.setChecked(False)
-        self.chk_show_garage_allocator_diagnostics.stateChanged.connect(self.on_toggle_garage_allocator_diagnostics)
-
         layout.addWidget(self._build_settings_group("Display", [
-            self.chk_show_integrity, self.chk_show_garage_allocator_diagnostics,
+            self.chk_show_integrity,
+        ]))
+
+        # Diagnostics
+        self.chk_show_technical_card_details = QCheckBox(
+            "Show technical details on Garage, Tuning, and Builds cards"
+        )
+        self.chk_show_technical_card_details.setChecked(bool(self.show_technical_card_details))
+        self.chk_show_technical_card_details.stateChanged.connect(self.on_toggle_technical_card_details)
+        self.chk_show_garage_allocator_diagnostics = QCheckBox("Show allocator diagnostics on the Garage page")
+        self.chk_show_garage_allocator_diagnostics.setChecked(bool(self.show_garage_allocator_diagnostics))
+        self.chk_show_garage_allocator_diagnostics.stateChanged.connect(self.on_toggle_garage_allocator_diagnostics)
+        self.chk_show_tuning_raw_diagnostics = QCheckBox("Show raw diagnostics on the Tuning page")
+        self.chk_show_tuning_raw_diagnostics.setChecked(bool(self.show_tuning_raw_diagnostics))
+        self.chk_show_tuning_raw_diagnostics.stateChanged.connect(self.on_toggle_tuning_raw_diagnostics)
+
+        layout.addWidget(self._build_settings_group("Diagnostics", [
+            self.chk_show_technical_card_details,
+            self.chk_show_garage_allocator_diagnostics,
+            self.chk_show_tuning_raw_diagnostics,
         ]))
 
         # Catalog

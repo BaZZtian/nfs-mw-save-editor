@@ -36,6 +36,7 @@ from resources import resource_path
 from ui.icon_map import game_icon_path
 from ui.pages.constants import *
 from ui.rendering import ViewportLazyGridController, refresh_widget_style
+from ui.theme import save_ui_setting
 from ui.widgets import ToastNotification
 
 logger = logging.getLogger(__name__)
@@ -777,6 +778,8 @@ class GarageMixin:
         return won_from + "\nDrives, tunes and moves like any other career car."
 
     def _garage_card_tooltip(self, slot: ResolvedTransferCarEntry) -> str:
+        if not getattr(self, "show_technical_card_details", False):
+            return ""
         return (
             f"Parts Slot {slot.parts_slot} | Loc 0x{slot.location_bits:02X} | "
             f"Misc 0x{slot.misc_bits:02X}"
@@ -832,8 +835,12 @@ class GarageMixin:
             if slot.career_slot != SaveFile.EMPTY_CAREER_SLOT
             else f"Car #{slot.car_number:02X}"
         )
+        show_technical = bool(getattr(self, "show_technical_card_details", False))
         handle.card.setProperty("changed", vm.changed)
         handle.slot_label.setText(slot_text)
+        handle.slot_label.setVisible(
+            slot.career_slot != SaveFile.EMPTY_CAREER_SLOT or show_technical
+        )
         if slot.is_pink_slip:
             self._apply_garage_source_badge(handle.source_label, "Career")
             self._apply_garage_source_badge(handle.pink_slip_badge, "Pink Slip")
@@ -849,6 +856,9 @@ class GarageMixin:
         handle.parts_badge.setText(f"Parts Slot {slot.parts_slot}")
         handle.loc_badge.setText(f"Loc 0x{slot.location_bits:02X}")
         handle.misc_badge.setText(f"Misc 0x{slot.misc_bits:02X}")
+        handle.parts_badge.setVisible(show_technical)
+        handle.loc_badge.setVisible(show_technical)
+        handle.misc_badge.setVisible(show_technical)
         handle.card.setToolTip(self._garage_card_tooltip(slot))
 
         handle.move_my_cars_btn.setVisible(not projected_slot.is_my_cars)
@@ -914,6 +924,15 @@ class GarageMixin:
         slot_label.setObjectName("contentCardSlot")
         slot_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         slot_label.setAlignment(Qt.AlignCenter)
+        name_label = QLabel(slot.display_name)
+        name_label.setObjectName("contentCardMeta")
+        name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        name_label.setAlignment(Qt.AlignCenter)
+        identity_column = QVBoxLayout()
+        identity_column.setContentsMargins(0, 0, 0, 0)
+        identity_column.setSpacing(6)
+        identity_column.addWidget(slot_label, 0, Qt.AlignLeft)
+        identity_column.addWidget(name_label, 0, Qt.AlignLeft)
         source_label = QLabel()
         source_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         source_label.setAlignment(Qt.AlignCenter)
@@ -921,18 +940,12 @@ class GarageMixin:
         pink_slip_badge.setVisible(False)
         active_badge = self._make_active_car_badge()
         active_badge.setVisible(False)
-        header_row.addWidget(slot_label, 0, Qt.AlignLeft)
+        header_row.addLayout(identity_column)
         header_row.addStretch(1)
-        header_row.addWidget(source_label, 0, Qt.AlignRight)
-        header_row.addWidget(pink_slip_badge, 0, Qt.AlignRight)
-        header_row.addWidget(active_badge, 0, Qt.AlignRight)
+        header_row.addWidget(source_label, 0, Qt.AlignRight | Qt.AlignTop)
+        header_row.addWidget(pink_slip_badge, 0, Qt.AlignRight | Qt.AlignTop)
+        header_row.addWidget(active_badge, 0, Qt.AlignRight | Qt.AlignTop)
         card_layout.addLayout(header_row)
-
-        name_label = QLabel(slot.display_name)
-        name_label.setObjectName("contentCardMeta")
-        name_label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
-        name_label.setAlignment(Qt.AlignCenter)
-        card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
         meta_row = QHBoxLayout()
         meta_row.setSpacing(8)
@@ -1195,7 +1208,6 @@ class GarageMixin:
         if hasattr(self, "chk_show_garage_allocator_diagnostics"):
             self.chk_show_garage_allocator_diagnostics.blockSignals(True)
             self.chk_show_garage_allocator_diagnostics.setChecked(self.show_garage_allocator_diagnostics)
-            self.chk_show_garage_allocator_diagnostics.setEnabled(loaded)
             self.chk_show_garage_allocator_diagnostics.blockSignals(False)
 
         if not self._garage_page_visible():
@@ -1248,6 +1260,7 @@ class GarageMixin:
 
     def on_toggle_garage_allocator_diagnostics(self) -> None:
         self.show_garage_allocator_diagnostics = self.chk_show_garage_allocator_diagnostics.isChecked()
+        save_ui_setting("show_garage_allocator_diagnostics", self.show_garage_allocator_diagnostics)
         self._sync_garage_diagnostics_visibility()
         if self._garage_page_visible():
             self._refresh_garage_diagnostics_text()

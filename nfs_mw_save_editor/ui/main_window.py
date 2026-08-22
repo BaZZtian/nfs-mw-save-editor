@@ -323,6 +323,18 @@ class MainWindow(
         self.theme_name = app_theme if isinstance(app_theme, str) and app_theme else load_saved_theme_name()
         saved_alias_unlock = load_ui_setting("unlock_profile_alias_16", False)
         self.unlock_profile_alias_16 = bool(saved_alias_unlock) if isinstance(saved_alias_unlock, bool) else False
+        saved_technical_details = load_ui_setting("show_technical_card_details", False)
+        saved_allocator_diagnostics = load_ui_setting("show_garage_allocator_diagnostics", False)
+        saved_tuning_diagnostics = load_ui_setting("show_tuning_raw_diagnostics", False)
+        self.show_technical_card_details = (
+            bool(saved_technical_details) if isinstance(saved_technical_details, bool) else False
+        )
+        self.show_garage_allocator_diagnostics = (
+            bool(saved_allocator_diagnostics) if isinstance(saved_allocator_diagnostics, bool) else False
+        )
+        self.show_tuning_raw_diagnostics = (
+            bool(saved_tuning_diagnostics) if isinstance(saved_tuning_diagnostics, bool) else False
+        )
         self._theme_transition_overlay: Optional[ThemeTransitionOverlay] = None
         self._page_transition_overlay: Optional[ThemeTransitionOverlay] = None
         self.staged_state = StagedEditState()
@@ -352,8 +364,6 @@ class MainWindow(
         self.snapshot_library_error: Optional[str] = None
         self.show_all_garage_slots = False
         self.show_integrity_panel = False
-        self.show_garage_allocator_diagnostics = False
-        self.show_parts_diagnostics = False
         self.tokens: List[TokenEntry] = []
         self.safe_mode = True
         self.practical_cap10 = True

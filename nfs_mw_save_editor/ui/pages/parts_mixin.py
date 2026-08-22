@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Callable, Dict, List, Optional, Set
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QApplication, QButtonGroup, QCheckBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from core.models import ResolvedMyCarsEntry, ResolvedPartsEntry
 from core.savefile import SaveFile
@@ -22,6 +22,7 @@ from ui.rendering import (
     fit_columns,
     refresh_widget_style,
 )
+from ui.theme import save_ui_setting
 from ui.widgets import WantSpinBox, build_perf_level_row
 
 logger = logging.getLogger(__name__)
@@ -106,22 +107,25 @@ class ReusablePartsCardWidget(QFrame):
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
         slot_badge = owner._make_stat_badge("", "contentCardSlot")
-        header_row.addWidget(slot_badge, 0, Qt.AlignLeft)
+        name_label = owner._make_stat_badge("", "contentCardMeta")
+        identity_column = QVBoxLayout()
+        identity_column.setContentsMargins(0, 0, 0, 0)
+        identity_column.setSpacing(6)
+        identity_column.addWidget(slot_badge, 0, Qt.AlignLeft)
+        identity_column.addWidget(name_label, 0, Qt.AlignLeft)
+        header_row.addLayout(identity_column)
         header_row.addStretch(1)
         source_badge = QLabel()
         source_badge.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         source_badge.setAlignment(Qt.AlignCenter)
-        header_row.addWidget(source_badge, 0, Qt.AlignRight)
+        header_row.addWidget(source_badge, 0, Qt.AlignRight | Qt.AlignTop)
         pink_slip_badge = owner._make_garage_source_badge("Pink Slip")
         pink_slip_badge.setVisible(False)
-        header_row.addWidget(pink_slip_badge, 0, Qt.AlignRight)
+        header_row.addWidget(pink_slip_badge, 0, Qt.AlignRight | Qt.AlignTop)
         active_badge = owner._make_active_car_badge()
         active_badge.setVisible(False)
-        header_row.addWidget(active_badge, 0, Qt.AlignRight)
+        header_row.addWidget(active_badge, 0, Qt.AlignRight | Qt.AlignTop)
         card_layout.addLayout(header_row)
-
-        name_label = owner._make_stat_badge("", "contentCardMeta")
-        card_layout.addWidget(name_label, 0, Qt.AlignLeft)
 
         status_row = QHBoxLayout()
         status_row.setSpacing(8)
@@ -362,9 +366,6 @@ class PartsMixin:
         hint.setObjectName("mutedLabel")
         hint.setWordWrap(True)
         hint_row.addWidget(hint, 1)
-        self.chk_show_parts_diagnostics = QCheckBox("Show parts diagnostics")
-        self.chk_show_parts_diagnostics.stateChanged.connect(self.on_toggle_parts_diagnostics)
-        hint_row.addWidget(self.chk_show_parts_diagnostics, 0, Qt.AlignRight)
         layout.addLayout(hint_row)
 
         controls_frame, controls = self._make_page_controls_bar()
@@ -523,7 +524,7 @@ class PartsMixin:
             self._parts_pool_prewarm_requested = False
             self._parts_pool_prewarm_timer.stop()
             return
-        diagnostics = bool(self.show_parts_diagnostics)
+        diagnostics = bool(self.show_tuning_raw_diagnostics)
         if self._parts_pool_reached_target(diagnostics):
             self._parts_pool_prewarm_requested = False
             self._parts_pool_prewarm_timer.stop()
@@ -1036,6 +1037,7 @@ class PartsMixin:
     def _reset_parts_card_handle(self, handle: PartsCardHandle) -> None:
         handle.card.setProperty("changed", False)
         handle.slot_badge.setText("")
+        handle.slot_badge.setVisible(False)
         handle.source_badge.setText("")
         handle.source_badge.setToolTip("")
         handle.pink_slip_badge.setVisible(False)
@@ -1047,7 +1049,9 @@ class PartsMixin:
         for button in handle.bulk_buttons.values():
             button.setEnabled(False)
         handle.parts_badge.setText("")
+        handle.parts_badge.setVisible(False)
         handle.block_badge.setText("")
+        handle.block_badge.setVisible(False)
         handle.career_badge.setVisible(False)
         handle.career_badge.setText("")
         handle.utility_label.clear()
@@ -1094,14 +1098,19 @@ class PartsMixin:
 
     def _apply_parts_card_vm(self, handle: PartsCardHandle, vm: PartsCardVm) -> None:
         card_entry = vm.card_entry
-        if card_entry.source_kind == "Career" and card_entry.career_slot is not None:
+        has_career_slot_header = (
+            card_entry.source_kind == "Career" and card_entry.career_slot is not None
+        )
+        if has_career_slot_header:
             slot_text = f"Career Slot {card_entry.career_slot + 1}"
         elif card_entry.car_number is not None:
             slot_text = f"Car #{card_entry.car_number:02X}"
         else:
             slot_text = f"Parts Slot {card_entry.parts_slot}"
+        show_technical = bool(getattr(self, "show_technical_card_details", False))
         handle.card.setProperty("changed", vm.changed)
         handle.slot_badge.setText(slot_text)
+        handle.slot_badge.setVisible(has_career_slot_header or show_technical)
         self._apply_garage_source_badge(handle.source_badge, card_entry.source_kind)
         handle.pink_slip_badge.setVisible(card_entry.pink_slip)
         handle.active_badge.setVisible(vm.is_active)
@@ -1120,7 +1129,13 @@ class PartsMixin:
 
         handle.parts_badge.setText(f"Parts Slot {card_entry.parts_slot}")
         handle.block_badge.setText(f"Block 0x{card_entry.block_abs_off:05X}")
-        handle.career_badge.setVisible(card_entry.source_kind == "My Cars" and card_entry.career_slot is not None)
+        handle.parts_badge.setVisible(show_technical)
+        handle.block_badge.setVisible(show_technical)
+        handle.career_badge.setVisible(
+            show_technical
+            and card_entry.source_kind == "My Cars"
+            and card_entry.career_slot is not None
+        )
         if card_entry.career_slot is not None:
             handle.career_badge.setText(f"Career Slot {card_entry.career_slot + 1}")
 
@@ -1204,7 +1219,7 @@ class PartsMixin:
         vm = self._parts_live_vm_map.get(int(parts_slot))
         if vm is None:
             raise KeyError(f"Missing tuning VM for parts_slot={parts_slot}")
-        card = self._acquire_parts_card_widget(diagnostics=self.show_parts_diagnostics)
+        card = self._acquire_parts_card_widget(diagnostics=self.show_tuning_raw_diagnostics)
         card.apply_vm(vm)
         self._parts_card_widgets[vm.card_entry.parts_slot] = card
         self._parts_card_handles[vm.card_entry.parts_slot] = card.handle
@@ -1247,11 +1262,10 @@ class PartsMixin:
         if hasattr(self, "_parts_pool_prewarm_timer") and self._parts_page_visible():
             self._parts_pool_prewarm_timer.stop()
             self._parts_pool_prewarm_requested = False
-        if hasattr(self, "chk_show_parts_diagnostics"):
-            self.chk_show_parts_diagnostics.blockSignals(True)
-            self.chk_show_parts_diagnostics.setChecked(self.show_parts_diagnostics)
-            self.chk_show_parts_diagnostics.setEnabled(loaded)
-            self.chk_show_parts_diagnostics.blockSignals(False)
+        if hasattr(self, "chk_show_tuning_raw_diagnostics"):
+            self.chk_show_tuning_raw_diagnostics.blockSignals(True)
+            self.chk_show_tuning_raw_diagnostics.setChecked(self.show_tuning_raw_diagnostics)
+            self.chk_show_tuning_raw_diagnostics.blockSignals(False)
         if hasattr(self, "tuning_filter_buttons"):
             current = getattr(self, "tuning_filter", "All")
             for label, button in self.tuning_filter_buttons.items():
@@ -1296,8 +1310,9 @@ class PartsMixin:
         if hasattr(self, "_parts_search_timer"):
             self._parts_search_timer.start(150)
 
-    def on_toggle_parts_diagnostics(self) -> None:
-        self.show_parts_diagnostics = self.chk_show_parts_diagnostics.isChecked()
+    def on_toggle_tuning_raw_diagnostics(self) -> None:
+        self.show_tuning_raw_diagnostics = self.chk_show_tuning_raw_diagnostics.isChecked()
+        save_ui_setting("show_tuning_raw_diagnostics", self.show_tuning_raw_diagnostics)
         self._mark_parts_cards_dirty()
         self._refresh_parts_page(reason="data_change")
 
