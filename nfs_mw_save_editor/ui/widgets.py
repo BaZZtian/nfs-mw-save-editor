@@ -265,6 +265,101 @@ class ShellActionButton(QPushButton):
         )
 
 
+class AvailabilityButton(QPushButton):
+    """Button whose newly available state fades in without moving layout."""
+
+    _UNLOCK_FADE_MS = 180
+    _UNLOCK_START_OPACITY = 0.58
+
+    def __init__(self, text: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(text, parent)
+        self._availability_known = False
+        self._available = False
+        self._unlock_effect: Optional[QGraphicsOpacityEffect] = None
+        self._unlock_animation: Optional[QPropertyAnimation] = None
+        self.setProperty("blocked", False)
+
+    def setAvailability(  # noqa: N802 - Qt-style state setter
+        self,
+        available: bool,
+        reason: str = "",
+        *,
+        animated: bool = True,
+    ) -> None:
+        available = bool(available)
+        was_known = self._availability_known
+        was_available = self._available
+        blocked = bool(reason) and not available
+        blocked_changed = bool(self.property("blocked")) != blocked
+
+        self._availability_known = True
+        self._available = available
+        self.setEnabled(available)
+        self.setToolTip(str(reason) if reason else "")
+        if blocked_changed:
+            self.setProperty("blocked", blocked)
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+        if was_known and not was_available and available:
+            if animated and self.isVisible() and self._motion_allowed():
+                self._start_unlock_feedback()
+            else:
+                self._stop_unlock_feedback()
+        elif not available:
+            self._stop_unlock_feedback()
+
+    def resetAvailabilityTracking(self) -> None:  # noqa: N802 - Qt-style state setter
+        self._stop_unlock_feedback()
+        self._availability_known = False
+        self._available = False
+        self.setEnabled(False)
+        self.setToolTip("")
+        if bool(self.property("blocked")):
+            self.setProperty("blocked", False)
+            self.style().unpolish(self)
+            self.style().polish(self)
+
+    def _motion_allowed(self) -> bool:
+        app = QApplication.instance()
+        if app is None:
+            return False
+        return bool(app.style().styleHint(QStyle.SH_Widget_Animate, None, self))
+
+    def _start_unlock_feedback(self) -> None:
+        self._stop_unlock_feedback()
+        effect = QGraphicsOpacityEffect(self)
+        effect.setOpacity(self._UNLOCK_START_OPACITY)
+        self.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(self._UNLOCK_FADE_MS)
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        animation.setStartValue(self._UNLOCK_START_OPACITY)
+        animation.setEndValue(1.0)
+        animation.finished.connect(self._finish_unlock_feedback)
+        self._unlock_effect = effect
+        self._unlock_animation = animation
+        animation.start()
+
+    def _finish_unlock_feedback(self) -> None:
+        animation = self._unlock_animation
+        self._unlock_animation = None
+        self._unlock_effect = None
+        self.setGraphicsEffect(None)
+        if animation is not None:
+            animation.deleteLater()
+
+    def _stop_unlock_feedback(self) -> None:
+        animation = self._unlock_animation
+        self._unlock_animation = None
+        self._unlock_effect = None
+        if animation is not None:
+            animation.stop()
+            animation.deleteLater()
+        if self.graphicsEffect() is not None:
+            self.setGraphicsEffect(None)
+
+
 class HeaderStateChip(QWidget):
     """Compact header status whose save-state captions crossfade in place.
 

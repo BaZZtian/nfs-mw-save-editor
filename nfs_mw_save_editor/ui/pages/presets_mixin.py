@@ -471,7 +471,23 @@ class PresetsMixin:
             )
         if warning_parts:
             return "Ready with warning", "\n".join(warning_parts)
-        return "Ready to stage", "Both injection targets are currently available."
+        return "", ""
+
+    def _snapshot_target_action_tooltip(
+        self,
+        plan: SnapshotInjectionPlan | None,
+        target_label: str,
+    ) -> str:
+        if not self.savefile:
+            return "Open a save to stage an injection."
+        if plan is None:
+            return f"{target_label} target is unavailable."
+        if plan.refusal_reason:
+            return str(plan.refusal_reason)
+        base = f"Stage this build for {target_label}."
+        if plan.warnings:
+            return base + "\nWarning: " + "\n".join(plan.warnings)
+        return base
 
     @staticmethod
     def _snapshot_provenance_lines(entry: SnapshotLibraryEntry) -> List[str]:
@@ -498,7 +514,8 @@ class PresetsMixin:
         if entry.has_visual_sidecar:
             tooltip_parts.append("Has visual sidecar")
         utility_text, utility_tooltip = self._snapshot_library_utility_summary(vm)
-        tooltip_parts.append(f"State: {utility_text}")
+        if utility_text:
+            tooltip_parts.append(f"State: {utility_text}")
         if utility_tooltip:
             tooltip_parts.append(utility_tooltip)
         return "\n".join(tooltip_parts)
@@ -537,6 +554,12 @@ class PresetsMixin:
             and vm.plan_career is not None
             and vm.plan_career.refusal_reason is None
         )
+        handle.inject_my_btn.setToolTip(
+            self._snapshot_target_action_tooltip(vm.plan_my, "My Cars")
+        )
+        handle.inject_career_btn.setToolTip(
+            self._snapshot_target_action_tooltip(vm.plan_career, "Career")
+        )
         if vm.staged_mode == "my_cars":
             handle.inject_my_btn.setText("Staged: My Cars")
             handle.inject_my_btn.setEnabled(False)
@@ -545,10 +568,13 @@ class PresetsMixin:
             handle.inject_career_btn.setEnabled(False)
         handle.unstage_btn.setVisible(vm.staged_mode is not None)
         handle.unstage_btn.setEnabled(vm.staged_mode is not None)
+        self._set_card_action_readiness(handle.inject_my_btn, handle.inject_my_btn.isEnabled())
+        self._set_card_action_readiness(handle.inject_career_btn, handle.inject_career_btn.isEnabled())
 
         utility_text, utility_tooltip = self._snapshot_library_utility_summary(vm)
         handle.utility_label.setText(utility_text)
         handle.utility_label.setToolTip(utility_tooltip)
+        handle.utility_label.setVisible(bool(utility_text))
         handle.card.setToolTip(self._snapshot_library_card_tooltip(vm))
         refresh_widget_style(handle.card)
 

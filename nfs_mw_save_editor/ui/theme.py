@@ -1324,6 +1324,11 @@ QPushButton#partsJunkmanToggle:disabled {{
     border-color: {BORDER};
     color: {MUTED_DARK};
 }}
+QPushButton#partsJunkmanToggle[blocked="true"] {{
+    background: {BG_DISABLED};
+    border-color: {STATUS_WARNING_BORDER};
+    color: {MUTED};
+}}
 QPushButton#cardActionButton {{
     background: {BG_BULK_BTN};
     border: 1px solid {BORDER};
@@ -1336,6 +1341,13 @@ QPushButton#cardActionButton {{
 QPushButton#cardActionButton:hover {{
     background: {BG_BULK_HOVER};
     border-color: {ACCENT};
+}}
+QPushButton#cardActionButton[readyAction="true"] {{
+    border-color: {ACCENT};
+}}
+QPushButton#cardActionButton[readyAction="true"]:hover {{
+    background: {BG_BULK_HOVER};
+    border-color: {ACCENT_BRIGHT};
 }}
 QPushButton#cardActionButton:disabled {{
     background: {BG_DISABLED};

@@ -71,4 +71,13 @@ class PageChromeMixin:
     def _make_card_action_button(self, text: str, object_name: str = "cardActionButton") -> QPushButton:
         btn = QPushButton(text)
         btn.setObjectName(object_name)
+        btn.setProperty("readyAction", False)
         return btn
+
+    def _set_card_action_readiness(self, button: QPushButton, ready: bool) -> None:
+        ready = bool(ready)
+        if bool(button.property("readyAction")) == ready:
+            return
+        button.setProperty("readyAction", ready)
+        button.style().unpolish(button)
+        button.style().polish(button)

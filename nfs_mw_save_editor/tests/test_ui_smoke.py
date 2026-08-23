@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
+from PySide6.QtCore import QAbstractAnimation, QEasingCurve
 from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QWidget
 
 from core.models import (
@@ -16,12 +17,13 @@ from core.models import (
     OwnedCarTemplate,
     OwnedCarTransferPlan,
     ResolvedTransferCarEntry,
+    SnapshotInjectionPlan,
 )
 from core.savefile import SaveFile
 from ui.main_window import MainWindow
 from ui.pages.garage_mixin import GarageCardVm
 from ui.pages.parts_mixin import PartsCardVm, ReusablePartsCardWidget, TuningCardEntry
-from ui.pages.presets_mixin import SnapshotCardVm
+from ui.pages.presets_mixin import SnapshotCardVm, SnapshotLibraryCardVm
 from ui.theme import (
     available_theme_names,
     build_page_stylesheet,
@@ -29,6 +31,7 @@ from ui.theme import (
     load_ui_setting,
     resolve_theme_tokens,
 )
+from ui.widgets import AvailabilityButton
 
 
 SMOKE_OBJECT_NAMES = (
@@ -281,6 +284,8 @@ class UiSmokeTests(unittest.TestCase):
         )
         for selector in expected_selectors:
             self.assertIn(selector, stylesheet)
+        self.assertIn('QPushButton#partsJunkmanToggle[blocked="true"] {', stylesheet)
+        self.assertIn('QPushButton#cardActionButton[readyAction="true"] {', stylesheet)
 
         removed_selectors = (
             "#parts" + "Card",
@@ -413,6 +418,125 @@ class UiSmokeTests(unittest.TestCase):
             self.assertIs(identity_layout.itemAt(0).widget(), technical_badge)
             self.assertIs(identity_layout.itemAt(1).widget(), name_label)
             self.assertTrue(technical_badge.isHidden())
+
+    def test_readiness_moves_into_actions_and_junkman_controls(self) -> None:
+        garage_vm = _garage_card_vm()
+        garage_handle = self.window._garage_card_handles[garage_vm.slot.abs_off]
+        self.assertTrue(garage_handle.move_my_cars_btn.property("readyAction"))
+        self.assertTrue(garage_handle.utility_label.isHidden())
+
+        tuning_card = ReusablePartsCardWidget(self.window, diagnostics=False)
+        tuning_card.apply_vm(_tuning_card_vm())
+        tuning_handle = tuning_card.handle
+        self.assertEqual(tuning_handle.junkman_label.text(), "Junkman · 2 locked")
+        self.assertIn("Turbo: Requires regular Turbo", tuning_handle.junkman_label.toolTip())
+        self.assertIn("NOS: Requires regular NOS", tuning_handle.junkman_label.toolTip())
+        self.assertTrue(tuning_handle.junkman_buttons["Turbo"].property("blocked"))
+        self.assertTrue(tuning_handle.junkman_buttons["NOS"].property("blocked"))
+        self.assertIn("Requires regular Turbo", tuning_handle.junkman_buttons["Turbo"].toolTip())
+        self.assertFalse(tuning_handle.junkman_buttons["Engine"].property("blocked"))
+        self.assertTrue(tuning_handle.junkman_buttons["Engine"].isEnabled())
+
+        ready_tuning_vm = replace(
+            _tuning_card_vm(),
+            levels={"Turbo": 1, "NOS": 1},
+        )
+        tuning_card.apply_vm(ready_tuning_vm)
+        self.assertEqual(tuning_handle.junkman_label.text(), "Junkman")
+        self.assertEqual(tuning_handle.junkman_label.toolTip(), "")
+
+        entry = self.window.snapshot_library[0]
+        plan_my = SnapshotInjectionPlan(
+            snapshot_id=entry.snapshot_id,
+            display_name=entry.display_name,
+            target_mode="my_cars",
+            target_location_bits=SaveFile.MY_CARS_FLAG,
+            target_misc_bits=0x0F,
+            target_owned_abs_off=0x6200,
+            target_parts_slot=32,
+            target_career_slot=None,
+            refusal_reason=None,
+            warnings=(),
+        )
+        plan_career = replace(
+            plan_my,
+            target_mode="career",
+            target_location_bits=SaveFile.CAREER_FLAG,
+            target_career_slot=1,
+        )
+        self.window.savefile = object()
+        library_vm = SnapshotLibraryCardVm(
+            entry=entry,
+            staged_mode=None,
+            plan_my=plan_my,
+            plan_career=plan_career,
+            staged_plan=None,
+        )
+        self.window._build_snapshot_library_card(library_vm)
+        library_handle = self.window._snapshot_library_card_handles[entry.snapshot_id]
+        self.assertTrue(library_handle.inject_my_btn.property("readyAction"))
+        self.assertTrue(library_handle.inject_career_btn.property("readyAction"))
+        self.assertEqual(
+            library_handle.inject_my_btn.toolTip(),
+            "Stage this build for My Cars.",
+        )
+        self.assertTrue(library_handle.utility_label.isHidden())
+
+        blocked_career = replace(plan_career, refusal_reason="No reusable Career slot")
+        self.window._apply_snapshot_library_card_vm(
+            library_handle,
+            replace(library_vm, plan_career=blocked_career),
+        )
+        self.assertFalse(library_handle.inject_career_btn.property("readyAction"))
+        self.assertFalse(library_handle.inject_career_btn.isEnabled())
+        self.assertEqual(
+            library_handle.inject_career_btn.toolTip(),
+            "No reusable Career slot",
+        )
+        self.assertEqual(library_handle.utility_label.text(), "Career blocked")
+        self.assertFalse(library_handle.utility_label.isHidden())
+
+    def test_junkman_unlock_feedback_is_short_interruptible_and_motion_safe(self) -> None:
+        button = AvailabilityButton("Turbo")
+        button.show()
+        self.app.processEvents()
+        try:
+            button._motion_allowed = lambda: True
+            button.setAvailability(False, "Requires regular Turbo > 0", animated=False)
+            button.setAvailability(True)
+
+            animation = button._unlock_animation
+            self.assertIsNotNone(animation)
+            self.assertEqual(animation.state(), QAbstractAnimation.Running)
+            self.assertEqual(animation.duration(), 180)
+            self.assertEqual(animation.easingCurve().type(), QEasingCurve.OutCubic)
+            self.assertAlmostEqual(button._unlock_effect.opacity(), 0.58)
+
+            animation.setCurrentTime(animation.duration() // 2)
+            self.assertGreater(button._unlock_effect.opacity(), 0.58)
+            self.assertLess(button._unlock_effect.opacity(), 1.0)
+
+            button.setAvailability(False, "Requires regular Turbo > 0")
+            self.assertIsNone(button._unlock_animation)
+            self.assertIsNone(button.graphicsEffect())
+
+            button.setAvailability(True)
+            completed = button._unlock_animation
+            self.assertIsNotNone(completed)
+            completed.setCurrentTime(completed.duration())
+            self.app.processEvents()
+            self.assertIsNone(button._unlock_animation)
+            self.assertIsNone(button.graphicsEffect())
+
+            button.resetAvailabilityTracking()
+            button._motion_allowed = lambda: False
+            button.setAvailability(False, "Requires regular Turbo > 0", animated=False)
+            button.setAvailability(True)
+            self.assertIsNone(button._unlock_animation)
+            self.assertIsNone(button.graphicsEffect())
+            self.assertTrue(button.isEnabled())
+        finally:
+            button.close()
 
 
 if __name__ == "__main__":

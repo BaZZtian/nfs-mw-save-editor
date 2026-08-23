@@ -23,7 +23,7 @@ from ui.rendering import (
     refresh_widget_style,
 )
 from ui.theme import save_ui_setting
-from ui.widgets import WantSpinBox, build_perf_level_row
+from ui.widgets import AvailabilityButton, WantSpinBox, build_perf_level_row
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +77,9 @@ class PartsCardHandle:
     parts_badge: QLabel
     block_badge: QLabel
     career_badge: QLabel
-    utility_label: QLabel
+    junkman_label: QLabel
     perf_rows: Dict[str, PartsPerfRowHandle]
-    junkman_buttons: Dict[str, QPushButton]
+    junkman_buttons: Dict[str, AvailabilityButton]
     diag_mask_label: Optional[QLabel] = None
     diag_marker_label: Optional[QLabel] = None
     diag_raw_label: Optional[QLabel] = None
@@ -167,17 +167,11 @@ class ReusablePartsCardWidget(QFrame):
         meta_row.addStretch(1)
         card_layout.addLayout(meta_row)
 
-        utility_label = QLabel()
-        utility_label.setObjectName("mutedLabel")
-        utility_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        utility_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        utility_label.setMinimumHeight(max(12, utility_label.sizeHint().height()))
-        card_layout.addWidget(utility_label)
-
         card_layout.addWidget(owner._make_card_separator())
         card_layout.addWidget(owner._make_card_field_label("Performance"))
         perf_rows = self._build_perf_grid(card_layout)
-        card_layout.addWidget(owner._make_card_field_label("Junkman"))
+        junkman_label = owner._make_card_field_label("Junkman")
+        card_layout.addWidget(junkman_label)
         junkman_buttons = self._build_junkman_row(card_layout)
 
         diag_mask_label: Optional[QLabel] = None
@@ -223,7 +217,7 @@ class ReusablePartsCardWidget(QFrame):
             parts_badge=parts_badge,
             block_badge=block_badge,
             career_badge=career_badge,
-            utility_label=utility_label,
+            junkman_label=junkman_label,
             perf_rows=perf_rows,
             junkman_buttons=junkman_buttons,
             diag_mask_label=diag_mask_label,
@@ -315,14 +309,14 @@ class ReusablePartsCardWidget(QFrame):
         parent.addLayout(grid)
         return handles
 
-    def _build_junkman_row(self, parent: QVBoxLayout) -> Dict[str, QPushButton]:
+    def _build_junkman_row(self, parent: QVBoxLayout) -> Dict[str, AvailabilityButton]:
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
         row.addStrut(20)
-        buttons: Dict[str, QPushButton] = {}
+        buttons: Dict[str, AvailabilityButton] = {}
         for _, cat in SaveFile.JUNKMAN_MASK_BITS:
-            btn = QPushButton(cat)
+            btn = AvailabilityButton(cat)
             btn.setCheckable(True)
             btn.setChecked(False)
             btn.setEnabled(False)
@@ -1054,17 +1048,15 @@ class PartsMixin:
         handle.block_badge.setVisible(False)
         handle.career_badge.setVisible(False)
         handle.career_badge.setText("")
-        handle.utility_label.clear()
-        handle.utility_label.setToolTip("")
-        handle.utility_label.setVisible(True)
+        handle.junkman_label.setText("Junkman")
+        handle.junkman_label.setToolTip("")
         for perf_handle in handle.perf_rows.values():
             self._update_parts_perf_row(perf_handle, level=0, max_level=None)
         for btn in handle.junkman_buttons.values():
             btn.blockSignals(True)
             btn.setChecked(False)
             btn.blockSignals(False)
-            btn.setEnabled(False)
-            btn.setToolTip("")
+            btn.resetAvailabilityTracking()
             btn.setProperty("active", False)
             refresh_widget_style(btn)
         if handle.diag_mask_label is not None:
@@ -1082,9 +1074,7 @@ class PartsMixin:
             handle.diag_note_label.setVisible(False)
         refresh_widget_style(handle.card)
 
-    def _parts_utility_summary(self, vm: PartsCardVm) -> tuple[str, str]:
-        if vm.limits is None:
-            return ("", "")
+    def _parts_junkman_summary(self, vm: PartsCardVm) -> tuple[str, str]:
         blocked = [
             f"{cat}: {reason}"
             for _, cat in SaveFile.JUNKMAN_MASK_BITS
@@ -1092,9 +1082,9 @@ class PartsMixin:
             if reason
         ]
         if blocked:
-            short = "1 toggle blocked" if len(blocked) == 1 else f"{len(blocked)} toggles blocked"
-            return short, " / ".join(blocked)
-        return "All toggles ready", "All Junkman toggles are currently available."
+            count = "1 locked" if len(blocked) == 1 else f"{len(blocked)} locked"
+            return f"Junkman · {count}", " / ".join(blocked)
+        return "Junkman", ""
 
     def _apply_parts_card_vm(self, handle: PartsCardHandle, vm: PartsCardVm) -> None:
         card_entry = vm.card_entry
@@ -1139,10 +1129,9 @@ class PartsMixin:
         if card_entry.career_slot is not None:
             handle.career_badge.setText(f"Career Slot {card_entry.career_slot + 1}")
 
-        utility_text, utility_tooltip = self._parts_utility_summary(vm)
-        handle.utility_label.setText(utility_text)
-        handle.utility_label.setToolTip(utility_tooltip)
-        handle.utility_label.setVisible(True)
+        junkman_text, junkman_tooltip = self._parts_junkman_summary(vm)
+        handle.junkman_label.setText(junkman_text)
+        handle.junkman_label.setToolTip(junkman_tooltip)
 
         limits = vm.limits or {}
         for name, perf_handle in handle.perf_rows.items():
@@ -1159,8 +1148,7 @@ class PartsMixin:
             btn.blockSignals(True)
             btn.setChecked(enabled)
             btn.blockSignals(False)
-            btn.setEnabled(reason is None)
-            btn.setToolTip(reason or "")
+            btn.setAvailability(reason is None, reason or "")
             btn.setProperty("active", enabled)
             refresh_widget_style(btn)
 

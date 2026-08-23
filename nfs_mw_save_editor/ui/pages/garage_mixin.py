@@ -825,7 +825,7 @@ class GarageMixin:
             and not projected_slot.has_pursuit_link
         ):
             return "No pursuit link", "No pursuit record is linked to this car."
-        return "Ready", "Action state is valid."
+        return "", ""
 
     def _apply_garage_card_vm(self, handle: GarageCardHandle, vm: GarageCardVm) -> None:
         slot = vm.slot
@@ -863,15 +863,24 @@ class GarageMixin:
 
         handle.move_my_cars_btn.setVisible(not projected_slot.is_my_cars)
         handle.move_my_cars_btn.setEnabled(vm.plan_my_cars.refusal_reason is None)
+        self._set_card_action_readiness(
+            handle.move_my_cars_btn,
+            vm.plan_my_cars.refusal_reason is None,
+        )
         handle.move_my_cars_btn.setToolTip(self._garage_action_tooltip(projected_slot, "my_cars", vm.plan_my_cars))
 
         handle.move_career_btn.setVisible(projected_slot.is_my_cars)
         handle.move_career_btn.setEnabled(vm.plan_career.refusal_reason is None)
+        self._set_card_action_readiness(
+            handle.move_career_btn,
+            vm.plan_career.refusal_reason is None,
+        )
         handle.move_career_btn.setToolTip(self._garage_action_tooltip(projected_slot, "career", vm.plan_career))
 
         utility_text, utility_tooltip = self._garage_utility_summary(vm)
         handle.utility_label.setText(utility_text)
         handle.utility_label.setToolTip(utility_tooltip)
+        handle.utility_label.setVisible(bool(utility_text))
 
         if handle.bounty_edit is not None and handle.bounty_current_label is not None:
             edit_enabled = (
