@@ -29,6 +29,12 @@ build/
 dist/
 release/
 *.spec
+!nfs_mw_save_editor/release/
+!nfs_mw_save_editor/release/spec/
+!nfs_mw_save_editor/release/spec/NFS_MW_Junkman_Editor.spec
+!nfs_mw_save_editor/release/onefile/
+!nfs_mw_save_editor/release/onefile/spec_onefile/
+!nfs_mw_save_editor/release/onefile/spec_onefile/NFS_MW_Junkman_Editor.spec
 *.egg-info/
 .eggs/
 
@@ -67,4 +73,3 @@ artifacts/
 
 # Local test artifacts
 /tests/
-

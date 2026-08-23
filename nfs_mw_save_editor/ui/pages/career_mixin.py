@@ -97,7 +97,7 @@ from core.career_donor_library import (
     VARIANT_BOSS_READY,
     VARIANT_CHAPTER_START,
     CareerDonorEntry,
-    default_user_career_donor_root,
+    default_bundled_career_donor_root,
     load_career_donor_library,
 )
 from ui.icon_map import game_icon_path, rival_asset_path, token_icon_path
@@ -3476,7 +3476,7 @@ class CareerMixin:
         # ceiling, so no strip of width is held back on ordinary monitors.
         outer.addStretch(0)
 
-        self.career_donor_root = default_user_career_donor_root()
+        self.career_donor_root = default_bundled_career_donor_root()
         self.career_donor_library: tuple[CareerDonorEntry, ...] = ()
         self._career_donor_signature: Optional[tuple] = None
         self._career_snapshot_cache: Optional[bytes] = None
@@ -4535,7 +4535,7 @@ class CareerMixin:
 
         if donor is not None and self.savefile is not None:
             try:
-                donor_data = Path(donor.save_path).read_bytes()
+                donor_data = donor.read_bytes()
                 plan = self.savefile.plan_career_transplant(donor_data)
             except Exception as exc:
                 lines.append(f"Donor could not be read: {exc}")
@@ -4589,7 +4589,7 @@ class CareerMixin:
         if donor is None or self.savefile is None:
             return
         try:
-            donor_data = Path(donor.save_path).read_bytes()
+            donor_data = donor.read_bytes()
             plan = self.savefile.plan_career_transplant(donor_data)
         except Exception as exc:
             QMessageBox.critical(self, "Stage change failed", str(exc))

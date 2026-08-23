@@ -81,6 +81,49 @@ def test_applied_dirty_badge_tracks_buffer_vs_disk(tmp_path) -> None:
         _close_window(window)
 
 
+def test_save_refreshes_integrity_badges_after_fixing_checksums(tmp_path) -> None:
+    """Regression: Save fixed disk bytes but left the header showing BAD."""
+
+    save_path = tmp_path / "TESTSAVE"
+    original = SaveFile(path=save_path, data=bytearray(0xF86C))
+    original.fix_integrity()
+    save_path.write_bytes(bytes(original.data))
+
+    window = MainWindow()
+    window.savefile = SaveFile.load(save_path)
+    try:
+        window.savefile.data[0x4038] ^= 0xFF
+        before_save = window.savefile.validate_integrity()
+        assert before_save.md5_ok is False
+        assert before_save.crc_data_ok is False
+        window._update_integrity_views(before_save)
+        assert window.header_integrity_badges["md5"].text() == "MD5 BAD"
+        assert window.header_integrity_badges["data"].text() == "DATA BAD"
+
+        with mock.patch.object(main_window_module.ToastNotification, "show_toast"):
+            window.on_save()
+
+        assert {
+            key: (badge.text(), badge.property("verdict"))
+            for key, badge in window.header_integrity_badges.items()
+        } == {
+            "md5": ("MD5 OK", "ok"),
+            "crc1": ("CRC1 OK", "ok"),
+            "data": ("DATA OK", "ok"),
+            "crc2": ("CRC2 OK", "ok"),
+        }
+        assert "MD5 stored:" in window.profile_info.toPlainText()
+        assert window.lbl_unsaved.text() == "Saved"
+
+        disk_integrity = SaveFile.load(save_path).validate_integrity()
+        assert disk_integrity.md5_ok is True
+        assert disk_integrity.crc_block1_ok is True
+        assert disk_integrity.crc_data_ok is True
+        assert disk_integrity.crc_block2_ok is True
+    finally:
+        _close_window(window)
+
+
 def test_reload_from_disk_restores_disk_bytes(tmp_path) -> None:
     window, save_path = _window_with_save(tmp_path)
     try:

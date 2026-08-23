@@ -66,7 +66,9 @@ TransplantSpan = Tuple[int, int, str]
 TRANSPLANT_SPANS: Tuple[TransplantSpan, ...] = (
     (0x0034, 0x4034, "game_section"),
     (0x4038, 0x4039, "current_bin"),
-    (0x403D, 0x42A9, "difficulty_flags_sms"),
+    # SMS sort order ends at 0x429D. The following CaseFileName[16] and
+    # alignment bytes are user identity, not progression.
+    (0x403D, 0x429D, "difficulty_flags_sms"),
     (0x42B9, 0x5241, "race_table"),
     (0x5241, 0x5739, "post_race_belt"),
     (0x5B41, 0x5B42, "tbd_5b41"),

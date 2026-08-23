@@ -13,7 +13,7 @@ KEEP_USER_HOLES = (
     (0x0000, 0x0034, "file_header"),
     (0x4034, 0x4038, "current_car"),
     (0x4039, 0x403D, "current_cash"),
-    (0x42A9, 0x42B9, "case_file_name"),
+    (0x429D, 0x42B9, "case_file_name_and_alignment"),
     (0x5739, 0x5B41, "junkman_inventory_and_alias_region"),
     (0x5B42, 0x5B62, "gap_after_tbd_5b41"),
     # 0x5B64.. includes the FE car table (0x5BC5), user property, and pending

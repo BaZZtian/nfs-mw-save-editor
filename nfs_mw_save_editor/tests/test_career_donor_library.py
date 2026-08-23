@@ -4,7 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
-from core import career_donor_library, career_transplant
+from core import career_donor_library, career_transplant, garage_records
+from core.rap_sheet_totals import read_rap_sheet_totals
 
 
 def _valid_donor_bytes(stage: int = 7) -> bytes:
@@ -15,6 +16,20 @@ def _valid_donor_bytes(stage: int = 7) -> bytes:
     data[career_transplant.GAME_SECTION_MD5_OFFSET:career_transplant.GAME_SECTION_START] = hashlib.md5(
         data[career_transplant.GAME_SECTION_START:career_transplant.GAME_SECTION_END]
     ).digest()
+    return bytes(data)
+
+
+def _valid_snapshot_donor_bytes(stage: int = 7, *, bounty: int = 123_456) -> bytes:
+    data = bytearray(_valid_donor_bytes(stage))
+    for slot in range(garage_records.GARAGE_RECORD_COUNT):
+        data[
+            garage_records.GARAGE_RECORDS_OFFSET
+            + slot * garage_records.GARAGE_RECORD_SIZE
+        ] = garage_records.GARAGE_EMPTY_HANDLE
+    data[
+        garage_records.SOLD_HISTORY_BOUNTY_OFFSET:
+        garage_records.SOLD_HISTORY_BOUNTY_OFFSET + 4
+    ] = bounty.to_bytes(4, "little")
     return bytes(data)
 
 
@@ -91,3 +106,58 @@ def test_invalid_json_and_bad_fields_are_problems(tmp_path: Path) -> None:
     assert any("JSON" in p for p in problems)
     assert any("variant" in p for p in problems)
     assert any("stage_bin" in p for p in problems)
+
+
+def test_compact_snapshot_roundtrip_preserves_only_progression_and_bounty(tmp_path: Path) -> None:
+    """A compact payload materializes a planner-compatible internal donor."""
+
+    donor = bytearray(_valid_snapshot_donor_bytes(7))
+    donor[0x429D:0x42AD] = b"PRIVATE-CASE\x00\x00\x00\x00"
+    payload = career_donor_library.build_career_stage_snapshot_payload(
+        bytes(donor),
+        stage_bin=7,
+        variant=career_donor_library.VARIANT_CHAPTER_START,
+        display_name="Blacklist #7: Kamikaze",
+    )
+    path = tmp_path / "stage07_chapter_start.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    (entry,) = career_donor_library.load_career_donor_library(tmp_path)
+    assert entry.is_loadable
+    materialized = entry.read_bytes()
+    for start, end, _label in career_transplant.TRANSPLANT_SPANS:
+        assert materialized[start:end] == donor[start:end]
+    assert materialized[0x429D:0x42AD] != donor[0x429D:0x42AD]
+    assert b"PRIVATE-CASE" not in materialized
+    totals = read_rap_sheet_totals(materialized)
+    assert totals is not None and totals.total_bounty == 123_456
+
+
+def test_compact_snapshot_tamper_is_reported_without_loading(tmp_path: Path) -> None:
+    payload = career_donor_library.build_career_stage_snapshot_payload(
+        _valid_snapshot_donor_bytes(5),
+        stage_bin=5,
+        variant=career_donor_library.VARIANT_BOSS_READY,
+        display_name="Boss fight ready #5: Webster",
+    )
+    payload["spans"][0]["normalized_hex"] = "00" + payload["spans"][0]["normalized_hex"][2:]
+    (tmp_path / "tampered.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    (entry,) = career_donor_library.load_career_donor_library(tmp_path)
+    assert not entry.is_loadable
+    assert any("SHA-256" in problem for problem in entry.problems)
+
+
+def test_bundled_career_snapshot_matrix_is_complete_and_loadable() -> None:
+    entries = career_donor_library.load_career_donor_library(
+        career_donor_library.default_bundled_career_donor_root()
+    )
+    assert len(entries) == 30
+    assert all(entry.is_loadable for entry in entries)
+    assert {(entry.stage_bin, entry.variant) for entry in entries} == {
+        (stage, variant)
+        for stage in range(1, 16)
+        for variant in career_donor_library.KNOWN_VARIANTS
+    }
+    assert all(len(entry.read_bytes()) == career_transplant.EXPECTED_SAVE_SIZE for entry in entries)
+    assert all(b"MW-2885-KSWD" not in entry.read_bytes() for entry in entries)

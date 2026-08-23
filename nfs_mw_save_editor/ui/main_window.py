@@ -1320,13 +1320,7 @@ class MainWindow(
         if loaded:
             self._update_header_path()
             integrity = self.savefile.validate_integrity()
-            self._update_header_integrity(integrity)
-            self.profile_info.setText(
-                f"Hash scheme: {integrity.hash_scheme}\n"
-                f"File size ok: {integrity.file_size_ok} ({integrity.actual_size})\n"
-                f"MD5 stored: {integrity.stored_md5.hex()}\n"
-                f"MD5 computed: {(integrity.computed_md5.hex() if integrity.computed_md5 else '-')}\n"
-            )
+            self._update_integrity_views(integrity)
             self.have_counts = self.savefile.get_junkman_counts()
             self.have_money = self.savefile.get_money()
             self.have_profile_alias = self.savefile.get_profile_alias()
@@ -1554,6 +1548,16 @@ class MainWindow(
         self.header_integrity_plate.setToolTip(tooltip)
         self.lbl_status.setToolTip(tooltip)
 
+    def _update_integrity_views(self, integrity) -> None:
+        """Keep the header and optional Profile diagnostics in lockstep."""
+        self._update_header_integrity(integrity)
+        self.profile_info.setText(
+            f"Hash scheme: {integrity.hash_scheme}\n"
+            f"File size ok: {integrity.file_size_ok} ({integrity.actual_size})\n"
+            f"MD5 stored: {integrity.stored_md5.hex()}\n"
+            f"MD5 computed: {(integrity.computed_md5.hex() if integrity.computed_md5 else '-')}\n"
+        )
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self._theme_transition_overlay is not None:
@@ -1672,6 +1676,7 @@ class MainWindow(
             return
         try:
             self.savefile.save(make_backup=True)
+            self._update_integrity_views(self.savefile.validate_integrity())
             ToastNotification.show_toast(self, "Saved with backup")
             self._update_action_states()
         except Exception as e:

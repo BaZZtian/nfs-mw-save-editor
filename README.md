@@ -4,7 +4,7 @@ A Windows desktop save editor for **Need for Speed: Most Wanted (2005)** PC save
 
 NFS MW Save Editor has grown beyond its original Junkman inventory focus. It now covers profile values, Blacklist progress, garage placement, pursuit heat and bounty, performance tuning, and reusable car-build snapshots.
 
-> **Release status:** the latest packaged build is [v1.4.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v.1.4.0). This README documents the current `main` branch, which targets **v1.5.0** and includes development features that are not yet part of the stable download, most notably the Career dashboard and Change Rival workflow.
+> **Latest release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v.1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
 
 ## Highlights
 
@@ -38,8 +38,6 @@ NFS MW Save Editor has grown beyond its original Junkman inventory focus. It now
 
 ### Career
 
-The Career page is currently part of the v1.5.0 development branch.
-
 - See the current Blacklist rival in a game-inspired hero dashboard
 - Compare race wins, milestones, and bounty against chapter requirements
 - Browse the full Blacklist timeline and inspect decoded race and milestone progress
@@ -47,7 +45,7 @@ The Career page is currently part of the v1.5.0 development branch.
 - Choose between `Chapter Start` and `Boss Fight Ready` donor variants
 - Preview exactly what changes and what remains yours before applying a stage
 
-Career stage changes are staged in memory and do not touch the save on disk until `Save + backup` is used. Donor saves are not bundled with the repository or release; the Change Rival workflow only enables stages present in a validated local donor library.
+Career stage changes are staged in memory and do not touch the save on disk until `Save + backup` is used. The release includes 30 validated compact progression snapshots, covering both variants for all 15 rivals. Full donor saves and donor profile identity are not bundled.
 
 ### Garage
 
@@ -150,7 +148,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe .\nfs_mw_save_editor\main.py
 ```
 
-The packaged release is the right choice for normal use. Running from `main` is intended for development and testing of the next version.
+The packaged release is the right choice for normal use. Running from source is intended for development and testing.
 
 ## User Data
 
@@ -161,9 +159,8 @@ The application keeps personal data outside its installation directory:
 | Token catalog | `%APPDATA%\NFS_MW_Junkman_Editor\token_catalog.json` |
 | UI settings | `%APPDATA%\NFS_MW_Junkman_Editor\ui_settings.json` |
 | Personal build library | `%APPDATA%\NFS_MW_Junkman_Editor\user_builds` |
-| Career donor library | `%APPDATA%\NFS_MW_Junkman_Editor\career_ladder` |
 
-Built-in car snapshots and icons are packaged with the application. Personal builds, donor saves, settings, and catalog overrides are not.
+Built-in car snapshots, compact Career progression snapshots, and icons are packaged with the application. Personal builds, full donor saves, settings, and catalog overrides are not.
 
 ## Project Layout
 
@@ -176,6 +173,7 @@ Built-in car snapshots and icons are packaged with the application. Personal bui
 |   |-- requirements.txt
 |   |-- token_catalog.json             # Default 21-marker catalog
 |   |-- assets/
+|   |   |-- career_stages/              # Bundled Change Rival snapshots
 |   |   |-- icons/                     # Original-game UI assets
 |   |   `-- unique_cars/               # Bundled build snapshots
 |   |-- core/
@@ -211,7 +209,7 @@ Install PyInstaller into the project environment, then run either specification 
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm .\nfs_mw_save_editor\release\onefile\spec_onefile\NFS_MW_Junkman_Editor.spec
 ```
 
-Both specifications include the default token catalog, application icons, original-game UI assets, and bundled car snapshots.
+Both specifications include the default token catalog, application icons, original-game UI assets, bundled car snapshots, and all 30 compact Career progression snapshots.
 
 ## Reverse-Engineering Notes
 

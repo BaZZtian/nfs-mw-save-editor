@@ -593,6 +593,21 @@ def test_endgame_summary_selects_razor_and_defeats_entire_timeline():
     assert all(summary.stage_state(stage) == "defeated" for stage in range(1, 16))
 
 
+def test_change_rival_uses_the_complete_bundled_snapshot_matrix():
+    app = _app()
+    window = MainWindow()
+    assert len(window.career_donor_library) == 30
+    assert all(entry.is_loadable for entry in window.career_donor_library)
+    assert window.career_library_status.text() == "15 / 15 chapter-start donor snapshots ready"
+
+    window.career_variant_switch.setCurrentIndex(1)
+    app.processEvents()
+    assert window.career_library_status.text() == "15 / 15 boss-ready donor snapshots ready"
+    assert all(button.isEnabled() for button in window.career_stage_buttons.values())
+    window.close()
+    app.processEvents()
+
+
 def test_timeline_selection_brackets_are_open_and_glide_to_the_new_stage():
     app = _app()
     summary = career_progress.build_career_progress(bytes(_synthetic_career(8)))
@@ -786,6 +801,7 @@ def test_apply_rival_change_crossfades_the_refreshed_hero(tmp_path, monkeypatch)
             variant="chapter_start",
             is_loadable=True,
             save_path=donor_path,
+            read_bytes=lambda: donor_path.read_bytes(),
             display_name="Stage 7",
         ),
     )
