@@ -71,6 +71,20 @@ def _without_unused_qt_payload(entries):
     return filtered
 
 
+def _runtime_icon_datas():
+    """Bundle each current runtime icon, never a directory tree wholesale."""
+    icon_root = APP_ROOT / 'assets' / 'icons'
+    destination_root = Path('assets/icons')
+    return [
+        (
+            str(path),
+            (destination_root / path.relative_to(icon_root).parent).as_posix(),
+        )
+        for path in sorted(icon_root.rglob('*'))
+        if path.is_file()
+    ]
+
+
 a = Analysis(
     [str(APP_ROOT / 'main.py')],
     pathex=[],
@@ -80,7 +94,7 @@ a = Analysis(
         (str(APP_ROOT / 'assets' / 'icon.ico'), 'assets'),
         (str(APP_ROOT / 'assets' / 'icon.png'), 'assets'),
         (str(APP_ROOT / 'assets' / 'visual_parts_catalog.json'), 'assets'),
-        (str(APP_ROOT / 'assets' / 'icons'), 'assets/icons'),
+        *_runtime_icon_datas(),
         (str(APP_ROOT / 'assets' / 'unique_cars'), 'assets/unique_cars'),
         (str(APP_ROOT / 'assets' / 'career_stages'), 'assets/career_stages'),
         (str(APP_ROOT / 'THIRD_PARTY_NOTICES.md'), '.'),

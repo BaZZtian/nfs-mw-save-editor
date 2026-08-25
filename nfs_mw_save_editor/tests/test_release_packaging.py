@@ -32,6 +32,18 @@ def test_both_specs_prune_unused_qt_payload_and_bundle_notices() -> None:
         assert "release' / 'windows_version_info.txt" in text
 
 
+def test_both_specs_enumerate_runtime_icons_instead_of_bundling_a_tree() -> None:
+    spec_paths = (
+        "release/spec/NFS_MW_Junkman_Editor.spec",
+        "release/onefile/spec_onefile/NFS_MW_Junkman_Editor.spec",
+    )
+    for spec_path in spec_paths:
+        text = _spec_text(spec_path)
+        assert "def _runtime_icon_datas()" in text
+        assert "*_runtime_icon_datas()," in text
+        assert "(str(APP_ROOT / 'assets' / 'icons'), 'assets/icons')" not in text
+
+
 def test_release_notice_and_required_license_files_are_present() -> None:
     required_files = (
         "THIRD_PARTY_NOTICES.md",

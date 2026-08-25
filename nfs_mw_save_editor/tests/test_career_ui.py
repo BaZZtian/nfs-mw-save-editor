@@ -36,7 +36,13 @@ from PySide6.QtWidgets import (
 )
 
 from core import career_progress, career_transplant, garage_records
-from ui.icon_map import game_icon_path, nav_icon_path, rival_asset_path
+from ui.icon_map import (
+    RIVAL_RUNTIME_ASSET_KINDS,
+    RIVAL_STAGE_IDS,
+    game_icon_path,
+    nav_icon_path,
+    rival_asset_path,
+)
 from ui.main_window import MainWindow
 from ui.pages import career_mixin as career_module
 from ui.pages.career_mixin import (
@@ -95,7 +101,27 @@ def _synthetic_career(stage: int = 15, *, endgame: bool = False) -> bytearray:
 def test_hero_art_layers_are_packaged_at_runtime_size():
     from PySide6.QtGui import QImageReader
 
-    for stage in range(1, 16):
+    rivals_root = PACKAGE_ROOT / "assets" / "icons" / "rivals"
+    expected = {
+        *(f"rival_{stage:02d}.png" for stage in RIVAL_STAGE_IDS),
+        *(f"rival_{stage:02d}_graf.png" for stage in RIVAL_STAGE_IDS),
+        *(
+            f"hero/rival_{stage:02d}_hero_fg.png"
+            for stage in RIVAL_STAGE_IDS
+        ),
+    }
+    assert RIVAL_RUNTIME_ASSET_KINDS == (
+        "portrait",
+        "graffiti",
+        "hero_portrait",
+    )
+    actual = {
+        path.relative_to(rivals_root).as_posix()
+        for path in rivals_root.rglob("*.png")
+    }
+    assert actual == expected
+
+    for stage in RIVAL_STAGE_IDS:
         graffiti = rival_asset_path(stage, "graffiti")
         portrait = rival_asset_path(stage, "hero_portrait")
         assert graffiti is not None and graffiti.is_file()
@@ -106,6 +132,65 @@ def test_hero_art_layers_are_packaged_at_runtime_size():
         portrait_size = QImageReader(str(portrait)).size()
         assert 0 < portrait_size.width() <= 1024
         assert 0 < portrait_size.height() <= 1024
+        fallback = rival_asset_path(stage, "portrait")
+        assert fallback is not None and fallback.is_file()
+        fallback_size = QImageReader(str(fallback)).size()
+        assert 0 < fallback_size.width() <= 1024
+        assert 0 < fallback_size.height() <= 1024
+
+
+def test_career_hero_generator_keeps_sources_dev_only_and_writes_runtime_layers(
+    tmp_path, monkeypatch
+):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+
+    from tools import build_career_hero_assets as builder
+
+    source = tmp_path / "dev" / "rivals"
+    runtime = tmp_path / "runtime" / "rivals"
+    source.mkdir(parents=True)
+
+    def write(path, width, height, fmt=QImage.Format_ARGB32):
+        image = QImage(width, height, fmt)
+        image.fill(Qt.transparent if fmt == QImage.Format_ARGB32 else Qt.black)
+        assert image.save(str(path), "PNG")
+
+    background = source / "rival_01_bg.png"
+    portrait = source / "rival_01.png"
+    graffiti = source / "rival_01_graf.png"
+    write(background, 64, 32, QImage.Format_RGB32)
+    write(portrait, 32, 32)
+    write(graffiti, 16, 8)
+    original_portrait = portrait.read_bytes()
+    original_graffiti = graffiti.read_bytes()
+
+    monkeypatch.setattr(builder, "BACKGROUND_WIDTH", 64)
+    monkeypatch.setattr(builder, "BACKGROUND_HEIGHT", 16)
+    monkeypatch.setattr(builder, "FOREGROUND_MAX", 16)
+    monkeypatch.setattr(builder, "RUNTIME_PORTRAIT_MAX", 16)
+    background_output, foreground_output = builder.build_stage(
+        source, 1, runtime_root=runtime, force=True
+    )
+
+    assert background_output == source / "hero" / "rival_01_hero_bg.png"
+    assert foreground_output == runtime / "hero" / "rival_01_hero_fg.png"
+    assert not background_output.exists()
+    assert foreground_output.is_file()
+    assert (runtime / "rival_01.png").is_file()
+    assert (runtime / "rival_01_graf.png").read_bytes() == original_graffiti
+    assert portrait.read_bytes() == original_portrait
+    assert QImage(str(runtime / "rival_01.png")).size().width() <= 16
+    assert QImage(str(foreground_output)).size().width() <= 16
+
+    builder.build_stage(
+        source,
+        1,
+        runtime_root=runtime,
+        include_background=True,
+        force=True,
+    )
+    assert background_output.is_file()
 
 
 def test_dossier_icons_share_the_preview_chip_visual_contract():

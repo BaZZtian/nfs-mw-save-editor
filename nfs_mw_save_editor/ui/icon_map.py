@@ -93,6 +93,19 @@ GAME_ICONS: Dict[str, str] = {
 }
 
 
+# Career is the only page that loads rival artwork dynamically.  Keep this
+# allowlist explicit: the dev-only vault also contains 4K source backgrounds,
+# Instagram variants, and generated hero backgrounds that must never enter a
+# release payload.
+RIVAL_STAGE_IDS = tuple(range(1, 16))
+RIVAL_RUNTIME_ASSET_KINDS = ("portrait", "graffiti", "hero_portrait")
+_RIVAL_ASSET_SUFFIXES = {
+    "portrait": "",
+    "graffiti": "_graf",
+    "hero_portrait": "_hero_fg",
+}
+
+
 def token_icon_path(token_id: int) -> Optional[Path]:
     """Return token icon path; unmapped IDs fall back to the generic icon."""
     rel = TOKEN_ICONS.get(token_id, _FALLBACK_TOKEN_ICON)
@@ -133,13 +146,8 @@ def game_icon_path(icon_name: str) -> Optional[Path]:
 
 def rival_asset_path(stage: int, asset_kind: str = "portrait") -> Optional[Path]:
     """Return a Blacklist rival asset for ``stage`` (15=Sonny, 1=Razor)."""
-    suffixes = {
-        "portrait": "",
-        "graffiti": "_graf",
-        "hero_portrait": "_hero_fg",
-    }
-    suffix = suffixes.get(asset_kind)
-    if suffix is None or not 1 <= int(stage) <= 15:
+    suffix = _RIVAL_ASSET_SUFFIXES.get(asset_kind)
+    if suffix is None or int(stage) not in RIVAL_STAGE_IDS:
         return None
     if asset_kind.startswith("hero"):
         path = _ICONS_ROOT / "rivals" / "hero" / f"rival_{int(stage):02d}{suffix}.png"
