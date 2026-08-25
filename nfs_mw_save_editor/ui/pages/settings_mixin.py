@@ -2,10 +2,21 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QRectF, QSize, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QPainter,
+    QPen,
+    QPixmap,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -14,12 +25,20 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStyle,
     QStyledItemDelegate,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
+from resources import resource_path
 from ui.pages.constants import *
-from ui.theme import available_theme_names, get_theme_preset, resolve_theme_tokens, save_ui_setting
+from ui.theme import (
+    apply_popup_theme,
+    available_theme_names,
+    get_theme_preset,
+    resolve_theme_tokens,
+    save_ui_setting,
+)
 
 
 def _parse_px(value: str, fallback: int) -> int:
@@ -29,6 +48,18 @@ def _parse_px(value: str, fallback: int) -> int:
         except ValueError:
             return fallback
     return fallback
+
+
+OPEN_SOURCE_DOCUMENTS = (
+    ("Third-party notices", ("THIRD_PARTY_NOTICES.md",)),
+    ("GNU LGPL v3", ("licenses", "LGPL-3.0.txt")),
+    ("GNU GPL v3", ("licenses", "GPL-3.0.txt")),
+    ("Qt third-party licenses", ("licenses", "QT_THIRD_PARTY_LICENSES.txt")),
+    ("Qt source and relinking", ("licenses", "QT_LGPL_COMPLIANCE.md")),
+    ("Python license", ("licenses", "PYTHON-3.13.txt")),
+    ("NumPy licenses", ("licenses", "NUMPY-2.5.1.txt")),
+    ("PyInstaller license", ("licenses", "PYINSTALLER-6.18.0.txt")),
+)
 
 
 class ThemeComboItemDelegate(QStyledItemDelegate):
@@ -515,7 +546,164 @@ class SettingsMixin:
             lambda: QDesktopServices.openUrl(QUrl("https://github.com/sprintstate/nfs-mw-save-editor"))
         )
         btn_row.addWidget(btn_github)
+        self.btn_third_party_notices = QPushButton("Open-source software")
+        self.btn_third_party_notices.clicked.connect(self._open_third_party_notices)
+        btn_row.addWidget(self.btn_third_party_notices)
         layout.addLayout(btn_row)
 
         layout.addStretch(1)
         return w
+
+    def _open_third_party_notices(self) -> None:
+        """Show concise open-source notices without exposing raw package files."""
+        self._build_open_source_dialog().exec()
+
+    def _build_open_source_dialog(self) -> QDialog:
+        dialog = QDialog(self)
+        dialog.setObjectName("openSourceDialog")
+        dialog.setWindowTitle("Open-source software")
+        dialog.setModal(True)
+        dialog.setMinimumSize(620, 500)
+        dialog.resize(660, 540)
+
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(20, 20, 20, 16)
+        root.setSpacing(12)
+
+        title = QLabel("Open-source software")
+        title.setObjectName("aboutTitle")
+        root.addWidget(title)
+
+        intro = QLabel(
+            "NFS MW Save Editor uses Qt and PySide6 under the GNU LGPL v3. "
+            "You may replace and relink those libraries. Full license texts, "
+            "source information, and relinking instructions are included with "
+            "every packaged build."
+        )
+        intro.setObjectName("mutedLabel")
+        intro.setWordWrap(True)
+        intro.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        root.addWidget(intro)
+
+        components = (
+            (
+                "Qt / PySide6 / shiboken6 6.10.1",
+                "GNU Lesser General Public License v3",
+                (("Qt licensing", "https://doc.qt.io/qt-6/licensing.html"),),
+            ),
+            (
+                "Python 3.13.14",
+                "Python Software Foundation License",
+                (("Python license", "https://docs.python.org/3.13/license.html"),),
+            ),
+            (
+                "NumPy 2.5.1",
+                "BSD 3-Clause License",
+                (("NumPy license", "https://numpy.org/doc/stable/license.html"),),
+            ),
+            (
+                "PyInstaller 6.18.0",
+                "GPL v2 or later with the PyInstaller bootloader exception",
+                (("PyInstaller license", "https://pyinstaller.org/en/stable/license.html"),),
+            ),
+        )
+        for component, license_name, links in components:
+            frame = QFrame()
+            frame.setObjectName("settingsGroup")
+            frame_layout = QVBoxLayout(frame)
+            frame_layout.setContentsMargins(12, 10, 12, 10)
+            frame_layout.setSpacing(5)
+
+            component_label = QLabel(component)
+            component_label.setObjectName("settingsGroupTitle")
+            frame_layout.addWidget(component_label)
+
+            detail_row = QHBoxLayout()
+            detail_row.setSpacing(8)
+            license_label = QLabel(license_name)
+            license_label.setObjectName("mutedLabel")
+            license_label.setWordWrap(True)
+            detail_row.addWidget(license_label, 1)
+            for link_text, url in links:
+                link_button = QPushButton(link_text)
+                link_button.setObjectName("openSourceLink")
+                link_button.clicked.connect(
+                    lambda _checked=False, target=url: QDesktopServices.openUrl(QUrl(target))
+                )
+                detail_row.addWidget(link_button)
+            frame_layout.addLayout(detail_row)
+            root.addWidget(frame)
+
+        root.addStretch(1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        license_texts_button = buttons.addButton(
+            "License texts", QDialogButtonBox.ButtonRole.ActionRole
+        )
+        license_texts_button.setObjectName("viewLicenseTexts")
+        license_texts_button.clicked.connect(
+            lambda: self._build_license_text_dialog(dialog).exec()
+        )
+        buttons.rejected.connect(dialog.reject)
+        root.addWidget(buttons)
+
+        apply_popup_theme(dialog, self.theme_name)
+        return dialog
+
+    def _build_license_text_dialog(self, parent: QWidget | None = None) -> QDialog:
+        dialog = QDialog(parent or self)
+        dialog.setObjectName("licenseTextDialog")
+        dialog.setWindowTitle("License texts")
+        dialog.setModal(True)
+        dialog.setMinimumSize(720, 560)
+        dialog.resize(780, 640)
+
+        root = QVBoxLayout(dialog)
+        root.setContentsMargins(18, 18, 18, 14)
+        root.setSpacing(10)
+
+        title = QLabel("Bundled license texts")
+        title.setObjectName("aboutTitle")
+        root.addWidget(title)
+
+        intro = QLabel(
+            "These are the complete local notices and license texts distributed "
+            "with this copy of the application."
+        )
+        intro.setObjectName("mutedLabel")
+        intro.setWordWrap(True)
+        root.addWidget(intro)
+
+        selector = QComboBox()
+        selector.setObjectName("licenseDocumentSelector")
+        for document_title, path_parts in OPEN_SOURCE_DOCUMENTS:
+            selector.addItem(document_title, path_parts)
+        root.addWidget(selector)
+
+        viewer = QTextBrowser()
+        viewer.setObjectName("licenseTextViewer")
+        viewer.setReadOnly(True)
+        viewer.setOpenExternalLinks(True)
+        root.addWidget(viewer, 1)
+
+        def show_document(index: int) -> None:
+            path_parts = selector.itemData(index)
+            path = resource_path(*path_parts)
+            try:
+                content = path.read_text(encoding="utf-8")
+                if path.suffix.lower() == ".md":
+                    viewer.setMarkdown(content)
+                else:
+                    viewer.setPlainText(content)
+            except OSError as exc:
+                viewer.setPlainText(f"Could not read the bundled document:\n{exc}")
+            viewer.moveCursor(QTextCursor.MoveOperation.Start)
+
+        selector.currentIndexChanged.connect(show_document)
+        show_document(0)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        root.addWidget(buttons)
+
+        apply_popup_theme(dialog, self.theme_name)
+        return dialog

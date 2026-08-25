@@ -3,6 +3,7 @@ from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -10,7 +11,15 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PACKAGE_ROOT))
 
 from PySide6.QtCore import QAbstractAnimation, QEasingCurve
-from PySide6.QtWidgets import QApplication, QCheckBox, QLabel, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QLabel,
+    QPushButton,
+    QTextBrowser,
+    QWidget,
+)
 
 from core.models import (
     FullCarBuildSnapshot,
@@ -264,6 +273,49 @@ class UiSmokeTests(unittest.TestCase):
         for page_name in pages:
             self._navigate(page_name)
             self._assert_smoke_objects_exist(f"{page_name} after theme switch")
+
+    def test_about_uses_native_open_source_dialog_and_external_links(self) -> None:
+        self.assertIsNotNone(self.window.btn_third_party_notices)
+        self.assertEqual(self.window.btn_third_party_notices.text(), "Open-source software")
+
+        dialog = self.window._build_open_source_dialog()
+        self.assertEqual(dialog.objectName(), "openSourceDialog")
+        labels = "\n".join(label.text() for label in dialog.findChildren(QLabel))
+        self.assertIn("Qt / PySide6 / shiboken6 6.10.1", labels)
+        self.assertIn("Python 3.13.14", labels)
+        self.assertIn("NumPy 2.5.1", labels)
+        self.assertIn("PyInstaller 6.18.0", labels)
+
+        link_buttons = {
+            button.text(): button
+            for button in dialog.findChildren(QPushButton, "openSourceLink")
+        }
+        self.assertIn("Qt licensing", link_buttons)
+        self.assertNotIn("Request source", link_buttons)
+        self.assertIsNotNone(dialog.findChild(QPushButton, "viewLicenseTexts"))
+
+        with patch("ui.pages.settings_mixin.QDesktopServices.openUrl", return_value=True) as open_url:
+            link_buttons["Qt licensing"].click()
+
+        opened_url = open_url.call_args.args[0]
+        self.assertFalse(opened_url.isLocalFile())
+        self.assertEqual(opened_url.host(), "doc.qt.io")
+        dialog.close()
+
+        license_dialog = self.window._build_license_text_dialog()
+        selector = license_dialog.findChild(QComboBox, "licenseDocumentSelector")
+        viewer = license_dialog.findChild(QTextBrowser, "licenseTextViewer")
+        self.assertIsNotNone(selector)
+        self.assertIsNotNone(viewer)
+        self.assertIn("Third-party notices", viewer.toPlainText())
+
+        qt_index = selector.findText("Qt third-party licenses")
+        self.assertGreaterEqual(qt_index, 0)
+        selector.setCurrentIndex(qt_index)
+        QApplication.processEvents()
+        self.assertIn("D3D12 Memory Allocator", viewer.toPlainText())
+        self.assertIn("FULL LICENSE TEXTS", viewer.toPlainText())
+        license_dialog.close()
 
     def test_page_stylesheet_uses_shared_content_card_selectors(self) -> None:
         stylesheet = build_page_stylesheet(self.window.theme_name)

@@ -84,7 +84,7 @@ External build JSON files can be added by placing valid snapshots in the `user_b
 - Configure token limits, alias limits, integrity display, and allocator diagnostics
 - Open the per-user token catalog directory
 - Access legacy token preset import/export tools
-- View the current application version, shortcuts, author credit, and GitHub link
+- View the current application version, shortcuts, author credit, GitHub link, and third-party licenses
 
 ## Safety Model
 
@@ -209,7 +209,11 @@ Install PyInstaller into the project environment, then run either specification 
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm .\nfs_mw_save_editor\release\onefile\spec_onefile\NFS_MW_Junkman_Editor.spec
 ```
 
-Both specifications include the default token catalog, application icons, original-game UI assets, bundled car snapshots, and all 30 compact Career progression snapshots.
+Both specifications include the default token and visual-parts catalogs, application icons, original-game UI assets, bundled car snapshots, all 30 compact Career progression snapshots, Windows version metadata, and the third-party license bundle. Unused Qt modules and plugins are explicitly excluded.
+
+## Third-party software
+
+The packaged application includes Python, Qt/PySide6, NumPy, and the PyInstaller bootloader. Their notices and license texts are listed in [`nfs_mw_save_editor/THIRD_PARTY_NOTICES.md`](nfs_mw_save_editor/THIRD_PARTY_NOTICES.md) and bundled with each package. The application's About page presents a concise native summary, official project links, and an in-app viewer for every bundled license text. The Qt notice provides direct network access to the exact corresponding-source archives under GPLv3 section 6(d), plus relinking information for the dynamically linked LGPL components.
 
 ## Reverse-Engineering Notes
 

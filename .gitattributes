@@ -6,5 +6,7 @@
 *.md  text eol=lf
 *.ps1 text eol=crlf
 
+nfs_mw_save_editor/licenses/*.txt text eol=lf -whitespace
+
 .gitignore text eol=lf
 .gitattributes text eol=lf
