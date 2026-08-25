@@ -4,7 +4,7 @@ A Windows desktop save editor for **Need for Speed: Most Wanted (2005)** PC save
 
 NFS MW Save Editor has grown beyond its original Junkman inventory focus. It now covers profile values, Blacklist progress, garage placement, pursuit heat and bounty, performance tuning, and reusable car-build snapshots.
 
-> **Latest release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v.1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
+> **Latest release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
 
 ## Highlights
 
@@ -174,7 +174,7 @@ Built-in car snapshots, compact Career progression snapshots, and icons are pack
 |   |-- token_catalog.json             # Default 21-marker catalog
 |   |-- assets/
 |   |   |-- career_stages/              # Bundled Change Rival snapshots
-|   |   |-- icons/                     # Original-game UI assets
+|   |   |-- icons/                     # Runtime-ready original-game UI assets
 |   |   `-- unique_cars/               # Bundled build snapshots
 |   |-- core/
 |   |   |-- savefile.py                # Save parser, editor, and integrity flow
@@ -193,7 +193,7 @@ Built-in car snapshots, compact Career progression snapshots, and icons are pack
 |   `-- release/                       # PyInstaller specifications
 ```
 
-Developer-only assets and local release outputs are intentionally excluded from the public repository.
+Full-resolution source layers, other developer-only assets, and local release outputs are intentionally excluded from the public repository and packaged application.
 
 ## Building Windows Packages
 
@@ -209,7 +209,7 @@ Install PyInstaller into the project environment, then run either specification 
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm .\nfs_mw_save_editor\release\onefile\spec_onefile\NFS_MW_Junkman_Editor.spec
 ```
 
-Both specifications include the default token and visual-parts catalogs, application icons, original-game UI assets, bundled car snapshots, all 30 compact Career progression snapshots, Windows version metadata, and the third-party license bundle. Unused Qt modules and plugins are explicitly excluded.
+Both specifications include the default token and visual-parts catalogs, application icons, runtime-ready original-game UI assets, bundled car snapshots, all 30 compact Career progression snapshots, Windows version metadata, and the third-party license bundle. Full-resolution source layers, unused image variants, and unused Qt modules and plugins are explicitly excluded.
 
 ## Third-party software
 
