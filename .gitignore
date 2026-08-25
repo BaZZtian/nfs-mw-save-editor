@@ -22,6 +22,7 @@ env/
 .vscode/
 .idea/
 .claude/
+.codex/
 .agents/
 
 # Build artifacts
@@ -44,14 +45,17 @@ Thumbs.db
 
 # Test / tooling caches
 .pytest_cache/
+.pytest_tmp*/
 .mypy_cache/
 .ruff_cache/
 .tox/
 .nox/
 .coverage
+.coverage.*
 coverage.xml
 htmlcov/
 .hypothesis/
+pytestdebug.log
 
 # Env files
 .env
