@@ -93,7 +93,8 @@ class CareerTransplantSave(Protocol):
 def read_current_bin(data: bytes) -> Optional[int]:
     """Return the career stage byte, or None when the buffer is not a save."""
 
-    if len(data) != EXPECTED_SAVE_SIZE:
+    from core.switch_format import is_switch_save
+    if len(data) != EXPECTED_SAVE_SIZE and not is_switch_save(data):
         return None
     return int(data[CURRENT_BIN_OFFSET])
 

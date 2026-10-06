@@ -1,10 +1,12 @@
 # NFS MW Save Editor
 
-A Windows desktop save editor for **Need for Speed: Most Wanted (2005)** PC saves from the **v1.3 game executable**. Built with Python and PySide6.
+A Windows desktop save editor for **Need for Speed: Most Wanted (2005)** PC saves from the **v1.3 game executable** and raw Xbox 360 saves used by the **nfsmw-nx Switch port**. Built with Python and PySide6.
+
+Raw Xbox 360 / nfsmw-nx support targets the documented 62,688-byte MC02 layout. It is currently a preview; game acceptance on Switch hardware has not been independently verified. See [the save-format documentation](docs/SWITCH_SAVE_FORMAT.md) for supported layouts, the authoritative save path and validation.
 
 NFS MW Save Editor has grown beyond its original Junkman inventory focus. It now covers profile values, Blacklist progress, garage placement, pursuit heat and bounty, performance tuning, and reusable car-build snapshots.
 
-> **Latest release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
+> **Latest upstream release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
 
 ## Highlights
 
@@ -107,7 +109,9 @@ Keep a known-good copy of important saves even though the editor creates backups
 
 ## Download
 
-Download the latest stable build from [GitHub Releases](https://github.com/sprintstate/nfs-mw-save-editor/releases/latest):
+For raw Xbox 360 / nfsmw-nx saves, download the **Switch support preview** from this repository's **Releases** section. Extract the complete portable ZIP before running the executable.
+
+The upstream stable PC build is available from [GitHub Releases](https://github.com/sprintstate/nfs-mw-save-editor/releases/latest):
 
 - **`NFS_MW_Junkman_Editor.exe`** - recommended standalone single-file build
 - **`NFS_MW_Junkman_Editor_onedir.zip`** - portable folder build; extract the full archive and run the executable inside
