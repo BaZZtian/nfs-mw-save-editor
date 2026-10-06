@@ -252,3 +252,5 @@ The README intentionally stays at product level; byte offsets and research histo
 This is an unofficial fan-made tool and is not affiliated with or endorsed by Electronic Arts.
 
 Need for Speed and Need for Speed: Most Wanted are trademarks of Electronic Arts. Use the editor at your own risk and keep backups of important saves.
+
+Switch save support, validation scripts and documentation were developed with assistance from OpenAI Codex (ChatGPT). Original editor by sprintstate.
