@@ -4,11 +4,10 @@ This backend extension targets the v1.5.0 desktop editor. It adds a
 reversible serialization adapter that connects raw Xbox 360 saves used
 by nfsmw-nx to the existing save-editing engine.
 
-**Experimental:** edited native saves have not yet been validated in-game
-on a real Switch. In particular, bundled PC car-build part/body-kit indices
-are not confirmed to match the Xbox tables. Successful conversion, editor
-reload and checksums are not proof of game acceptance. Keep an independent
-known-good backup and test changes separately before using an edited save.
+**Experimental:** the PR author reports passing manual Windows and real-Switch
+feature tests, documented below. Upstream integration is still pending;
+compatibility across every native version and PC/Xbox part index has not been
+established. Keep an independent known-good backup when editing saves.
 
 ## Supported inputs
 
@@ -242,16 +241,28 @@ execution still requires a Windows retest. The corrected script passed on
 Linux with a temporary copy of the synthetic native fixture: open, all eight
 pages, Apply, Save + backup and Reload; the input file was unchanged.
 
-The remaining real-Switch validation checklist is:
+### Manual Windows and Switch follow-up (8 October 2026)
 
-- Money and reward markers persist after loading and re-saving in game.
-- Performance tuning and Junkman parts behave correctly.
-- An injected car appears in Car Select, drives in free roam, and has the
-  expected performance parts and body kit (PC/Xbox index compatibility).
-- A career-stage change loads and permits the expected races/rival flow.
+PR author BaZZtian tested the corrected portable Windows test package and
+reported that it starts, reads the native save, and writes an edited file
+accepted by the game on Switch. The money edit was specifically confirmed
+at **2,000,000 in game**. After receiving the remaining feature checklist,
+the tester confirmed that all functions had been tested and worked. This
+reports the requested manual checks as passing:
 
-Until those checks are reported, native support remains experimental.
+- Money and reward/Junkman markers.
+- Performance tuning and Junkman parts.
+- Car-build injection, including the requested Car Select/free-roam and
+  parts/body-kit checks.
+- Career-stage changes.
 
-These results verify serialization and editor behavior, including the
-original feature paths. Direct Windows executable startup and acceptance of
-edited saves by the game on Switch hardware have not been tested here.
+These are the tester's manual results, separate from the automated synthetic
+tests above. No new full automated Windows-suite run or direct Windows run
+of `tools/verify_switch_ui.py` is claimed. The corrected dialog override is
+implemented, but its Windows script retest remains separate from successful
+manual use of the EXE.
+
+Support remains experimental pending upstream integration and maintainer
+review. The reported feature checks do not establish compatibility of every
+PC/Xbox part index or every native save version. Integration with the
+maintainer's newer development state is still to be checked on their side.
