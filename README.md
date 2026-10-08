@@ -13,7 +13,7 @@ save layout. Extract the entire ZIP and run `NFS_MW_Junkman_Editor.exe`.
 No separate Python installation is needed for the portable application.
 
 Switch support remains **experimental**, including after its upstream merge.
-The current reviewed build supports native save open/edit/save, money,
+The current community build supports native save open/edit/save, money,
 reward/Junkman markers, tuning, car-build injection and career-stage changes.
 Compatibility with every save version, vehicle or PC/Xbox part index is not
 established. Keep an independent known-good save backup.
@@ -28,26 +28,24 @@ The final component is the extensionless save file. The `actual` and `anterior`
 directories contain automatic copies. Format details and reproducible checks
 are in [SWITCH_SAVE_FORMAT.md](docs/SWITCH_SAVE_FORMAT.md).
 
-## Updates and support
+## Updates and community feedback
 
-Each community pre-release identifies its source commit and its own validation
-results. An upstream update does not automatically mean that its new features
-work with native saves. Updates require native regression checks, Windows UI
-verification and relevant in-game testing before a new preview is offered.
-Unsupported native features should remain disabled.
+Release notes identify the source commit and describe the checks performed for
+that particular build. Compatibility of future upstream features with native
+saves is not established by the tests of the current version.
 
-Switch-specific feedback for this community build can be raised through this
-fork's issue tracker. Assistance is voluntary and depends on available time;
-there is no commitment to port every upstream feature or maintain a release
-schedule. General editor issues and official releases belong to the upstream
-project.
+The upstream maintainer's test and integration confirmation covers the source
+code. He has not tested this fork's ZIP or executable. Validation of the
+community package is described separately in its release notes.
 
-The proposed distribution arrangement is being discussed in
+Switch-specific feedback for the community build can be reported through this
+fork's issue tracker. Official builds are provided by the upstream project.
+
+The maintainer has agreed to a clearly labelled unofficial preview on this
+fork until an official release covers the Switch workflow; see
 [upstream PR #2](https://github.com/sprintstate/nfs-mw-save-editor/pull/2).
-It is not an upstream endorsement of these binaries. When an official download
-covers the tested Switch workflow, this preview should be marked superseded
-and users directed to the official release. The fork can remain available for
-contributions and history.
+Once an official download covers that workflow, the community preview will be
+marked superseded and users directed to the official release.
 
 ---
 
@@ -289,4 +287,5 @@ The README intentionally stays at product level; byte offsets and research histo
 This is an unofficial fan-made tool and is not affiliated with or endorsed by Electronic Arts.
 
 Need for Speed and Need for Speed: Most Wanted are trademarks of Electronic Arts. Use the editor at your own risk and keep backups of important saves.
+
 
