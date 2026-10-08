@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
 
 from core.checksums import ea_crc32
@@ -32,7 +32,13 @@ def is_switch_save(data: bytes | bytearray) -> bool:
             and int.from_bytes(data[4:8], "big") == SWITCH_SIZE)
 
 
+def _require_span(buf: bytes | bytearray, start: int, size: int, label: str) -> None:
+    if start < 0 or size < 0 or start > len(buf) or size > len(buf) - start:
+        raise ValueError(f"{label} span out of bounds: offset {start}, size {size}, buffer {len(buf)}")
+
+
 def _reverse(buf: bytearray, start: int, size: int) -> None:
+    _require_span(buf, start, size, "Typed field")
     buf[start:start + size] = buf[start:start + size][::-1]
 
 
@@ -44,6 +50,7 @@ def _words(raw: bytes, width: int) -> bytes:
 
 def _lua_table(buf: bytearray, start: int, size: int, to_pc: bool) -> None:
     """Translate TableVar bitfields; packed identifiers remain byte strings."""
+    _require_span(buf, start, size, "Persistent Lua table")
     end = start + size
 
     def fields(pos):
@@ -114,12 +121,14 @@ def game_region(raw: bytes, to_pc: bool) -> bytes:
     for pos in range(16, 60, 4):
         _reverse(buf, pos, 4)
     pos = 0x80  # persistent pool begins at absolute 0xB4
+    _require_span(buf, pos, persistent * 16, "Persistent activity headers")
     for _ in range(persistent):
-        if pos + 16 > len(buf):
-            raise ValueError("Truncated persistent activity")
+        _require_span(buf, pos, 16, "Persistent activity header")
         _key, size = struct.unpack_from(order + "II", buf, pos)
-        if size < 8 or pos + 8 + size > len(buf):
+        if size < 8:
             raise ValueError("Invalid persistent activity size")
+        record_size = (8 + size + 15) & ~15
+        _require_span(buf, pos, record_size, "Aligned persistent activity")
         table_size = struct.unpack_from(order + "H", buf, pos + 14)[0]
         if table_size != size - 8:
             raise ValueError("Unsupported persistent activity payload")
@@ -127,42 +136,49 @@ def game_region(raw: bytes, to_pc: bool) -> bytes:
             _reverse(buf, pos + rel, width)
         if table_size:
             _lua_table(buf, pos + 16, table_size, to_pc)
-        pos += (8 + size + 15) & ~15
+        pos += record_size
     # Each array is aligned relative to the start of the gameplay section.
     align = lambda value: (value + 7) & ~7
+    _require_span(buf, pos, timers * 32, "Saved timers")
     for _ in range(timers):
         _reverse(buf, pos, 4)  # interval
         _reverse(buf, pos + 8, 4)  # elapsed; running and name are bytes
         pos += 32
     pos = align(pos)
+    _require_span(buf, pos, types * 16, "Milestone types")
     for _ in range(types):
         for rel in range(0, 16, 4):
             _reverse(buf, pos + rel, 4)
         pos += 16
     pos = align(pos)
+    _require_span(buf, pos, milestones * 20, "Milestone records")
     for _ in range(milestones):
         for rel, width in ((0, 4), (4, 4), (10, 2), (12, 4), (16, 4)):
             _reverse(buf, pos + rel, width)
         pos += 20
     pos = align(pos)
+    _require_span(buf, pos, traps * 20, "Speed-trap records")
     for _ in range(traps):
         # GSpeedTrap: flags H, bin H, key I, camera I, required f, recorded f.
         for rel, width in ((0, 2), (2, 2), (4, 4), (8, 4), (12, 4), (16, 4)):
             _reverse(buf, pos + rel, width)
         pos += 20
     pos = align(pos)
+    _require_span(buf, pos, gates * 4, "Unlocked gates")
     for _ in range(gates):
         _reverse(buf, pos, 4)
         pos += 4
     pos = align(pos)
     hiding_bytes = (hiding_bits + 7) // 8
-    if hiding_bytes % 4 or pos + hiding_bytes > len(buf):
+    if hiding_bytes % 4:
         raise ValueError("Unsupported hiding-spot bitset")
+    _require_span(buf, pos, hiding_bytes, "Hiding-spot bitset")
     for rel in range(0, hiding_bytes, 4):
         _reverse(buf, pos + rel, 4)
     pos = align(pos + hiding_bytes)
-    if bin_bytes < 4 or pos + bin_bytes > len(buf):
+    if bin_bytes < 4:
         raise ValueError("Invalid race-bin statistics")
+    _require_span(buf, pos, bin_bytes, "Race-bin statistics")
     count = struct.unpack_from(order + "I", buf, pos)[0]
     if bin_bytes != 4 + count * 8:
         raise ValueError("Unsupported race-bin statistics layout")
@@ -170,10 +186,12 @@ def game_region(raw: bytes, to_pc: bool) -> bytes:
     for rel in range(4, bin_bytes, 2):
         _reverse(buf, pos + rel, 2)
     pos = align(pos + bin_bytes)
+    _require_span(buf, pos, sms * 4, "Pending SMS")
     for _ in range(sms):
         _reverse(buf, pos, 4)
         pos += 4
     pos = align(pos)
+    _require_span(buf, pos, 32, "Gameplay footer")
     # Saved free-roam marker keys. The surrounding byte/padding fields stay put.
     for rel in (8, 24):
         _reverse(buf, pos + rel, 4)
@@ -310,9 +328,13 @@ class SwitchCodec:
             raise ValueError("Editor changed the canonical buffer size")
         buf = bytearray(self.native)
         for pc, native, size, kind in self.REGIONS:
-            value = bytes(working[pc:pc + size])
-            if value != self.baseline[pc:pc + size]:
-                buf[native:native + size] = self._convert(value, kind, False)
+            # Padding normalization is lossy (both native AA and CD can
+            # decode to CD). Never re-encode an unedited neighbour record.
+            stride = {"owned": 20, "parts": 0x198, "pursuits": 0x38}.get(kind, size)
+            for rel in range(0, size, stride):
+                value = bytes(working[pc + rel:pc + rel + stride])
+                if value != self.baseline[pc + rel:pc + rel + stride]:
+                    buf[native + rel:native + rel + stride] = self._convert(value, kind, False)
         return buf
 
 
@@ -348,12 +370,31 @@ class SwitchSaveFile(SaveFile):
         if name in SwitchSaveFile.__dict__ or name in own or name in ("__class__", "__dict__"):
             return object.__getattribute__(self, name)
         self._adopt_external_edits()
-        return getattr(object.__getattribute__(self, "_pc"), name)
+        value = getattr(object.__getattribute__(self, "_pc"), name)
+        if not callable(value):
+            return value
+
+        @wraps(value)
+        def synced_call(*args, **kwargs):
+            # A caller may hold both a data reference and a bound method.
+            # Adopt at call time, then encode setter edits immediately into
+            # the SAME bytearray so held references never become stale.
+            self._adopt_external_edits()
+            try:
+                return value(*args, **kwargs)
+            finally:
+                self._sync_native_cache()
+
+        return synced_call
 
     def _adopt_external_edits(self):
         # Preserve the original mutable-bytearray API, including pack_into
         # writes that bypass Python's __setitem__ hook.
         if bytes(self._native_cache) != self._native_snapshot:
+            if bytes(self._pc.data) != self._cache_key:
+                # Direct changes to the private engine (e.g. through a
+                # retained subobject) cannot be ordered against raw writes.
+                raise ValueError("Conflicting native-buffer and canonical edits; synchronize through save.data before mixing direct writes")
             codec = SwitchCodec(self._native_cache)
             self._codec = codec
             self._pc.data = bytearray(codec.baseline)
@@ -361,21 +402,32 @@ class SwitchSaveFile(SaveFile):
             self._cache_key = bytes(self._pc.data)
             self._native_snapshot = bytes(self._native_cache)
 
-    @property
-    def data(self):
-        self._adopt_external_edits()
+    def _sync_native_cache(self):
         key = bytes(self._pc.data)
         if key != self._cache_key:
             native = self._codec.encode(key)
-            self._native_cache = native
+            self._native_cache[:] = native
             self._native_snapshot = bytes(native)
             self._cache_key = key
+
+    @property
+    def data(self):
+        self._adopt_external_edits()
+        self._sync_native_cache()
         return self._native_cache
 
     @data.setter
     def data(self, value):
-        self._native_cache = bytearray(value)
-        self._adopt_external_edits()
+        # Validate before replacing the public buffer and keep held
+        # references alive. Full-buffer assignment intentionally replaces
+        # the current working save, just like the PC engine's data setter.
+        codec = SwitchCodec(value)
+        self._codec = codec
+        self._pc.data = bytearray(codec.baseline)
+        self._pc.junkman = type(self._pc.junkman)(self._pc)
+        self._cache_key = bytes(self._pc.data)
+        self._native_cache[:] = value
+        self._native_snapshot = bytes(value)
 
     def detect_hash_scheme(self):
         buf = self.data
@@ -399,7 +451,7 @@ class SwitchSaveFile(SaveFile):
     def fix_integrity(self, force_scheme=None):
         buf = bytearray(self.data)
         _repair(buf, ">")
-        self._native_cache = buf
+        self._native_cache[:] = buf
         self._native_snapshot = bytes(buf)
         self.hash_scheme = "md5_saved_data"
         return self.validate_integrity()
