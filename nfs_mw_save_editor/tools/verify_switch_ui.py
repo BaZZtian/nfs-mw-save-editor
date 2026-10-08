@@ -31,7 +31,7 @@ def verify(input_path):
         def dialog_failure(*args, **kwargs):
             raise AssertionError(f"Original UI opened an error dialog: {args[1:3]}")
 
-        with patch.object(QMessageBox, "critical", side_effect=dialog_failure), patch.object(QMessageBox, "warning", side_effect=dialog_failure), patch.object(QMessageBox, "question", return_value=QMessageBox.Yes), patch.object(ApplyConfirmDialog, "exec", return_value=QDialog.DialogCode.Accepted):
+        with patch.object(QMessageBox, "critical", side_effect=dialog_failure), patch.object(QMessageBox, "warning", side_effect=dialog_failure), patch.object(QMessageBox, "question", return_value=QMessageBox.Yes), patch.object(ApplyConfirmDialog, "exec", lambda self: QDialog.DialogCode.Accepted):
             window = MainWindow()
             window.resize(1180, 780)
             window.on_open(str(save_path))
