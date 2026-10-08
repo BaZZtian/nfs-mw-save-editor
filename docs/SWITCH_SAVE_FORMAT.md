@@ -180,7 +180,7 @@ project dependencies and pytest installed:
 ```bash
 PYTHONPATH=nfs_mw_save_editor QT_QPA_PLATFORM=offscreen \
   python -m pytest nfs_mw_save_editor/tests/test_switch_format.py \
-  nfs_mw_save_editor/tests/test_switch_review.py -q
+  nfs_mw_save_editor/tests/test_switch_review_regressions.py -q
 ```
 
 The synthetic fixtures are generated at test time. Tests cover native byte
@@ -212,3 +212,4 @@ In Windows PowerShell, use the interpreter from the project environment:
 The save paths above are placeholders. Replace them with a raw native save
 file. Automated round trips establish serialization behavior and integrity;
 acceptance of edited gameplay data also requires testing in the game.
+
