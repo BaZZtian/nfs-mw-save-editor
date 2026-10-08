@@ -4,9 +4,8 @@ This backend extension targets the v1.5.0 desktop editor. It adds a
 reversible serialization adapter that connects raw Xbox 360 saves used
 by nfsmw-nx to the existing save-editing engine.
 
-**Experimental:** the PR author reports passing manual Windows and real-Switch
-feature tests, documented below. Upstream integration is still pending;
-compatibility across every native version and PC/Xbox part index has not been
+**Experimental:** support is limited to the raw native layout described here.
+Compatibility across every native version and PC/Xbox part index has not been
 established. Keep an independent known-good backup when editing saves.
 
 ## Supported inputs
@@ -57,27 +56,22 @@ checksums are repaired. `Fix checksums` does that in memory; `save()` also
 repairs them automatically. Repairing checksums in a copy directory does not
 change which file the game loads.
 
-Verified against the port source at commit
-`4e3ffc24fe80285189f2cea601606c529d5f1b97` on 6 October 2026:
+Port path handling is defined in these sources at commit
+`4e3ffc24fe80285189f2cea601606c529d5f1b97`:
 [content_manager.cpp](https://github.com/StevensND/nfsmw-nx/blob/4e3ffc24fe80285189f2cea601606c529d5f1b97/sdk/src/system/xam/content_manager.cpp),
 [rex_app.cpp](https://github.com/StevensND/nfsmw-nx/blob/4e3ffc24fe80285189f2cea601606c529d5f1b97/sdk/src/ui/rex_app.cpp) and
 [filesystem_posix.cpp](https://github.com/StevensND/nfsmw-nx/blob/4e3ffc24fe80285189f2cea601606c529d5f1b97/sdk/src/core/filesystem_posix.cpp).
 
-This corrects the earlier documentation's misleading description of
-`actual`/`anterior`. No backend or GUI code change is needed for this path issue.
+## Adapter modules
 
-## Changed application files
-
-| File | Change |
+| File | Role |
 | --- | --- |
 | `core/savefile.py` | Factory dispatch to `SwitchSaveFile`; existing PC edit methods stay intact |
-| `core/switch_format.py` (new) | Native detection, typed conversion, native persistence and integrity |
+| `core/switch_format.py` | Native detection, typed conversion, native persistence and integrity |
 | `core/career_progress.py` | Normalize native input for the original career dashboard parser |
 | `core/career_transplant.py` | Accept the native size when reading the current Blacklist stage |
 
-`main.py`, `resources.py`, all `ui/` files, themes, icons, templates and bundled
-car builds are unchanged. The extension uses Python's standard library and
-adds no runtime dependency. Tests and review documentation are separate.
+The adapter uses Python's standard library and adds no runtime dependency.
 
 ## Representation and persistence
 
@@ -180,106 +174,41 @@ No decompilation source files or personal saves are bundled with this patch.
 
 ## Validation
 
-Environment: CPython 3.12.14 for pytest; CPython 3.13.15 for packaged-bytecode
-and original Qt UI checks. Linux offscreen Qt is PySide6 6.11.2; the supplied
-Windows package's Qt 6.10.1 runtime is retained unchanged.
-
-| Check | Result |
-| --- | --- |
-| Original non-Qt PC/API regression suite | 203 passed |
-| New format suite, with optional private native fixture | 165 passed |
-| Every bundled build in both Career and My Cars | 34 builds × 2 target modes; save/reopen and JSON export/reload |
-| Every bundled career stage, keep/normalize bounty | 30 stages × 2 modes; save/reopen |
-| Gameplay conversion round trip | All 30 bundled career blocks byte-identical |
-| Original Qt workflow with a copy of the native save | Open, eight pages, Apply, Save + backup, actual disk reload passed |
-| Original input after tests | Unchanged; writes confined to temporary copies |
-| Original baseline Qt suite in this Linux environment | 359 passed, two existing font/layout assertions failed |
-
-The two baseline failures occur in the **unmodified** source:
-`test_longest_tagline_stays_one_line_and_holds_the_banner_still` and
-`test_footer_strip_regrows_when_its_numbers_arrive`. They are not reported as
-passing. The GUI integration script accepts the existing confirmation dialogs
-within the test only; it does not alter application UI code.
-
-From the repository root (with the project's pytest/Qt test dependencies):
+Run the format and regression checks from the repository root with the
+project dependencies and pytest installed:
 
 ```bash
 PYTHONPATH=nfs_mw_save_editor QT_QPA_PLATFORM=offscreen \
-  python -m pytest nfs_mw_save_editor/tests -m 'not qt' \
-  --ignore=nfs_mw_save_editor/tests/test_switch_format.py -q
+  python -m pytest nfs_mw_save_editor/tests/test_switch_format.py \
+  nfs_mw_save_editor/tests/test_switch_review.py -q
+```
 
-PYTHONPATH=nfs_mw_save_editor QT_QPA_PLATFORM=offscreen \
-  NFS_MW_SWITCH_TEST_SAVE=/path/to/private/raw/save \
-  python -m pytest nfs_mw_save_editor/tests/test_switch_format.py -q
+The synthetic fixtures are generated at test time. Tests cover native byte
+order, unsupported versions, gameplay array and footer bounds, held mutable
+buffers, record-level padding preservation, backup contents and integrity
+repair. The gameplay-array golden test constructs expected bytes directly,
+independently of `game_region()`.
 
+Set `NFS_MW_SWITCH_TEST_SAVE` to the path of a raw native save to enable the
+optional private-fixture test. Without that variable, the optional test is
+skipped. Test writes are confined to temporary copies.
+
+The UI verification script opens a native save, visits all eight pages,
+applies an edit, saves with a backup and reloads the disk file. It checks that
+the supplied input remains unchanged and accepts the application's
+confirmation dialogs automatically within the test:
+
+```bash
 QT_QPA_PLATFORM=offscreen \
-  python nfs_mw_save_editor/tools/verify_switch_ui.py /path/to/private/raw/save
+  python nfs_mw_save_editor/tools/verify_switch_ui.py /path/to/raw/save
 ```
 
-Without `NFS_MW_SWITCH_TEST_SAVE`, only the optional private-fixture test is
-skipped. The synthetic fixture has no private identity and is generated at
-test time. Tests cover native byte order, unknown-version rejection, mutable
-buffer behavior, backup contents, isolation of changed fields and both inner
-and outer integrity data.
+In Windows PowerShell, use the interpreter from the project environment:
 
-### Review follow-up (8 October 2026)
-
-The review regression suite adds 38 cases: bounded counts in both directions,
-SMS count 5000, footer exhaustion/exact fit, cumulative array overflow,
-persistent record bounds, `_reverse` rejection without mutation, held buffers,
-cached methods and preservation of unchanged owned/parts/pursuit records.
-A golden gameplay-array test constructs both expected wire representations
-directly, not by calling `game_region()` to generate its input.
-
-The full Linux offscreen suite after these fixes reports **570 passed,
-1 skipped and 2 failed**. The failures are the same two baseline font/layout
-assertions listed above. The private native fixture was not available for this
-Linux follow-up; it did not include a new private-save or hardware test. The UI
-verification script now uses a real lambda to replace `ApplyConfirmDialog.exec`
-instead of a mock, as requested for Windows compatibility. The corrected script passed on
-Linux with a temporary copy of the synthetic native fixture: open, all eight
-pages, Apply, Save + backup and Reload; the input file was unchanged.
-
-### Automated Windows UI follow-up (8 October 2026)
-
-BaZZtian ran the corrected `tools/verify_switch_ui.py` from the supplied
-test package source (commit `598efeda97fee18fde363043655b0f0c83a0047d`)
-on Windows with Python 3.11 (64-bit), PySide6 6.11.2, NumPy 2.4.6 and
-Pydantic 2.13.5, using a real native save. The supplied PowerShell output
-reports:
-
-```text
-Original Qt UI: open, all pages, Apply (memory), Save + backup and Reload passed
-Pages: Junkman, Profile, Career, Garage, Tuning, Builds, Settings, About
-Input unchanged
+```powershell
+.\.venv\Scripts\python.exe .\nfs_mw_save_editor\tools\verify_switch_ui.py "C:\path\to\native-save"
 ```
 
-The run completed without the reported dialog access violation. Qt emitted
-a font-directory warning, but all script assertions passed and the input
-save remained unchanged. This verifies the corrected script on Windows;
-a new full automated Windows-suite run is not claimed.
-
-### Manual Windows and Switch follow-up (8 October 2026)
-
-PR author BaZZtian tested the corrected portable Windows test package and
-reported that it starts, reads the native save, and writes an edited file
-accepted by the game on Switch. The money edit was specifically confirmed
-at **2,000,000 in game**. After receiving the remaining feature checklist,
-the tester confirmed that all functions had been tested and worked. This
-reports the requested manual checks as passing:
-
-- Money and reward/Junkman markers.
-- Performance tuning and Junkman parts.
-- Car-build injection, including the requested Car Select/free-roam and
-  parts/body-kit checks.
-- Career-stage changes.
-
-These are the tester's manual results, separate from the automated synthetic
-tests and the Windows UI verification above. No new full automated
-Windows-suite run is claimed.
-
-Support remains experimental pending upstream integration and maintainer
-review. The reported feature checks do not establish compatibility of every
-PC/Xbox part index or every native save version. Integration with the
-maintainer's newer development state is still to be checked on their side.
-
+The save paths above are placeholders. Replace them with a raw native save
+file. Automated round trips establish serialization behavior and integrity;
+acceptance of edited gameplay data also requires testing in the game.
