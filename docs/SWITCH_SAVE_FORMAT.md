@@ -234,12 +234,30 @@ directly, not by calling `game_region()` to generate its input.
 The full Linux offscreen suite after these fixes reports **570 passed,
 1 skipped and 2 failed**. The failures are the same two baseline font/layout
 assertions listed above. The private native fixture was not available for this
-follow-up; no new private-save or hardware validation is claimed. The UI
+Linux follow-up; it did not include a new private-save or hardware test. The UI
 verification script now uses a real lambda to replace `ApplyConfirmDialog.exec`
-instead of a mock, as requested for Windows compatibility. Its direct Windows
-execution still requires a Windows retest. The corrected script passed on
+instead of a mock, as requested for Windows compatibility. The corrected script passed on
 Linux with a temporary copy of the synthetic native fixture: open, all eight
 pages, Apply, Save + backup and Reload; the input file was unchanged.
+
+### Automated Windows UI follow-up (8 October 2026)
+
+BaZZtian ran the corrected `tools/verify_switch_ui.py` from the supplied
+test package source (commit `598efeda97fee18fde363043655b0f0c83a0047d`)
+on Windows with Python 3.11 (64-bit), PySide6 6.11.2, NumPy 2.4.6 and
+Pydantic 2.13.5, using a real native save. The supplied PowerShell output
+reports:
+
+```text
+Original Qt UI: open, all pages, Apply (memory), Save + backup and Reload passed
+Pages: Junkman, Profile, Career, Garage, Tuning, Builds, Settings, About
+Input unchanged
+```
+
+The run completed without the reported dialog access violation. Qt emitted
+a font-directory warning, but all script assertions passed and the input
+save remained unchanged. This verifies the corrected script on Windows;
+a new full automated Windows-suite run is not claimed.
 
 ### Manual Windows and Switch follow-up (8 October 2026)
 
@@ -257,12 +275,11 @@ reports the requested manual checks as passing:
 - Career-stage changes.
 
 These are the tester's manual results, separate from the automated synthetic
-tests above. No new full automated Windows-suite run or direct Windows run
-of `tools/verify_switch_ui.py` is claimed. The corrected dialog override is
-implemented, but its Windows script retest remains separate from successful
-manual use of the EXE.
+tests and the Windows UI verification above. No new full automated
+Windows-suite run is claimed.
 
 Support remains experimental pending upstream integration and maintainer
 review. The reported feature checks do not establish compatibility of every
 PC/Xbox part index or every native save version. Integration with the
 maintainer's newer development state is still to be checked on their side.
+
