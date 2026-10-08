@@ -1,14 +1,10 @@
 # NFS MW Save Editor
 
-A Windows desktop save editor for **Need for Speed: Most Wanted (2005)** PC saves from the **v1.3 game executable** and raw Xbox 360 saves used by the **nfsmw-nx Switch port**. Built with Python and PySide6.
-
-Raw Xbox 360 / nfsmw-nx support targets the documented 62,688-byte MC02 layout. It is currently a preview; game acceptance on Switch hardware has not been independently verified. See [the save-format documentation](docs/SWITCH_SAVE_FORMAT.md) for supported layouts, the authoritative save path and validation.
+A Windows desktop save editor for **Need for Speed: Most Wanted (2005)** PC saves from the **v1.3 game executable**. Built with Python and PySide6.
 
 NFS MW Save Editor has grown beyond its original Junkman inventory focus. It now covers profile values, Blacklist progress, garage placement, pursuit heat and bounty, performance tuning, and reusable car-build snapshots.
 
-> **Switch support preview:** [v1.5.0-switch-preview.1](https://github.com/BaZZtian/nfs-mw-save-editor/releases/tag/v1.5.0-switch-preview.1).
->
-> **Latest upstream release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
+> **Latest release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
 
 ## Highlights
 
@@ -21,14 +17,6 @@ NFS MW Save Editor has grown beyond its original Junkman inventory focus. It now
 - Apply bundled or personal car builds to a save
 - Preserve save integrity with backups, MD5 validation, and EA CRC32 repair
 - Choose from 30 built-in UI themes
-
-## Switch save files
-
-Open the raw save payload at `nfsmw/<XUID>/454107D9/00000001/<profile>/<profile>` inside your nfsmw-nx installation. Use the profile and XUID folders created by your installation; the final component is a file without an extension.
-
-The `saves/<profile>/actual` and `anterior` directories contain automatic copies. Edit the authoritative payload above so the game loads your changes. Close the game completely before editing the SD card, use `Apply (memory)` followed by `Save + backup`, and reopen the saved file to check the values.
-
-See [SWITCH_SAVE_FORMAT.md](docs/SWITCH_SAVE_FORMAT.md) for format detection, integrity handling and validation limits.
 
 ## Editor Pages
 
@@ -119,13 +107,7 @@ Keep a known-good copy of important saves even though the editor creates backups
 
 ## Download
 
-Download the [Windows portable Switch support preview](https://github.com/BaZZtian/nfs-mw-save-editor/releases/download/v1.5.0-switch-preview.1/NFS_MW_Junkman_Switch_PC_1.5.0.zip): **`NFS_MW_Junkman_Switch_PC_1.5.0.zip`**. Extract the complete ZIP and run `NFS_MW_Junkman_Editor.exe`; keep the `_internal` folder beside the executable. No separate Python installation is required.
-
-The release notes are available on the [preview release page](https://github.com/BaZZtian/nfs-mw-save-editor/releases/tag/v1.5.0-switch-preview.1).
-
-### Upstream PC release
-
-The upstream stable PC build is available from [GitHub Releases](https://github.com/sprintstate/nfs-mw-save-editor/releases/latest):
+Download the latest stable build from [GitHub Releases](https://github.com/sprintstate/nfs-mw-save-editor/releases/latest):
 
 - **`NFS_MW_Junkman_Editor.exe`** - recommended standalone single-file build
 - **`NFS_MW_Junkman_Editor_onedir.zip`** - portable folder build; extract the full archive and run the executable inside
@@ -157,7 +139,7 @@ Requirements:
 - PySide6 6.5 or newer
 
 ```powershell
-git clone https://github.com/BaZZtian/nfs-mw-save-editor.git
+git clone https://github.com/sprintstate/nfs-mw-save-editor.git
 cd nfs-mw-save-editor
 
 python -m venv .venv
@@ -196,7 +178,6 @@ Built-in car snapshots, compact Career progression snapshots, and icons are pack
 |   |   `-- unique_cars/               # Bundled build snapshots
 |   |-- core/
 |   |   |-- savefile.py                # Save parser, editor, and integrity flow
-|   |   |-- switch_format.py           # Raw Xbox 360 / nfsmw-nx format adapter
 |   |   |-- career_progress.py         # Blacklist progress decoding
 |   |   |-- career_transplant.py       # Validated Change Rival workflow
 |   |   |-- snapshot_library.py        # Build library discovery
@@ -242,8 +223,6 @@ The editor is based on validated save comparisons, game data, and in-game testin
 - [`docs/PROFILE_REVERSE_OVERVIEW.md`](docs/PROFILE_REVERSE_OVERVIEW.md)
 - [`docs/PROFILE_REVERSE_NOTES.md`](docs/PROFILE_REVERSE_NOTES.md)
 - [`docs/REVERSE_ENGINEERING_DOSSIER.md`](docs/REVERSE_ENGINEERING_DOSSIER.md)
-- [`docs/SWITCH_SAVE_FORMAT.md`](docs/SWITCH_SAVE_FORMAT.md)
-- [`docs/CHANGE_SWITCH_SAVE_SUPPORT_DE.md`](docs/CHANGE_SWITCH_SAVE_SUPPORT_DE.md)
 
 The README intentionally stays at product level; byte offsets and research history belong in those documents.
 
@@ -252,5 +231,3 @@ The README intentionally stays at product level; byte offsets and research histo
 This is an unofficial fan-made tool and is not affiliated with or endorsed by Electronic Arts.
 
 Need for Speed and Need for Speed: Most Wanted are trademarks of Electronic Arts. Use the editor at your own risk and keep backups of important saves.
-
-Switch save support, validation scripts and documentation were developed with assistance from OpenAI Codex (ChatGPT). Original editor by sprintstate.
