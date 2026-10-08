@@ -12,7 +12,7 @@ provide a portable Windows preview for the documented raw Xbox 360 / nfsmw-nx
 save layout. Extract the entire ZIP and run `NFS_MW_Junkman_Editor.exe`.
 No separate Python installation is needed for the portable application.
 
-Switch support remains **experimental**, including after its upstream merge.
+Switch support remains **experimental**.
 The current community build supports native save open/edit/save, money,
 reward/Junkman markers, tuning, car-build injection and career-stage changes.
 Compatibility with every save version, vehicle or PC/Xbox part index is not
@@ -30,22 +30,13 @@ are in [SWITCH_SAVE_FORMAT.md](docs/SWITCH_SAVE_FORMAT.md).
 
 ## Updates and community feedback
 
-Release notes identify the source commit and describe the checks performed for
-that particular build. Compatibility of future upstream features with native
-saves is not established by the tests of the current version.
+Each community release identifies its source commit, supported native-save
+layout and validation scope. Compatibility of future upstream features with
+native saves requires separate verification.
 
-The upstream maintainer's test and integration confirmation covers the source
-code. He has not tested this fork's ZIP or executable. Validation of the
-community package is described separately in its release notes.
-
-Switch-specific feedback for the community build can be reported through this
-fork's issue tracker. Official builds are provided by the upstream project.
-
-The maintainer has agreed to a clearly labelled unofficial preview on this
-fork until an official release covers the Switch workflow; see
-[upstream PR #2](https://github.com/sprintstate/nfs-mw-save-editor/pull/2).
-Once an official download covers that workflow, the community preview will be
-marked superseded and users directed to the official release.
+Switch-specific feedback can be reported through this fork's issue tracker.
+When an official release covers the Switch workflow, the community preview
+will be marked superseded and point to the official download.
 
 ---
 
@@ -287,5 +278,3 @@ The README intentionally stays at product level; byte offsets and research histo
 This is an unofficial fan-made tool and is not affiliated with or endorsed by Electronic Arts.
 
 Need for Speed and Need for Speed: Most Wanted are trademarks of Electronic Arts. Use the editor at your own risk and keep backups of important saves.
-
-
