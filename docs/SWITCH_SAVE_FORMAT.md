@@ -4,6 +4,12 @@ This backend extension targets the v1.5.0 desktop editor. It adds a
 reversible serialization adapter that connects raw Xbox 360 saves used
 by nfsmw-nx to the existing save-editing engine.
 
+**Experimental:** edited native saves have not yet been validated in-game
+on a real Switch. In particular, bundled PC car-build part/body-kit indices
+are not confirmed to match the Xbox tables. Successful conversion, editor
+reload and checksums are not proof of game acceptance. Keep an independent
+known-good backup and test changes separately before using an edited save.
+
 ## Supported inputs
 
 | Input | Size | Serialization |
@@ -85,9 +91,17 @@ The public `data` buffer remains a native 62,688-byte `bytearray`. This matters
 because the original GUI compares it with disk bytes to determine whether
 changes are unsaved and implements staged `Apply (memory)` and disk reload.
 Direct modifications of that public buffer are adopted before further edits.
+Delegated editor calls synchronize their changes into the same bytearray
+before returning, so a held `data` reference stays valid across setters and
+checksum repair. Cached delegated methods also adopt external edits at call
+time. Conflicting raw writes and unsynchronized changes through a retained
+private-engine subobject are rejected explicitly rather than silently losing
+either edit; synchronize through `save.data` before such mixed direct use.
 
 On serialization, only changed, named regions are translated into a copy of
-the original native file. Unknown bytes, unedited regions, the console-only
+the original native file. Owned-car, customization and pursuit tables are
+compared and written back one record at a time, so padding in unchanged
+neighbour records is not normalized. Unknown bytes, unedited regions, the console-only
 prelude and platform-specific tail are retained. A valid no-edit save is
 byte-identical after saving. Loading alone never modifies the input file.
 
@@ -138,6 +152,12 @@ The gameplay section is converted field by field: version/count header,
 aligned persistent records, timers, milestone types, milestones, speed traps,
 gates, hiding-spot bitset, race-bin statistics, pending SMS and footer keys.
 Array alignment is relative to the start of the gameplay section.
+
+Each persistent record (including alignment), fixed-size array, hiding-spot
+bitset, race-bin statistics span and 32-byte aligned footer is bounds-checked
+against the 16 KiB section before that span is walked. This includes gates
+and pending SMS; oversized counts cannot cause an unbounded walk. `_reverse`
+rejects negative and out-of-range spans before changing any bytes.
 
 `TableVar` bitfields have different byte layouts on Xbox and PC. The adapter
 translates their type, boolean, packed, key and valid fields and reverses only
@@ -202,6 +222,35 @@ skipped. The synthetic fixture has no private identity and is generated at
 test time. Tests cover native byte order, unknown-version rejection, mutable
 buffer behavior, backup contents, isolation of changed fields and both inner
 and outer integrity data.
+
+### Review follow-up (8 October 2026)
+
+The review regression suite adds 38 cases: bounded counts in both directions,
+SMS count 5000, footer exhaustion/exact fit, cumulative array overflow,
+persistent record bounds, `_reverse` rejection without mutation, held buffers,
+cached methods and preservation of unchanged owned/parts/pursuit records.
+A golden gameplay-array test constructs both expected wire representations
+directly, not by calling `game_region()` to generate its input.
+
+The full Linux offscreen suite after these fixes reports **570 passed,
+1 skipped and 2 failed**. The failures are the same two baseline font/layout
+assertions listed above. The private native fixture was not available for this
+follow-up; no new private-save or hardware validation is claimed. The UI
+verification script now uses a real lambda to replace `ApplyConfirmDialog.exec`
+instead of a mock, as requested for Windows compatibility. Its direct Windows
+execution still requires a Windows retest. The corrected script passed on
+Linux with a temporary copy of the synthetic native fixture: open, all eight
+pages, Apply, Save + backup and Reload; the input file was unchanged.
+
+The remaining real-Switch validation checklist is:
+
+- Money and reward markers persist after loading and re-saving in game.
+- Performance tuning and Junkman parts behave correctly.
+- An injected car appears in Car Select, drives in free roam, and has the
+  expected performance parts and body kit (PC/Xbox index compatibility).
+- A career-stage change loads and permits the expected races/rival flow.
+
+Until those checks are reported, native support remains experimental.
 
 These results verify serialization and editor behavior, including the
 original feature paths. Direct Windows executable startup and acceptance of
