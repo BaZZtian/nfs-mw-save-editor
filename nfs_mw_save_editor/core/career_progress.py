@@ -433,6 +433,8 @@ def build_career_progress(data: bytes) -> Optional[CareerProgressSummary]:
     Prologue events remain a separate lifetime group.
     """
 
+    from core.switch_format import editor_view
+    data = editor_view(data)
     current_stage = read_current_bin(data)
     if current_stage is None or not 1 <= current_stage <= 15:
         return None

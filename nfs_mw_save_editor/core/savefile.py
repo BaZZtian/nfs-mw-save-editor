@@ -41,6 +41,14 @@ logger = logging.getLogger(__name__)
 
 
 class SaveFile:
+    def __new__(cls, path=None, data=None, layout=None, hash_scheme=None):
+        if cls is SaveFile and data is not None and len(data) == 0xF4E0 and data[:4] == b"MC02":
+            from core.switch_format import SwitchSaveFile, is_switch_save
+            if is_switch_save(data):
+                return object.__new__(SwitchSaveFile)
+            raise ValueError("Unrecognized 62688-byte MC02 save header")
+        return object.__new__(cls)
+
     SNAPSHOT_FILE_PREFIX = snapshot_library.SNAPSHOT_FILE_PREFIX
     LEGACY_SNAPSHOT_FILE_PREFIX = snapshot_library.LEGACY_SNAPSHOT_FILE_PREFIX
     SNAPSHOT_KIND = snapshot_library.SNAPSHOT_KIND
