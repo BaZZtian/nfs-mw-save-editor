@@ -1,5 +1,8 @@
 # Raw Xbox 360 / nfsmw-nx save support
 
+**Historical pre-review snapshot.** Current native-save code and documentation
+are on [main](https://github.com/BaZZtian/nfs-mw-save-editor/tree/main).
+
 This backend extension targets the v1.5.0 desktop editor. It adds a
 reversible serialization adapter that connects raw Xbox 360 saves used
 by nfsmw-nx to the existing save-editing engine.
@@ -52,27 +55,22 @@ checksums are repaired. `Fix checksums` does that in memory; `save()` also
 repairs them automatically. Repairing checksums in a copy directory does not
 change which file the game loads.
 
-Verified against the port source at commit
-`4e3ffc24fe80285189f2cea601606c529d5f1b97` on 6 October 2026:
+Port path handling is defined in these sources at commit
+`4e3ffc24fe80285189f2cea601606c529d5f1b97`:
 [content_manager.cpp](https://github.com/StevensND/nfsmw-nx/blob/4e3ffc24fe80285189f2cea601606c529d5f1b97/sdk/src/system/xam/content_manager.cpp),
 [rex_app.cpp](https://github.com/StevensND/nfsmw-nx/blob/4e3ffc24fe80285189f2cea601606c529d5f1b97/sdk/src/ui/rex_app.cpp) and
 [filesystem_posix.cpp](https://github.com/StevensND/nfsmw-nx/blob/4e3ffc24fe80285189f2cea601606c529d5f1b97/sdk/src/core/filesystem_posix.cpp).
 
-This corrects the earlier documentation's misleading description of
-`actual`/`anterior`. No backend or GUI code change is needed for this path issue.
+## Adapter modules
 
-## Changed application files
-
-| File | Change |
+| File | Role |
 | --- | --- |
 | `core/savefile.py` | Factory dispatch to `SwitchSaveFile`; existing PC edit methods stay intact |
-| `core/switch_format.py` (new) | Native detection, typed conversion, native persistence and integrity |
+| `core/switch_format.py` | Native detection, typed conversion, native persistence and integrity |
 | `core/career_progress.py` | Normalize native input for the original career dashboard parser |
 | `core/career_transplant.py` | Accept the native size when reading the current Blacklist stage |
 
-`main.py`, `resources.py`, all `ui/` files, themes, icons, templates and bundled
-car builds are unchanged. The extension uses Python's standard library and
-adds no runtime dependency. Tests and review documentation are separate.
+The adapter uses Python's standard library and adds no runtime dependency.
 
 ## Representation and persistence
 
@@ -161,48 +159,24 @@ No decompilation source files or personal saves are bundled with this patch.
 
 ## Validation
 
-Environment: CPython 3.12.14 for pytest; CPython 3.13.15 for packaged-bytecode
-and original Qt UI checks. Linux offscreen Qt is PySide6 6.11.2; the supplied
-Windows package's Qt 6.10.1 runtime is retained unchanged.
-
-| Check | Result |
-| --- | --- |
-| Original non-Qt PC/API regression suite | 203 passed |
-| New format suite, with optional private native fixture | 165 passed |
-| Every bundled build in both Career and My Cars | 34 builds × 2 target modes; save/reopen and JSON export/reload |
-| Every bundled career stage, keep/normalize bounty | 30 stages × 2 modes; save/reopen |
-| Gameplay conversion round trip | All 30 bundled career blocks byte-identical |
-| Original Qt workflow with a copy of the native save | Open, eight pages, Apply, Save + backup, actual disk reload passed |
-| Original input after tests | Unchanged; writes confined to temporary copies |
-| Original baseline Qt suite in this Linux environment | 359 passed, two existing font/layout assertions failed |
-
-The two baseline failures occur in the **unmodified** source:
-`test_longest_tagline_stays_one_line_and_holds_the_banner_still` and
-`test_footer_strip_regrows_when_its_numbers_arrive`. They are not reported as
-passing. The GUI integration script accepts the existing confirmation dialogs
-within the test only; it does not alter application UI code.
-
-From the repository root (with the project's pytest/Qt test dependencies):
+Run the native format checks from the repository root with the project
+dependencies and pytest installed:
 
 ```bash
-PYTHONPATH=nfs_mw_save_editor QT_QPA_PLATFORM=offscreen \
-  python -m pytest nfs_mw_save_editor/tests -m 'not qt' \
-  --ignore=nfs_mw_save_editor/tests/test_switch_format.py -q
-
-PYTHONPATH=nfs_mw_save_editor QT_QPA_PLATFORM=offscreen \
-  NFS_MW_SWITCH_TEST_SAVE=/path/to/private/raw/save \
+PYTHONPATH=nfs_mw_save_editor QT_QPA_PLATFORM=offscreen \\
   python -m pytest nfs_mw_save_editor/tests/test_switch_format.py -q
-
-QT_QPA_PLATFORM=offscreen \
-  python nfs_mw_save_editor/tools/verify_switch_ui.py /path/to/private/raw/save
 ```
 
-Without `NFS_MW_SWITCH_TEST_SAVE`, only the optional private-fixture test is
-skipped. The synthetic fixture has no private identity and is generated at
-test time. Tests cover native byte order, unknown-version rejection, mutable
-buffer behavior, backup contents, isolation of changed fields and both inner
-and outer integrity data.
+Set `NFS_MW_SWITCH_TEST_SAVE` to the path of a raw native save to enable the
+optional private-fixture test. Without that variable, the optional test is
+skipped. Synthetic fixtures are generated at test time, and test writes are
+confined to temporary copies.
 
-These results verify serialization and editor behavior, including the
-original feature paths. Direct Windows executable startup and acceptance of
-edited saves by the game on Switch hardware have not been tested here.
+These checks cover native byte order, version rejection, mutable buffers,
+backups and integrity repair. Automated round trips establish serialization
+behavior; acceptance of edited gameplay data requires testing in the game.
+
+This historical branch predates the current bounds, buffer synchronization,
+padding-preservation and Windows UI verification fixes. Use the current
+[format documentation](https://github.com/BaZZtian/nfs-mw-save-editor/blob/main/docs/SWITCH_SAVE_FORMAT.md)
+and `main` branch for further testing.
