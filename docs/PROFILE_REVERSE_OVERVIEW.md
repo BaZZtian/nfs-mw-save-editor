@@ -58,9 +58,9 @@ Once both blocks were known, the important pattern became clear:
 - that `career_slot` matches the index of the corresponding pursuit record
 
 In other words:
-- vehicle block tells us **what car it is**
-- pursuit block tells us **what bounty / escapes / busts belong to it**
-- `career_slot` tells us **which records belong together**
+- the vehicle block stores **car identity**
+- the pursuit block stores **per-car bounty / escapes / busts**
+- `career_slot` identifies **the corresponding pursuit record**
 
 That was the missing join.
 
