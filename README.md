@@ -1,4 +1,11 @@
-# NFS MW Save Editor
+# NFS MW Save Editor — Historical Switch Preview
+
+**Superseded pre-review snapshot.** Current community source is on
+[main](https://github.com/BaZZtian/nfs-mw-save-editor/tree/main).
+Use [Preview 2](https://github.com/BaZZtian/nfs-mw-save-editor/releases/tag/v1.5.0-switch-preview.2)
+for the current experimental community download. Official builds are available
+from [sprintstate’s releases](https://github.com/sprintstate/nfs-mw-save-editor/releases).
+
 
 A Windows desktop save editor for **Need for Speed: Most Wanted (2005)** PC saves from the **v1.3 game executable** and raw Xbox 360 saves used by the **nfsmw-nx Switch port**. Built with Python and PySide6.
 
@@ -6,7 +13,7 @@ Raw Xbox 360 / nfsmw-nx support targets the documented 62,688-byte MC02 layout. 
 
 NFS MW Save Editor has grown beyond its original Junkman inventory focus. It now covers profile values, Blacklist progress, garage placement, pursuit heat and bounty, performance tuning, and reusable car-build snapshots.
 
-> **Switch support preview:** [v1.5.0-switch-preview.1](https://github.com/BaZZtian/nfs-mw-save-editor/releases/tag/v1.5.0-switch-preview.1).
+> **Historical Switch preview:** `v1.5.0-switch-preview.1` is superseded by [Preview 2](https://github.com/BaZZtian/nfs-mw-save-editor/releases/tag/v1.5.0-switch-preview.2).
 >
 > **Latest upstream release:** [v1.5.0](https://github.com/sprintstate/nfs-mw-save-editor/releases/tag/v1.5.0), featuring the Career dashboard, Change Rival workflow, safer build injection, and a redesigned staged-save experience.
 
@@ -157,7 +164,7 @@ Requirements:
 - PySide6 6.5 or newer
 
 ```powershell
-git clone https://github.com/BaZZtian/nfs-mw-save-editor.git
+git clone https://github.com/sprintstate/nfs-mw-save-editor.git
 cd nfs-mw-save-editor
 
 python -m venv .venv
@@ -243,7 +250,6 @@ The editor is based on validated save comparisons, game data, and in-game testin
 - [`docs/PROFILE_REVERSE_NOTES.md`](docs/PROFILE_REVERSE_NOTES.md)
 - [`docs/REVERSE_ENGINEERING_DOSSIER.md`](docs/REVERSE_ENGINEERING_DOSSIER.md)
 - [`docs/SWITCH_SAVE_FORMAT.md`](docs/SWITCH_SAVE_FORMAT.md)
-- [`docs/CHANGE_SWITCH_SAVE_SUPPORT_DE.md`](docs/CHANGE_SWITCH_SAVE_SUPPORT_DE.md)
 
 The README intentionally stays at product level; byte offsets and research history belong in those documents.
 
@@ -252,5 +258,3 @@ The README intentionally stays at product level; byte offsets and research histo
 This is an unofficial fan-made tool and is not affiliated with or endorsed by Electronic Arts.
 
 Need for Speed and Need for Speed: Most Wanted are trademarks of Electronic Arts. Use the editor at your own risk and keep backups of important saves.
-
-Switch save support, validation scripts and documentation were developed with assistance from OpenAI Codex (ChatGPT). Original editor by sprintstate.
