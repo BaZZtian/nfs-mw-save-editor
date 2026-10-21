@@ -268,7 +268,7 @@ The editor is based on validated save comparisons, game data, and in-game testin
 
 - [`docs/JUNKMAN_OFFSETS.md`](docs/JUNKMAN_OFFSETS.md)
 
-The README intentionally stays at product level; byte offsets and research history belong in those documents.
+The README focuses on product behavior; the maintained public file-format specification is kept separately from private investigation notes.
 
 ## Disclaimer
 
