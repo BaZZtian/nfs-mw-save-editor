@@ -69,3 +69,9 @@ pull request, build, release, and Store/catalog submission.**
   established: **do not publish, package, merge, or submit a release**.
 - Do not bypass these rules to meet a deadline. This document is operational
   guidance only: it does not itself license, transfer, or revoke any copyright.
+
+## 4. Project-specific known rights (not a complete legal audit)
+
+- Community fork of `sprintstate/nfs-mw-save-editor`, not ownership of the original editor.
+- No general root LICENSE was verified in upstream or this fork. **Redistribution and relicensing rights are unresolved** until per-file and contributor permission evidence is obtained. Do not infer authorization from a public repository.
+- Fork-authored additions have separate ownership; packaged Qt/PySide6/Python dependencies retain their license duties.
