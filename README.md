@@ -270,6 +270,14 @@ The editor is based on validated save comparisons, game data, and in-game testin
 
 The README focuses on product behavior; the maintained public file-format specification is kept separately from private investigation notes.
 
+## License
+
+Copyright (C) 2026 sprintstate and contributors.
+
+The editor's source code is licensed under the [GNU General Public License v3.0](LICENSE). You may use, modify, and share it, including your own builds, as long as what you distribute stays under GPL-3.0 with its source code available and the existing credits kept.
+
+Game data and original-game assets from Need for Speed: Most Wanted remain the property of Electronic Arts and are not covered by this license. Third-party components keep their own licenses, listed under [Third-party software](#third-party-software).
+
 ## Disclaimer
 
 This is an unofficial fan-made tool and is not affiliated with or endorsed by Electronic Arts.
